@@ -21,6 +21,7 @@ function createApi(overrides: Partial<PopupApi> = {}): PopupApi {
     })),
     savePreferences: vi.fn(async () => undefined),
     setActiveEngine: vi.fn(async () => undefined),
+    savePopupState: vi.fn(async () => undefined),
     sendToPage: vi.fn(async () => undefined),
     openOptions: vi.fn(),
     getProgress: vi.fn(async () => undefined),
@@ -33,8 +34,9 @@ describe('精简 Popup', () => {
   it('只展示引擎、目标语言、显示模式、主按钮和设置图标', async () => {
     render(<PopupApp api={createApi()} />);
     expect(await screen.findByLabelText('翻译引擎')).toHaveValue('google');
+    expect(screen.getByLabelText('源语言')).toHaveValue('auto');
     expect(screen.getByLabelText('目标语言')).toHaveValue('zh-Hans');
-    expect(screen.getByLabelText('显示模式')).toHaveValue('bilingual');
+    expect(screen.getByRole('button', { name: '双语对照' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '翻译' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '设置' })).toBeInTheDocument();
     expect(screen.queryByLabelText('翻译范围')).not.toBeInTheDocument();
@@ -48,10 +50,10 @@ describe('精简 Popup', () => {
     render(<PopupApp api={api} />);
     await screen.findByLabelText('翻译引擎');
     await userEvent.selectOptions(screen.getByLabelText('翻译引擎'), 'bing');
+    await userEvent.selectOptions(screen.getByLabelText('源语言'), 'en');
     await userEvent.selectOptions(screen.getByLabelText('目标语言'), 'ja');
-    await userEvent.selectOptions(screen.getByLabelText('显示模式'), 'translation');
-    expect(api.setActiveEngine).toHaveBeenCalledWith('bing');
-    expect(api.savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ targetLanguage: 'ja', displayMode: 'translation', scanScope: 'whole-page' }));
+    await userEvent.click(screen.getByRole('button', { name: '双语对照' }));
+    expect(api.savePopupState).toHaveBeenLastCalledWith('bing', expect.objectContaining({ sourceLanguage: 'en', targetLanguage: 'ja', displayMode: 'translation', scanScope: 'whole-page' }));
   });
 
   it('翻译后主按钮切换为显示原文，再次点击恢复', async () => {
@@ -77,6 +79,6 @@ describe('精简 Popup', () => {
     render(<PopupApp api={api} />);
     await waitFor(() => expect(screen.getByLabelText('翻译引擎')).toHaveValue('bing'));
     expect(screen.getByLabelText('目标语言')).toHaveValue('de');
-    expect(screen.getByLabelText('显示模式')).toHaveValue('translation');
+    expect(screen.getByRole('button', { name: '仅译文' })).toBeInTheDocument();
   });
 });

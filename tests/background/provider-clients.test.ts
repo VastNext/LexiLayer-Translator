@@ -14,6 +14,11 @@ function response(body: unknown, status = 200, headers?: HeadersInit) {
 }
 
 describe('GoogleTranslateClient', () => {
+  it('解析真实匿名端点的字符串数组响应', async () => {
+    const client = new GoogleTranslateClient({ fetch: vi.fn(async () => response(['你好', '世界'])) as typeof fetch });
+    await expect(client.translate({ sourceLanguage: 'en', targetLanguage: 'zh-Hans', segments: [{ id: 'a', text: 'hello' }, { id: 'b', text: 'world' }] }))
+      .resolves.toEqual([{ id: 'a', text: '你好' }, { id: 'b', text: '世界' }]);
+  });
   it('自动检测源语言时发送 sl=auto，且使用实际批量端点形状', async () => {
     const fetch = vi.fn().mockResolvedValue(response([['你好'], ['世界']]));
 

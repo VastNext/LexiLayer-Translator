@@ -23,7 +23,7 @@ interface PageCommand {
 
 interface PublicEngine { id: string; kind: string; name: string; ready: boolean; capabilities: { streaming: boolean } }
 interface PublicConfig {
-  preferences: { targetLanguage: string; displayMode: string; translationPosition: 'before' | 'after'; scanScope: ScanScope };
+  preferences: { sourceLanguage?: string; targetLanguage: string; displayMode: string; translationPosition: 'before' | 'after'; scanScope: ScanScope };
   activeEngineId: string;
   availableEngines: PublicEngine[];
 }
@@ -91,7 +91,7 @@ export function createContentController(dependencies: ContentControllerDependenc
   async function resolveCommand(command: PageCommand): Promise<PageCommand> {
     const config = await dependencies.getConfig();
     const preferences = config.preferences;
-    const sourceLanguage = normalizeLanguage(command.sourceLanguage ?? (dependencies.getPageLanguage() || 'auto'));
+    const sourceLanguage = normalizeLanguage(command.sourceLanguage ?? preferences.sourceLanguage ?? (dependencies.getPageLanguage() || 'auto'));
     const preferred = command.targetLanguage ?? preferences.targetLanguage;
     const targetLanguage = chooseTargetLanguage(sourceLanguage, preferred === 'auto' ? (preferences.targetLanguage === 'auto' ? 'en' : preferences.targetLanguage) : preferred);
     return {

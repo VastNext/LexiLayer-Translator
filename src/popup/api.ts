@@ -26,7 +26,7 @@ interface Progress {
 }
 
 export interface PopupConfigResponse {
-  preferences?: { targetLanguage: string; displayMode: string; scanScope: 'main-content' | 'whole-page'; translationPosition: 'before' | 'after'; userInstruction: string; selectionContext: boolean };
+  preferences?: { sourceLanguage?: string; targetLanguage: string; displayMode: string; scanScope: 'main-content' | 'whole-page'; translationPosition: 'before' | 'after'; userInstruction: string; selectionContext: boolean };
   activeEngineId?: string;
   availableEngines?: Array<{ id: string; kind: string; name: string; ready: boolean; capabilities: { streaming: boolean } }>;
 }
@@ -63,6 +63,9 @@ export function createPopupApi(api: PopupChromeApi) {
     },
     async setActiveEngine(engineId: string) {
       await backgroundAction({ type: 'set-active-engine', engineId }, '翻译引擎保存失败');
+    },
+    async savePopupState(engineId: string, readingPreferences: PopupConfigResponse['preferences']) {
+      await backgroundAction({ type: 'save-popup-preferences', engineId, readingPreferences }, '快捷设置保存失败');
     },
     async sendToPage(message: unknown) {
       const tabId = await activeTabId();

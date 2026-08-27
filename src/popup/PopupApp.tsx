@@ -11,6 +11,7 @@ export interface PopupApi {
   getConfig(): Promise<PopupConfigResponse>;
   savePreferences?(preferences: NonNullable<PopupConfigResponse['preferences']>): Promise<void>;
   setActiveEngine?(engineId: string): Promise<void>;
+  savePopupState?(engineId: string, preferences: NonNullable<PopupConfigResponse['preferences']>): Promise<void>;
   sendToPage(message: unknown): Promise<unknown>;
   openOptions(): void;
   getProgress(): Promise<Progress | undefined>;
@@ -18,7 +19,7 @@ export interface PopupApi {
 }
 
 const fallbackPreferences: NonNullable<PopupConfigResponse['preferences']> = {
-  targetLanguage: 'zh-Hans', displayMode: 'bilingual', scanScope: 'whole-page' as const,
+  sourceLanguage: 'auto', targetLanguage: 'zh-Hans', displayMode: 'bilingual', scanScope: 'whole-page' as const,
   translationPosition: 'after' as const, userInstruction: '', selectionContext: true,
 };
 
@@ -64,7 +65,7 @@ export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: T
 
   async function savePreferences(next: typeof preferences): Promise<void> {
     setPreferences(next);
-    try { await api.savePreferences?.(next); }
+    try { await (api.savePopupState ? api.savePopupState(engineId, next) : api.savePreferences?.(next)); }
     catch (error) { setStatus(error instanceof Error ? error.message : t('statusFailed')); }
   }
 
@@ -78,6 +79,7 @@ export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: T
       } else {
         await api.sendToPage({
           type: 'translate-page', engineId, scope: preferences.scanScope,
+          sourceLanguage: preferences.sourceLanguage ?? 'auto',
           mode: preferences.displayMode === 'translation' ? 'translation-only' : 'bilingual',
           targetLanguage: preferences.targetLanguage,
         });
@@ -94,16 +96,20 @@ export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: T
       <button className="icon-button" aria-label={t('actionSettings')} title={t('actionSettings')} onClick={api.openOptions}>⚙</button>
     </header>
     <div className="compact-controls">
-      <label className="compact-field"><span aria-hidden="true">◈</span><select aria-label={t('translationEngine')} value={engineId} onChange={(event) => {
-        const value = event.target.value; setEngineId(value);
-        void api.setActiveEngine?.(value).catch((error) => setStatus(error instanceof Error ? error.message : t('statusFailed')));
-      }}>{engines.map((engine) => <option key={engine.id} value={engine.id} disabled={!engine.ready}>{engineDisplayName(engine as Parameters<typeof engineDisplayName>[0])}</option>)}</select></label>
-      <label className="compact-field"><span aria-hidden="true">文</span><select aria-label={t('targetLanguage')} value={preferences.targetLanguage} onChange={(event) => void savePreferences({ ...preferences, targetLanguage: event.target.value })}>
+      <div className="language-row">
+      <label className="language-field"><select aria-label="源语言" value={preferences.sourceLanguage ?? 'auto'} onChange={(event) => void savePreferences({ ...preferences, sourceLanguage: event.target.value })}>
+        {languageOptions.map((language) => <option key={language.value} value={language.value}>{language.label}</option>)}
+      </select></label><span className="language-arrow" aria-hidden="true">→</span>
+      <label className="language-field"><select aria-label={t('targetLanguage')} value={preferences.targetLanguage} onChange={(event) => void savePreferences({ ...preferences, targetLanguage: event.target.value })}>
         {languageOptions.map((language) => <option key={language.value} value={language.value}>{language.label}</option>)}
       </select></label>
-      <label className="compact-field"><span aria-hidden="true">◐</span><select aria-label={t('displayMode')} value={preferences.displayMode} onChange={(event) => void savePreferences({ ...preferences, displayMode: event.target.value as 'bilingual' | 'translation' })}>
-        <option value="bilingual">{t('bilingual')}</option><option value="translation">{t('translationOnly')}</option>
-      </select></label>
+      <button className="mode-icon" aria-label={preferences.displayMode === 'bilingual' ? '双语对照' : '仅译文'} title={preferences.displayMode === 'bilingual' ? '双语对照' : '仅译文'} onClick={() => void savePreferences({ ...preferences, displayMode: preferences.displayMode === 'bilingual' ? 'translation' : 'bilingual' })}>{preferences.displayMode === 'bilingual' ? '◫' : '▣'}</button>
+      </div>
+      <label className="compact-field engine-row-popup"><span aria-hidden="true">◈</span><select aria-label={t('translationEngine')} value={engineId} onChange={(event) => {
+        const value = event.target.value; setEngineId(value);
+        const saving = api.savePopupState ? api.savePopupState(value, preferences) : api.setActiveEngine?.(value) ?? Promise.resolve();
+        void saving.catch((error) => setStatus(error instanceof Error ? error.message : t('statusFailed')));
+      }}>{engines.map((engine) => <option key={engine.id} value={engine.id} disabled={!engine.ready}>{engineDisplayName(engine as Parameters<typeof engineDisplayName>[0])}</option>)}</select></label>
     </div>
     <p className="status" role="status">{status}</p>
     <button className="primary primary--wide" disabled={busy} aria-busy={busy} onClick={() => void togglePage()}>{busy ? t('statusTranslating') : pageActive ? '显示原文' : '翻译'}</button>

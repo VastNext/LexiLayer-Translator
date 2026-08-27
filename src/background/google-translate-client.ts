@@ -3,6 +3,7 @@ import type { Provider, ProviderClientOptions } from './provider';
 import { fetchTranslation, mapGoogleLanguage } from './translate-http';
 
 function readGoogleText(value: unknown): string | undefined {
+  if (typeof value === 'string') return value;
   if (!Array.isArray(value)) return undefined;
   if (typeof value[0] === 'string') return value[0];
   const fragments = Array.isArray(value[0]) && value[0].every((item) => Array.isArray(item)) ? value[0] : value;

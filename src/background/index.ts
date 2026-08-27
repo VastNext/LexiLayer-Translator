@@ -35,6 +35,7 @@ const allowedTypes = new Set([
   'translate-batch', 'cancel-task', 'get-public-config', 'get-popup-config', 'get-options-settings',
   'test-engine', 'translate-selection-fallback', 'cancel-selection-fallback', 'clear-cache',
   'save-reading-preferences', 'upsert-engine', 'delete-engine', 'set-active-engine', 'set-engine-enabled', 'reorder-engines', 'import-settings',
+  'save-popup-preferences',
   'clear-engine-api-key',
   'page-progress', 'get-page-progress',
 ]);
@@ -128,6 +129,7 @@ export function sanitizeError(error: unknown, secrets: string[] = []): string {
   for (const secret of secrets.filter(Boolean)) message = message.replaceAll(secret, '[已隐藏]');
   message = message.replace(/Bearer\s+\S+/gi, 'Bearer [已隐藏]').replace(/([?&](?:api[_-]?key|key|token)=)[^&\s]+/gi, '$1[已隐藏]');
   if (/Google.*(?:429|请求过于频繁)/i.test(message)) return 'Google 翻译请求过于频繁，请稍后重试或切换到 Bing';
+  if (/^(?:Google|Bing) 翻译/u.test(message)) return message;
   const safe = /^[\u3400-\u9fff]/u.test(message) && !/https?:\/\//i.test(message);
   return safe ? message : '请求处理失败，请检查配置或网络后重试';
 }
@@ -175,6 +177,7 @@ export function createBackgroundController(api: BackgroundChrome, dependencies: 
   let settingsMutationQueue = Promise.resolve();
   const settingsMutationTypes = new Set([
     'save-reading-preferences', 'upsert-engine', 'delete-engine', 'set-active-engine', 'set-engine-enabled',
+    'save-popup-preferences',
     'reorder-engines', 'import-settings', 'clear-engine-api-key',
   ]);
   const translateWithProvider = (provider: Provider, request: TranslationRequest, signal: AbortSignal) => dependencies.translate?.(provider, request, signal) ?? provider.translate(request, signal);
@@ -227,6 +230,13 @@ export function createBackgroundController(api: BackgroundChrome, dependencies: 
         if (!hasOnlyKeys(message, ['type', 'readingPreferences'])) return { ok: false, error: '消息格式无效' };
         const candidate = { ...settings, readingPreferences: message.readingPreferences as ReadingPreferences };
         await saveSettings(candidate); return { ok: true };
+      }
+      if (message.type === 'save-popup-preferences') {
+        if (!hasOnlyKeys(message, ['type', 'engineId', 'readingPreferences']) || !isSafeId(message.engineId)) return { ok: false, error: '消息格式无效' };
+        requireEngine(settings, message.engineId);
+        const candidate = { ...settings, activeEngineId: message.engineId, readingPreferences: message.readingPreferences as ReadingPreferences };
+        await saveSettings(candidate);
+        return { ok: true };
       }
       if (message.type === 'set-active-engine') {
         if (!hasOnlyKeys(message, ['type', 'engineId']) || !isSafeId(message.engineId)) return { ok: false, error: '消息格式无效' };

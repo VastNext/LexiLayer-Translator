@@ -76,12 +76,12 @@ test('MV3、Popup 与 Options 无错误加载，自定义实例可测试并在�
   await expect(popup.getByText('Vast Translator', { exact: true })).toBeVisible();
   await popup.getByLabel('翻译引擎').selectOption('bing');
   await popup.getByLabel('目标语言').selectOption('ja');
-  await popup.getByLabel('显示模式').selectOption('translation');
+  await popup.getByRole('button', { name: '双语对照' }).click();
   await popup.close();
   const reopenedPopup = await openExtensionPage('popup.html');
   await expect(reopenedPopup.getByLabel('翻译引擎')).toHaveValue('bing');
   await expect(reopenedPopup.getByLabel('目标语言')).toHaveValue('ja');
-  await expect(reopenedPopup.getByLabel('显示模式')).toHaveValue('translation');
+  await expect(reopenedPopup.getByRole('button', { name: '仅译文' })).toBeVisible();
   await reopenedPopup.close();
 
   const options = await openExtensionPage('options.html');
@@ -241,7 +241,7 @@ test('Popup 通过真实 Google/Bing clients 完成生产主链路并发送各�
   await expect(popup.getByRole('status')).toHaveText('就绪');
 
   const google = requests.find((request) => request.provider === 'google')!;
-  expect(new URL(google.url).searchParams.get('sl')).toBe('en');
+  expect(new URL(google.url).searchParams.get('sl')).toBe('auto');
   expect(new URLSearchParams(google.body ?? '').getAll('q')).toEqual(['hello']);
   expect(google.contentType).toContain('application/x-www-form-urlencoded');
   const bing = requests.find((request) => request.provider === 'bing')!;
@@ -272,11 +272,11 @@ test('普通文章由 Popup 翻译，支持进度、模式切换、动态更新�
   await popup.screenshot({ path: evidence('popup'), fullPage: true });
   await page.screenshot({ path: evidence('translated-fixture'), fullPage: true });
 
-  await popup.getByLabel('显示模式').selectOption('translation');
+  await popup.getByRole('button', { name: '双语对照' }).click();
   await clickPopupButton(popup, page, '显示原文');
   await clickPopupButton(popup, page, '翻译');
   await expect(page.locator('#first')).toBeHidden();
-  await popup.getByLabel('显示模式').selectOption('bilingual');
+  await popup.getByRole('button', { name: '仅译文' }).click();
   await clickPopupButton(popup, page, '显示原文');
   await clickPopupButton(popup, page, '翻译');
   await expect(page.locator('#first')).toBeVisible();

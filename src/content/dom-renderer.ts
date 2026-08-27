@@ -29,7 +29,9 @@ export class DomRenderer {
     const button = wrapper.ownerDocument.createElement('button');
     button.type = 'button';
     button.dataset.vastRetryAll = '';
-    button.textContent = '重试';
+    button.textContent = '↻';
+    button.title = '重试全部失败段落';
+    button.setAttribute('aria-label', '重试全部失败段落');
     button.addEventListener('click', () => wrapper.ownerDocument.dispatchEvent(new CustomEvent('vast-translator-retry-all')));
     wrapper.append(' ', button);
   }
