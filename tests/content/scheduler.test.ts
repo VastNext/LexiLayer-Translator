@@ -147,6 +147,7 @@ describe('VisibleFirstScheduler', () => {
     notify([{ target: visible.element, isIntersecting: true }, { target: offscreen.element, isIntersecting: false }]);
     await idle;
     expect(calls).toEqual([['visible']]);
+    expect(queue.waitingCount).toBe(1);
   });
 
   it('浏览器不支持 IntersectionObserver 时保守提交任务', async () => {

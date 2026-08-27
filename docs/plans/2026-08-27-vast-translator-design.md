@@ -2,7 +2,7 @@
 
 ## 目标
 
-开发一个性能优先的 Chrome Manifest V3 双语网页翻译插件。用户自行配置 OpenAI 兼容 API 的 Base URL、API Key 和模型，不依赖会员服务。MVP 支持网页翻译、双语/仅译文/恢复原文、动态页面、划词翻译、缓存、重试、右键菜单和 `Shift+Alt+A` 快捷键。
+开发一个性能优先的 Chrome Manifest V3 双语网页翻译插件。0.2.0 使用 Google 作为默认免费引擎、Bing 作为备用引擎，并允许最多 20 个自定义 AI 实例。MVP 支持网页翻译、双语/仅译文/恢复原文、动态页面、划词翻译、缓存、重试、右键菜单和 `Shift+Alt+A` 快捷键。
 
 ## 独立实现边界
 
@@ -15,10 +15,10 @@
 - Manifest V3 service worker：持有配置和 API Key，调用 OpenAI 兼容接口，执行重试、流解析、缓存与浏览器命令。
 - 原生 TypeScript content script：按需扫描 DOM、调度可见段落、插入译文、监听动态内容，并用 Shadow DOM 实现划词浮层。
 - React Popup：控制当前页面翻译状态、语言、显示模式、翻译范围和失败重试。
-- React 设置页：管理 API、默认语言、显示偏好、高级请求参数、缓存和无密钥配置导入导出。
+- React 设置页：启停并选择固定 Google/Bing，管理多个自定义 AI 的连接、密钥、默认项和排序，以及阅读偏好、缓存和 v2 无密钥配置导入导出。
 - IndexedDB：缓存成功译文；API Key 不进入缓存。
 
-API Key 只保存在 `chrome.storage.local`，不发送给 content script，不记录日志，不包含在导出配置中。后台不暴露任意 URL fetch，只接受固定结构的翻译请求。
+API Key 按自定义实例只保存在 `chrome.storage.local`，Options 仅获得 `hasApiKey`，密钥不发送给 content script、不记录日志、不包含在导出配置中。后台不暴露任意 URL fetch；连接测试只接受内置项或完整候选实例，不构成通用代理。
 
 ## 权限
 
@@ -28,7 +28,9 @@ API Key 只保存在 `chrome.storage.local`，不发送给 content script，不�
 
 内容脚本创建带 ID、源文本哈希和 DOM 版本的段落实体，优先翻译可见区域。每批最多 8 段、约 6000 字符，默认并发 3。后台通过 `/chat/completions` 请求带 ID 的 JSON 翻译结果，验证响应后返回纯文本。回填前再次检查任务 ID、节点连接状态和 DOM 版本，拒绝陈旧结果。
 
-网页翻译使用非流式 JSON；划词翻译优先使用 Chat Completions SSE 流，服务不支持时回退到非流式。429 和 5xx 最多重试两次，尊重 `Retry-After`。默认超时 45 秒。
+Google/Bing 网页与划词翻译均使用非流式响应；自定义 AI 网页翻译使用非流式 JSON，划词翻译优先使用 Chat Completions SSE 流，服务不支持时回退到非流式。429 和 5xx 最多重试两次，尊重 `Retry-After`；Google 429 会提示稍后重试或切换 Bing。默认超时 45 秒。
+
+v2 导入先验证无密钥、无危险字段、无重复 ID 和无保留 ID 伪装，再合并本地密钥。只有相同 ID 与相同 Origin 的自定义实例继承密钥；Origin 变化会清空密钥。旧版单实例配置首次读取时迁移为自定义 AI，默认引擎设为 Google。
 
 ## DOM 与动态页面
 

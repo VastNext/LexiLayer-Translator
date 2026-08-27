@@ -2,8 +2,15 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
+import enMessages from '../../public/_locales/en/messages.json';
+import zhMessages from '../../public/_locales/zh_CN/messages.json';
 
 describe('界面视觉契约', () => {
+  it('多引擎控件具备中英本地化标签', () => {
+    expect(zhMessages.translationEngine.message).toBe('翻译引擎');
+    expect(enMessages.translationEngine.message).toBe('Translation engine');
+  });
+
   it('仅使用暖白、墨黑与酸绿色，不引入额外强调色', () => {
     const css = readFileSync(resolve(import.meta.dirname, '../../src/ui.css'), 'utf8');
 

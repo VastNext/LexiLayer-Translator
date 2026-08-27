@@ -32,6 +32,7 @@ export const test = base.extend<ExtensionFixtures>({
   context: async ({ server }, use) => {
     const userDataDir = await mkdtemp(resolve(tmpdir(), 'vast-e2e-'));
     const extensionPath = resolve(import.meta.dirname, '../../dist');
+    const proxy = process.env.VAST_E2E_PROXY;
     const context = await chromium.launchPersistentContext(userDataDir, {
       channel: 'chromium',
       headless: false,
@@ -40,6 +41,7 @@ export const test = base.extend<ExtensionFixtures>({
         `--load-extension=${extensionPath}`,
         '--no-first-run',
         '--disable-default-apps',
+        ...(proxy ? [`--proxy-server=${proxy}`] : []),
       ],
     });
     await use(context);

@@ -1,8 +1,8 @@
 # Vast Translator
 
-Vast Translator 是一款 Manifest V3 Chrome 扩展，通过用户自行配置的 OpenAI 兼容 API 提供网页双语翻译和划词翻译。插件采用暖白纸张与酸绿色荧光标注的原创视觉，默认只在用户主动翻译后扫描页面。
+Vast Translator 是一款 Manifest V3 Chrome 扩展，通过内置翻译引擎或用户自行配置的 OpenAI 兼容 API 提供网页双语翻译和划词翻译。插件采用暖白纸张与酸绿色荧光标注的原创视觉，默认只在用户主动翻译后扫描页面。
 
-当前版本：`0.1.0`。
+当前版本：`0.2.0`。
 
 ## 功能
 
@@ -10,9 +10,11 @@ Vast Translator 是一款 Manifest V3 Chrome 扩展，通过用户自行配置�
 - 双语对照、仅译文两种显示模式
 - 译文可放在原文之前或之后
 - 划词 V 按钮与右键菜单翻译
-- SSE 流式划词结果，失败时自动使用非流式回退
+- Google 默认免费翻译、Bing 备用翻译，可启停并选择默认引擎
+- 最多添加 20 个自定义 AI 实例，独立管理名称、Base URL、模型、API Key、启停、连接测试与排序
+- 自定义 AI 支持 SSE 流式划词结果，失败时自动使用非流式回退；Google 和 Bing 返回单次结果
 - 可见内容优先调度、动态节点翻译和原文变化重译
-- OpenAI 兼容 API、模型与自定义翻译要求
+- OpenAI 兼容 API、模型与自定义翻译要求；自定义要求不作用于 Google/Bing
 - 30 天、最多 5000 条的 IndexedDB 本地翻译缓存
 - 简体中文和英文完整运行时界面本地化
 - `Shift+Alt+A` 快捷切换当前页面翻译
@@ -45,7 +47,11 @@ npm run build
 
 修改代码后重新运行构建，并在扩展管理页点击刷新。
 
-## API 配置示例
+## 引擎与 API 配置
+
+Google 是首次安装的默认引擎，Bing 是备用引擎，两者都不需要用户提供 API Key。遇到 Google `429` 限流时，请稍后重试或切换到 Bing。内置服务能力依赖其公开接口，可能因服务策略变化而不可用。
+
+Options 可保存多个自定义 AI。每个实例的 API Key 独立存储；编辑时 API Key 留空会保留同一实例、同一 Origin 的现有密钥。Base URL 的 Origin 变化会清除旧密钥，必须重新输入。连接测试只测试选定实例的固定翻译端点，不向网页提供通用网络代理。
 
 OpenAI 官方兼容配置：
 
@@ -76,15 +82,25 @@ API Key: 服务要求的值
 
 content script 初始只注册轻量消息与划词监听；站点规则详情、DOM 扫描和 MutationObserver 仅在首次页面翻译后启用。
 
+## 0.2.0 迁移
+
+首次读取旧版单一 OpenAI 配置时，扩展会迁移为一个 `迁移的自定义 AI` 实例，同时保留阅读偏好；默认引擎改为 Google。v2 配置导入导出支持内置项和多个自定义实例，但绝不导出 API Key。导入时只有 ID 和 Origin 都相同的本地实例会沿用本机密钥；重复 ID、保留 ID 伪装和含密钥文件会被拒绝。
+
+## 能力差异
+
+- Google：默认、免费、无需配置；页面和划词翻译均为非流式，可能返回 `429`。
+- Bing：备用、无需配置；页面和划词翻译均为非流式。
+- 自定义 AI：支持多个实例、模型与自定义翻译要求；划词优先流式，连接质量、费用和数据处理规则由所选服务决定。
+
 ## 权限理由
 
 - `storage`：在浏览器本地保存 API 配置和用户偏好。API Key 不返回给 content script 或网页。
 - `contextMenus`：提供“翻译页面”“恢复原文”和“翻译选中内容”菜单。
-- `<all_urls>`：在用户访问的网页中运行 content script，并向用户配置的 OpenAI 兼容 API 发起请求。插件不会提供通用网络代理接口。
+- `<all_urls>`：在用户访问的网页中运行 content script，并向 Google、Bing 或用户配置的 OpenAI 兼容 API 发起请求。插件不会提供通用网络代理接口；Options 的连接测试也只探测候选翻译实例。
 
 ## 隐私
 
-翻译时，用户主动选择的网页文本、目标语言、自定义翻译要求以及可选有限上下文会发送到用户配置的 API 服务。API Key 保存在 `chrome.storage.local`；页面进度保存在 `chrome.storage.session`；翻译缓存保存在扩展的 IndexedDB 中。配置导出不包含 API Key。
+翻译时，用户主动选择的网页文本、目标语言以及可选有限上下文会发送到当前引擎的数据端点；自定义翻译要求只发送给自定义 AI。API Key 保存在 `chrome.storage.local`；页面进度保存在 `chrome.storage.session`；翻译缓存保存在扩展的 IndexedDB 中。配置导出不包含 API Key。具体端点见 [PRIVACY.md](./PRIVACY.md)。
 
 详细说明见 [PRIVACY.md](./PRIVACY.md)。
 
@@ -98,7 +114,7 @@ content script 初始只注册轻量消息与划词监听；站点规则详情�
 
 ## MVP 范围
 
-0.1.0 聚焦网页与划词翻译、配置、安全消息边界、缓存和基础站点规则。当前不包含账号同步、云端配置、PDF 翻译、字幕翻译、术语库管理、自动整站翻译和 Chrome Web Store 发布流程。
+0.2.0 聚焦多引擎网页与划词翻译、安全的多实例配置、缓存和基础站点规则。当前不包含账号同步、云端配置、PDF 翻译、字幕翻译、术语库管理、自动整站翻译和 Chrome Web Store 发布流程。
 
 仓库中的闭源规则研究资料目录不纳入产品构建，也不应提交到版本库；发行版中的站点规则均为本项目原创实现。
 
@@ -116,6 +132,9 @@ npm run build
 
 # 真实 Chromium 扩展端到端测试
 npm run e2e
+
+# 独立外网验证；代理参数仅用于测试，不进入插件设置
+VAST_E2E_PROXY=http://127.0.0.1:7890 npm run e2e:network
 ```
 
 测试覆盖 Manifest、构建资源、配置安全、消息白名单、API 客户端、SSE、缓存、调度器、动态页面、DOM 恢复、划词控制器、Popup 和 Options。

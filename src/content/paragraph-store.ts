@@ -57,4 +57,8 @@ export class ParagraphStore {
     }
     return record;
   }
+
+  clear(): void {
+    this.nextId = 1;
+  }
 }

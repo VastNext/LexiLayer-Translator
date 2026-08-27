@@ -1,7 +1,7 @@
 export type Translator = (key: string, substitutions?: string | string[]) => string;
 
 const fallbackMessages: Record<string, string> = {
-  popupKicker: '双语校样台', popupCurrentPage: '当前页面', targetLanguage: '目标语言', translationScope: '翻译范围', displayMode: '显示模式',
+  popupKicker: '双语校样台', popupCurrentPage: '当前页面', translationEngine: '翻译引擎', targetLanguage: '目标语言', translationScope: '翻译范围', displayMode: '显示模式',
   mainContent: '主要内容', wholePage: '整个页面', bilingual: '双语对照', translationOnly: '仅译文', ready: '就绪',
   actionTranslatePage: '翻译当前页面', actionRestore: '恢复原文', actionRetry: '重试', actionSettings: '设置', statusTranslating: '翻译中…',
   statusStarted: '已开始翻译，关闭窗口不会中断', statusFailed: '翻译失败', statusPartial: '已完成 $1/$2，失败 $3',
@@ -18,6 +18,10 @@ const fallbackMessages: Record<string, string> = {
   statusConnectionTesting: '正在测试连接…', statusConnectionSuccess: '连接成功', statusConnectionFailed: '连接失败，请检查配置', statusSaved: '设置已保存', statusSaveFailed: '设置保存失败', cacheCleared: '缓存已清理',
   importReadFailed: '配置文件读取失败', importOriginChanged: 'Base URL 来源已变化，API Key 已清空，请重新输入 API Key', importReady: '配置已导入，请检查后保存', importInvalid: '配置文件无效', pageUnavailable: '无法访问当前页面',
   selectionTranslate: '翻译选中内容', selectionDialog: '划词翻译', actionClose: '关闭', actionCopy: '复制', limitedContextShort: '有限上下文', preparing: '准备翻译…',
+  builtinEngines: '内置翻译引擎', googleDefaultFree: '默认 · 免费', bingBackup: '备用', builtin: '内置', activeDefault: '当前默认', enabled: '启用', setDefault: '设为默认',
+  customAiEngines: '自定义 AI', customAiDescription: '可添加多个 OpenAI 兼容服务，每个实例独立保存连接与密钥。', engineName: '名称', saveEngine: '保存实例', moveUp: '上移', moveDown: '下移', deleteEngine: '删除实例', confirmDeleteEngine: '再次点击确认删除', confirmDeleteEngineAction: '确认删除实例', addCustomAi: '新增自定义 AI', newCustomAi: '自定义 AI',
+  engineOriginChanged: 'Base URL 来源已变化，旧 API Key 不会沿用，请重新输入 API Key。', instructionCustomOnly: '自定义翻译要求仅对自定义 AI 生效；Google 和 Bing 会忽略此项。', savePreferences: '保存阅读偏好',
+  statusEngineSaved: '实例已保存', statusEngineUpdated: '引擎状态已更新', statusActiveChanged: '默认引擎已更新', statusOrderSaved: '引擎顺序已保存', statusEngineDeleted: '实例已删除', importApplied: '配置已安全导入',
 };
 
 function substitute(message: string, substitutions?: string | string[]): string {

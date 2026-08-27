@@ -2,10 +2,11 @@ export interface CacheKeyInput {
   text: string;
   sourceLanguage: string;
   targetLanguage: string;
-  baseUrl: string;
-  model: string;
+  engineId: string;
+  engineFingerprint: string;
+  adapterVersion: string;
   promptVersion: string;
-  userInstruction: string;
+  effectiveInstruction: string;
 }
 
 export interface CacheEntry {
@@ -116,19 +117,16 @@ function normalizeText(text: string): string {
   return text.replace(/\r\n?/g, '\n').trim().replace(/[ \t]+/g, ' ');
 }
 
-function normalizeBaseUrl(baseUrl: string): string {
-  return baseUrl.trim().replace(/\/+$/, '');
-}
-
 export async function createCacheKey(input: CacheKeyInput): Promise<string> {
   const value = JSON.stringify([
     normalizeText(input.text),
     input.sourceLanguage,
     input.targetLanguage,
-    normalizeBaseUrl(input.baseUrl),
-    input.model,
+    input.engineId,
+    input.engineFingerprint,
+    input.adapterVersion,
     input.promptVersion,
-    normalizeText(input.userInstruction),
+    normalizeText(input.effectiveInstruction),
   ]);
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');

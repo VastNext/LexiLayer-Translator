@@ -3,14 +3,17 @@ import { createServer, type IncomingHttpHeaders, type Server } from 'node:http';
 export type ApiMode = 'success' | '401' | '429' | '500' | 'invalid-json' | 'invalid-sse' | 'delay';
 
 export interface RecordedRequest {
+  path: string;
   headers: IncomingHttpHeaders;
   body: Record<string, unknown>;
 }
 
 export interface MockServer {
+  origin: string;
   baseUrl: string;
   fixtureUrl: string;
   batchFixtureUrl: string;
+  networkFixtureUrl: string;
   requests: RecordedRequest[];
   hits: string[];
   maxConcurrency: () => number;
@@ -50,6 +53,22 @@ function segmentsFrom(body: Record<string, unknown>): Array<{ id: string; text: 
   }
 }
 
+function translateToChinese(text: string): string {
+  const translations: Record<string, string> = {
+    'Fixture article': '测试文章',
+    'Header must stay outside main scope.': '页眉也应被翻译。',
+    'First paragraph for translation.': '用于翻译的第一段。',
+    'Second paragraph for progress.': '用于进度测试的第二段。',
+    'Select this sentence with a real mouse gesture.': '请使用真实鼠标手势选择这句话。',
+    'Dynamically added paragraph.': '动态添加的段落。',
+    'Changed source paragraph.': '修改后的原文段落。',
+    'Offscreen paragraph': '屏幕外段落',
+  };
+  const visible = /^Visible paragraph (\d+)$/.exec(text);
+  if (visible) return `可见段落 ${visible[1]}`;
+  return translations[text] ?? `中文译文：${text}`;
+}
+
 export async function startMockServer(): Promise<MockServer> {
   let mode: ApiMode = 'success';
   let releaseDelay: (() => void) | undefined;
@@ -78,11 +97,16 @@ export async function startMockServer(): Promise<MockServer> {
     if (request.method === 'GET' && url.pathname === '/fixture-batch') {
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); response.end(batchFixtureHtml()); return;
     }
+    if (request.method === 'GET' && url.pathname === '/fixture-network') {
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      response.end('<!doctype html><html lang="en"><main><p id="hello">hello</p></main></html>');
+      return;
+    }
     if (request.method === 'GET' && url.pathname === '/favicon.ico') {
       response.writeHead(204).end();
       return;
     }
-    if (request.method !== 'POST' || url.pathname !== '/v1/chat/completions') {
+    if (request.method !== 'POST' || !url.pathname.endsWith('/v1/chat/completions')) {
       response.writeHead(404).end();
       return;
     }
@@ -90,7 +114,7 @@ export async function startMockServer(): Promise<MockServer> {
     const chunks: Buffer[] = [];
     for await (const chunk of request) chunks.push(Buffer.from(chunk));
     const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
-    requests.push({ headers: request.headers, body });
+    requests.push({ path: url.pathname, headers: request.headers, body });
     activeRequests += 1;
     maxConcurrency = Math.max(maxConcurrency, activeRequests);
     response.once('finish', () => { activeRequests -= 1; });
@@ -112,12 +136,12 @@ export async function startMockServer(): Promise<MockServer> {
     if (body.stream === true) {
       response.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
       if (mode === 'invalid-sse') { response.end('data: {invalid\n\n'); return; }
-      const translated = `译：${segments[0]?.text ?? ''}`;
+      const translated = translateToChinese(segments[0]?.text ?? '');
       response.write(`data: ${JSON.stringify({ choices: [{ delta: { content: translated } }] })}\n\n`);
       response.end('data: [DONE]\n\n');
       return;
     }
-    const content = JSON.stringify({ translations: segments.map(({ id, text }) => ({ id, text: `译：${text}` })) });
+    const content = JSON.stringify({ translations: segments.map(({ id, text }) => ({ id, text: translateToChinese(text) })) });
     response.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' });
     response.end(JSON.stringify({ choices: [{ message: { content } }] }));
   });
@@ -130,9 +154,11 @@ export async function startMockServer(): Promise<MockServer> {
   if (!address || typeof address === 'string') throw new Error('模拟服务器启动失败');
   const origin = `http://127.0.0.1:${address.port}`;
   return {
+    origin,
     baseUrl: `${origin}/v1`,
     fixtureUrl: `${origin}/fixture`,
     batchFixtureUrl: `${origin}/fixture-batch`,
+    networkFixtureUrl: `${origin}/fixture-network`,
     requests,
     hits,
     maxConcurrency: () => maxConcurrency,

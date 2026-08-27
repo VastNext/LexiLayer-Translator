@@ -14,7 +14,7 @@ function createDependencies(): ContentControllerDependencies & {
     scan: vi.fn(() => [document.querySelector('p') as HTMLElement]),
     translate: vi.fn(async ({ segments }: TranslationRequest) => segments.map((segment) => ({ id: segment.id, text: `译:${segment.text}` }))),
     cancel: vi.fn(async () => undefined),
-    getConfig: vi.fn(async () => ({ targetLanguage: 'zh-Hant', displayMode: 'translation', translationPosition: 'before' as const, scanScope: 'whole-page' as const })),
+    getConfig: vi.fn(async () => ({ preferences: { targetLanguage: 'zh-Hant', displayMode: 'translation', translationPosition: 'before' as const, scanScope: 'whole-page' as const }, activeEngineId: 'google', availableEngines: [] })),
     getPageLanguage: vi.fn(() => document.documentElement.lang),
     showSelectionText: vi.fn(),
     schedule: vi.fn(async (items, worker) => {
@@ -22,11 +22,13 @@ function createDependencies(): ContentControllerDependencies & {
       for (const item of items) try { await worker(item); } catch (error) { failures.push({ item, error }); }
       return failures;
     }),
+    hasWaiting: vi.fn(() => false),
     renderLoading: vi.fn(),
     beginRender: vi.fn((paragraph) => ({ taskId: `render:${paragraph.id}`, expectedVersion: paragraph.version })),
     renderTranslation: vi.fn(),
     renderError: vi.fn(),
     restore: vi.fn(),
+    cleanupPage: vi.fn(),
     startObserver: vi.fn(),
     stopObserver: vi.fn(),
     report: vi.fn(),
@@ -155,14 +157,14 @@ describe('网页翻译控制器', () => {
 
   it('auto 目标先按 Chrome 配置解析，再避开页面语言冲突', async () => {
     document.documentElement.lang = 'en-US';
-    vi.mocked(dependencies.getConfig).mockResolvedValue({ targetLanguage: 'auto', displayMode: 'bilingual', translationPosition: 'after', scanScope: 'main-content' });
+    vi.mocked(dependencies.getConfig).mockResolvedValue({ preferences: { targetLanguage: 'auto', displayMode: 'bilingual', translationPosition: 'after', scanScope: 'main-content' }, activeEngineId: 'google', availableEngines: [] });
     await dependencies.listeners[0]({ type: 'translate-page' });
     expect(dependencies.translate).toHaveBeenCalledWith(expect.objectContaining({ sourceLanguage: 'en', targetLanguage: 'zh-Hans' }));
   });
 
   it('运行时规范化 documentElement.lang 后再选择非同语种目标', async () => {
     document.documentElement.lang = '  EN-us  ';
-    vi.mocked(dependencies.getConfig).mockResolvedValue({ targetLanguage: 'en', displayMode: 'bilingual', translationPosition: 'after', scanScope: 'main-content' });
+    vi.mocked(dependencies.getConfig).mockResolvedValue({ preferences: { targetLanguage: 'en', displayMode: 'bilingual', translationPosition: 'after', scanScope: 'main-content' }, activeEngineId: 'google', availableEngines: [] });
 
     await dependencies.listeners[0]({ type: 'translate-page' });
 
@@ -197,6 +199,17 @@ describe('网页翻译控制器', () => {
     expect(dependencies.translate).toHaveBeenCalledWith(expect.objectContaining({ segments: [expect.objectContaining({ text: 'changed' })] }));
   });
 
+  it('任务启动时固定 engineId，动态段落和 retry 沿用原引擎', async () => {
+    await dependencies.listeners[0]({ type: 'translate-page', engineId: 'bing', targetLanguage: 'ja' });
+    const observer = vi.mocked(dependencies.startObserver).mock.calls[0][3];
+    const added = document.createElement('p'); added.textContent = 'dynamic'; document.body.append(added);
+    await observer({ added: [added], invalidated: [] });
+    await dependencies.listeners[0]({ type: 'retry-page-translation' });
+
+    expect(vi.mocked(dependencies.translate).mock.calls.map(([request]) => request.engineId)).toEqual(['bing', 'bing', 'bing']);
+    expect(dependencies.report).toHaveBeenCalledWith(expect.objectContaining({ engineId: 'bing' }));
+  });
+
   it('observer 空变更批次不覆盖已完成进度', async () => {
     await dependencies.listeners[0]({ type: 'translate-page' });
     const reportsBefore = vi.mocked(dependencies.report).mock.calls.length;
@@ -207,17 +220,19 @@ describe('网页翻译控制器', () => {
 
   it('初始离屏段落后来进入视口并完成时更新 complete 进度', async () => {
     let deferredWorker!: () => Promise<void>;
+    let waiting = true;
+    vi.mocked(dependencies.hasWaiting).mockImplementation(() => waiting);
     vi.mocked(dependencies.schedule).mockImplementation(async (items, worker) => {
-      deferredWorker = () => worker(items.flat());
+      deferredWorker = async () => { waiting = false; await worker(items.flat()); };
       return [];
     });
 
     await dependencies.listeners[0]({ type: 'translate-page' });
-    expect(dependencies.report).toHaveBeenLastCalledWith({ status: 'complete', completed: 0, failed: 0, total: 1 });
+    expect(dependencies.report).toHaveBeenLastCalledWith({ status: 'translating', completed: 0, failed: 0, total: 1, engineId: 'google' });
 
     await deferredWorker();
 
-    expect(dependencies.report).toHaveBeenLastCalledWith({ status: 'complete', completed: 1, failed: 0, total: 1 });
+    expect(dependencies.report).toHaveBeenLastCalledWith({ status: 'complete', completed: 1, failed: 0, total: 1, engineId: 'google' });
     const finalReports = vi.mocked(dependencies.report).mock.calls.filter(([progress]) => progress.completed === 1);
     expect(finalReports).toHaveLength(1);
   });
@@ -252,7 +267,7 @@ describe('网页翻译控制器', () => {
 
     expect(dependencies.renderTranslation).toHaveBeenCalledTimes(1);
     expect(dependencies.renderError).toHaveBeenCalledTimes(1);
-    expect(dependencies.report).toHaveBeenLastCalledWith({ status: 'partial', completed: 1, failed: 1, total: 2 });
+    expect(dependencies.report).toHaveBeenLastCalledWith({ status: 'partial', completed: 1, failed: 1, total: 2, engineId: 'google' });
   });
 
   it('restore 恢复所有段落并停止 observer', async () => {
@@ -356,12 +371,12 @@ describe('网页翻译控制器', () => {
     let resolveOldConfig!: (value: Awaited<ReturnType<ContentControllerDependencies['getConfig']>>) => void;
     vi.mocked(dependencies.getConfig)
       .mockReturnValueOnce(new Promise((resolve) => { resolveOldConfig = resolve; }))
-      .mockResolvedValueOnce({ targetLanguage: 'de', displayMode: 'bilingual', translationPosition: 'after', scanScope: 'main-content' });
+      .mockResolvedValueOnce({ preferences: { targetLanguage: 'de', displayMode: 'bilingual', translationPosition: 'after', scanScope: 'main-content' }, activeEngineId: 'google', availableEngines: [] });
 
     const oldCommand = dependencies.listeners[0]({ type: 'translate-page', targetLanguage: 'ja' });
     const newCommand = dependencies.listeners[0]({ type: 'translate-page', targetLanguage: 'de' });
     await newCommand;
-    resolveOldConfig({ targetLanguage: 'ja', displayMode: 'bilingual', translationPosition: 'after', scanScope: 'main-content' });
+    resolveOldConfig({ preferences: { targetLanguage: 'ja', displayMode: 'bilingual', translationPosition: 'after', scanScope: 'main-content' }, activeEngineId: 'google', availableEngines: [] });
     await oldCommand;
 
     expect(dependencies.translate).toHaveBeenCalledOnce();

@@ -18,9 +18,15 @@ interface PageCommand {
   source?: string;
   text?: string;
   placement?: 'before' | 'after';
+  engineId?: string;
 }
 
-interface PublicConfig { targetLanguage: string; displayMode: string; translationPosition: 'before' | 'after'; scanScope: ScanScope }
+interface PublicEngine { id: string; kind: string; name: string; ready: boolean; capabilities: { streaming: boolean } }
+interface PublicConfig {
+  preferences: { targetLanguage: string; displayMode: string; translationPosition: 'before' | 'after'; scanScope: ScanScope };
+  activeEngineId: string;
+  availableEngines: PublicEngine[];
+}
 interface ObserverChanges { added: HTMLElement[]; invalidated: ParagraphRecord[]; removed?: ParagraphRecord[] }
 
 export interface ProgressState {
@@ -28,23 +34,26 @@ export interface ProgressState {
   completed: number;
   failed: number;
   total: number;
+  engineId?: string;
 }
 
 export interface ContentControllerDependencies {
   addMessageListener(listener: (message: unknown) => Promise<unknown>): void;
   loadRule(): Promise<SiteRule>;
   scan(rule: SiteRule, scope: ScanScope): HTMLElement[];
-  translate(request: TranslationRequest & { taskId: string }): Promise<TranslationResult[]>;
+  translate(request: TranslationRequest & { taskId: string; engineId: string }): Promise<TranslationResult[]>;
   cancel(taskId: string): Promise<void>;
   getConfig(): Promise<PublicConfig>;
   getPageLanguage(): string;
   showSelectionText(text: string): void;
   schedule(items: ParagraphRecord[][], worker: (paragraphs: ParagraphRecord[]) => Promise<void>): Promise<SchedulerFailure<ParagraphRecord[]>[]>;
+  hasWaiting(): boolean;
   beginRender(paragraph: ParagraphRecord): { taskId: string; expectedVersion: number };
   renderLoading(paragraph: ParagraphRecord): void;
   renderTranslation(paragraph: ParagraphRecord, translation: string, options: { mode: TranslationMode; placement?: 'before' | 'after'; taskId: string; expectedVersion: number }): void;
   renderError(paragraph: ParagraphRecord, error: string): void;
   restore(paragraph: ParagraphRecord): void;
+  cleanupPage(): void;
   startObserver(rule: SiteRule, store: ParagraphStore, scope: ScanScope, onChanges: (changes: ObserverChanges) => Promise<void>): void;
   stopObserver(): void;
   report(progress: ProgressState): void;
@@ -66,8 +75,8 @@ export function createContentController(dependencies: ContentControllerDependenc
   let lastProgressKey = '';
 
   function report(status: ProgressState['status'], completed = 0, failed = 0): void {
-    const progress = { status, completed, failed, total: paragraphs.size };
-    const key = `${status}:${completed}:${failed}:${progress.total}`;
+    const progress = { status, completed, failed, total: paragraphs.size, ...(lastCommand.engineId ? { engineId: lastCommand.engineId } : {}) };
+    const key = `${status}:${completed}:${failed}:${progress.total}:${progress.engineId ?? ''}`;
     if (key === lastProgressKey) return;
     lastProgressKey = key;
     dependencies.report(progress);
@@ -76,21 +85,23 @@ export function createContentController(dependencies: ContentControllerDependenc
   function reportCurrent(): void {
     const completed = completedIds.size;
     const failed = failedIds.size;
-    report(failed ? completed ? 'partial' : 'error' : 'complete', completed, failed);
+    report(dependencies.hasWaiting() ? 'translating' : failed ? completed ? 'partial' : 'error' : 'complete', completed, failed);
   }
 
   async function resolveCommand(command: PageCommand): Promise<PageCommand> {
     const config = await dependencies.getConfig();
+    const preferences = config.preferences;
     const sourceLanguage = normalizeLanguage(command.sourceLanguage ?? (dependencies.getPageLanguage() || 'auto'));
-    const preferred = command.targetLanguage ?? config.targetLanguage;
-    const targetLanguage = chooseTargetLanguage(sourceLanguage, preferred === 'auto' ? (config.targetLanguage === 'auto' ? 'en' : config.targetLanguage) : preferred);
+    const preferred = command.targetLanguage ?? preferences.targetLanguage;
+    const targetLanguage = chooseTargetLanguage(sourceLanguage, preferred === 'auto' ? (preferences.targetLanguage === 'auto' ? 'en' : preferences.targetLanguage) : preferred);
     return {
       ...command,
       sourceLanguage,
       targetLanguage,
-      mode: command.mode ?? (config.displayMode === 'translation' ? 'translation-only' : 'bilingual'),
-      placement: command.placement ?? config.translationPosition,
-      scope: command.scope ?? config.scanScope,
+      mode: command.mode ?? (preferences.displayMode === 'translation' ? 'translation-only' : 'bilingual'),
+      placement: command.placement ?? preferences.translationPosition,
+      scope: command.scope ?? preferences.scanScope,
+      engineId: command.engineId ?? config.activeEngineId,
     };
   }
 
@@ -111,7 +122,7 @@ export function createContentController(dependencies: ContentControllerDependenc
       if (currentGeneration !== generation) return;
       const tokens = new Map(paragraphs.map((paragraph) => [paragraph.id, dependencies.beginRender(paragraph)]));
       const results = await dependencies.translate({
-        taskId, sourceLanguage: lastCommand.sourceLanguage ?? 'auto',
+        taskId, engineId: lastCommand.engineId!, sourceLanguage: lastCommand.sourceLanguage ?? 'auto',
         targetLanguage: lastCommand.targetLanguage!, segments: paragraphs.map((paragraph) => ({ id: paragraph.id, text: paragraph.sourceText })),
       });
       if (currentGeneration !== generation) return;
@@ -146,6 +157,7 @@ export function createContentController(dependencies: ContentControllerDependenc
     dependencies.stopObserver();
     if (activeTaskId) await dependencies.cancel(activeTaskId);
     for (const paragraph of paragraphs.values()) dependencies.restore(paragraph);
+    dependencies.cleanupPage();
     paragraphs.clear();
     completedIds.clear();
     failedIds.clear();
@@ -165,6 +177,8 @@ export function createContentController(dependencies: ContentControllerDependenc
     if (currentGeneration !== generation) return;
     lastCommand = { ...lastCommand, ...command, type: 'translate-page' };
     for (const paragraph of paragraphs.values()) dependencies.restore(paragraph);
+    paragraphs.clear();
+    store.clear();
     completedIds.clear();
     failedIds.clear();
     const taskId = `page-${currentGeneration}`;
@@ -254,7 +268,7 @@ export function createRuntimeDependencies(): ContentControllerDependencies {
     async cancel(taskId) { await chrome.runtime.sendMessage({ type: 'cancel-task', taskId }); },
     async getConfig() {
       const response = await chrome.runtime.sendMessage({ type: 'get-public-config' }) as { data?: PublicConfig };
-      return response.data ?? { targetLanguage: 'en', displayMode: 'bilingual', translationPosition: 'after', scanScope: 'main-content' };
+       return response.data ?? { preferences: { targetLanguage: 'en', displayMode: 'bilingual', translationPosition: 'after', scanScope: 'main-content' }, activeEngineId: 'google', availableEngines: [] };
     },
     getPageLanguage: () => document.documentElement.lang || 'auto',
     showSelectionText: () => undefined,
@@ -265,11 +279,20 @@ export function createRuntimeDependencies(): ContentControllerDependencies {
       visibility.add(items.flat());
       return visibility.whenIdle();
     },
+    hasWaiting: () => [...visibilityQueues].some((queue) => queue.waitingCount > 0),
     beginRender: (paragraph) => renderer.beginTask(paragraph),
     renderLoading: (paragraph) => renderer.renderLoading(paragraph),
     renderTranslation: (paragraph, text, options) => renderer.renderTranslation(paragraph, text, { ...options, placement: options.placement ?? 'after' }),
     renderError: (paragraph, error) => renderer.renderError(paragraph, error),
     restore: (paragraph) => renderer.restore(paragraph),
+    cleanupPage() {
+      for (const wrapper of document.querySelectorAll<HTMLElement>('[data-vast-translator]')) wrapper.remove();
+      for (const source of document.querySelectorAll<HTMLElement>('[data-vast-source]')) {
+        source.hidden = false;
+        source.replaceWith(...source.childNodes);
+      }
+      for (const hidden of document.querySelectorAll<HTMLElement>('[data-vast-original-hidden]')) hidden.hidden = false;
+    },
     startObserver(rule, store, scope, onChanges) {
       observer?.stop();
       observer = new DynamicPageObserver(document.body, {
@@ -300,5 +323,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.id) {
   const selection = registerSelectionController();
   const dependencies = createRuntimeDependencies();
   dependencies.showSelectionText = (text) => selection.showText(text);
-  createContentController(dependencies).register();
+  const controller = createContentController(dependencies);
+  controller.register();
+  document.addEventListener('vast-translator-retry-all', () => { void controller.onMessage({ type: 'retry-page-translation' }); });
 }

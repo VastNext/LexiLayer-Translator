@@ -193,6 +193,10 @@ export class ParagraphVisibilityBatchQueue<T extends VisibleParagraph> {
     this.observer = factory?.((entries) => this.onIntersection(entries));
   }
 
+  get waitingCount(): number {
+    return this.waiting.size;
+  }
+
   add(items: T[]): void {
     for (const item of items) {
       if (this.waiting.has(item.element)) continue;

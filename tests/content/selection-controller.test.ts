@@ -50,7 +50,7 @@ class TestSelectionView implements SelectionViewHandle {
     this.host.dataset.vastSelectionHost = '';
     this.host.innerHTML = `
       <button aria-label="翻译选中内容">V</button>
-      <section role="dialog"><select name="target-language"><option value="zh-Hans">简体中文</option><option value="en">English</option><option value="ja">日本語</option></select>
+      <section role="dialog"><select name="engine"><option value="google">Google</option><option value="bing">Bing</option><option value="custom-work">工作接口</option></select><select name="target-language"><option value="zh-Hans">简体中文</option><option value="en">English</option><option value="ja">日本語</option></select>
       <input name="include-context" type="checkbox" checked><div data-result></div>
       <button data-action="copy">复制</button><button data-action="retry">重试</button></section>`;
     this.host.querySelector('[aria-label="翻译选中内容"]')?.addEventListener('click', () => this.requestTranslation());
@@ -69,6 +69,11 @@ class TestSelectionView implements SelectionViewHandle {
     (this.host.querySelector('[name="target-language"]') as HTMLSelectElement).value = language;
   }
   setIncludeContext(includeContext: boolean): void { (this.host.querySelector('[name="include-context"]') as HTMLInputElement).checked = includeContext; }
+  setEngines(engines: Array<{ id: string; name: string; ready: boolean }>, activeEngineId: string): void {
+    const select = this.host.querySelector('[name="engine"]') as HTMLSelectElement;
+    for (const option of [...select.options]) option.disabled = engines.find((engine) => engine.id === option.value)?.ready === false;
+    select.value = activeEngineId;
+  }
   setResult(value: string): void {
     this.result = value;
     this.host.querySelector('[data-result]')!.textContent = value;
@@ -78,7 +83,7 @@ class TestSelectionView implements SelectionViewHandle {
   remove(): void { this.host.remove(); }
   private requestTranslation(): void {
     const includeContext = (this.host.querySelector('[name="include-context"]') as HTMLInputElement).checked;
-    this.actions.translate(this.language, includeContext);
+    this.actions.translate(this.language, includeContext, (this.host.querySelector('[name="engine"]') as HTMLSelectElement).value);
   }
 }
 
@@ -98,7 +103,7 @@ function createDependencies(): SelectionDependencies & {
     translateFallback: vi.fn(async () => '非流式译文'),
     cancelFallback: vi.fn(async () => undefined),
     copy: vi.fn(async () => undefined),
-    getPublicConfig: vi.fn(async () => ({ targetLanguage: 'zh-Hans', selectionContext: true })),
+    getPublicConfig: vi.fn(async () => ({ targetLanguage: 'zh-Hans', selectionContext: true, activeEngineId: 'google', engines: [{ id: 'google', kind: 'google', name: 'Google', ready: true, capabilities: { streaming: false } }, { id: 'bing', kind: 'bing', name: 'Bing', ready: true, capabilities: { streaming: false } }, { id: 'custom-work', kind: 'custom-ai', name: '工作接口', ready: true, capabilities: { streaming: true } }] })),
     events: eventSource,
     createView: (_rect, actions) => new TestSelectionView(actions),
   };
@@ -213,28 +218,87 @@ describe('划词翻译控制器', () => {
     expect(dependencies.port.postMessage).toHaveBeenLastCalledWith(expect.objectContaining({ context: undefined }));
   });
 
-  it('流式累积，流式失败时回退非流式翻译', async () => {
+  it('流式累积，custom 流式失败时回退非流式翻译', async () => {
     dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
     register();
     trustedMouseUp();
+    await vi.waitFor(() => expect(dependencies.getPublicConfig).toHaveBeenCalled());
+    (view().querySelector('[name="engine"]') as HTMLSelectElement).value = 'custom-work';
     (view().querySelector('[aria-label="翻译选中内容"]') as HTMLButtonElement).click();
     dependencies.port.emit({ type: 'selection-chunk', chunk: '你' });
     dependencies.port.emit({ type: 'selection-chunk', chunk: '好' });
     expect(view().querySelector('[data-result]')?.textContent).toBe('你好');
 
-    dependencies.port.emit({ type: 'selection-error', error: '流式响应格式无效' });
+    dependencies.port.emit({ type: 'selection-error', canFallback: true, error: '流式响应格式无效' });
     await vi.waitFor(() => expect(view().querySelector('[data-result]')?.textContent).toBe('非流式译文'));
   });
 
-  it('requestId 隔离旧流和旧 fallback，并把 context 与 AbortSignal 传给回退', async () => {
+  it('引擎选择固定在 port、fallback 与 cancel 链路，内置引擎错误不 fallback', async () => {
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
+    register(); trustedMouseUp();
+    await vi.waitFor(() => expect(dependencies.getPublicConfig).toHaveBeenCalled());
+    const engine = view().querySelector('[name="engine"]') as HTMLSelectElement;
+    engine.value = 'bing';
+    (view().querySelector('[aria-label="翻译选中内容"]') as HTMLButtonElement).click();
+    expect(dependencies.port.postMessage).toHaveBeenCalledWith(expect.objectContaining({ engineId: 'bing' }));
+    dependencies.port.emit({ type: 'selection-error', engineId: 'bing', canFallback: false, error: 'Bing 失败' });
+    expect(dependencies.translateFallback).not.toHaveBeenCalled();
+    expect(view().querySelector('[data-result]')).toHaveTextContent('Bing 失败');
+
+    trustedMouseUp(view());
+    engine.value = 'custom-work';
+    (view().querySelector('[data-action="retry"]') as HTMLButtonElement).click();
+    const customRequest = vi.mocked(dependencies.port.postMessage).mock.calls.at(-1)![0] as { requestId: string };
+    dependencies.port.emit({ type: 'selection-error', requestId: customRequest.requestId, engineId: 'custom-work', canFallback: true, error: '流式格式错误' });
+    await vi.waitFor(() => expect(dependencies.translateFallback).toHaveBeenCalledWith(customRequest.requestId, 'Hello', expect.any(String), 'Hello selection context', 'custom-work', expect.any(AbortSignal)));
+    controller.close();
+    expect(dependencies.cancelFallback).toHaveBeenCalledWith(customRequest.requestId, 'custom-work');
+  });
+
+  it('custom 只有 canFallback=true 才回退，否则结束 loading、显示错误且可重试', async () => {
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
+    register(); trustedMouseUp();
+    await vi.waitFor(() => expect(dependencies.getPublicConfig).toHaveBeenCalled());
+    (view().querySelector('[name="engine"]') as HTMLSelectElement).value = 'custom-work';
+    (view().querySelector('[aria-label="翻译选中内容"]') as HTMLButtonElement).click();
+    const first = vi.mocked(dependencies.port.postMessage).mock.calls.at(-1)![0] as { requestId: string };
+
+    dependencies.port.emit({ type: 'selection-error', requestId: first.requestId, engineId: 'custom-work', error: '流式失败' });
+
+    expect(dependencies.translateFallback).not.toHaveBeenCalled();
+    expect(view().querySelector('[data-result]')).toHaveTextContent('流式失败');
+    trustedMouseUp(view());
+    (view().querySelector('[data-action="retry"]') as HTMLButtonElement).click();
+    expect(vi.mocked(dependencies.port.postMessage).mock.calls.filter(([message]) => (message as { type?: string }).type === 'translate-selection')).toHaveLength(2);
+  });
+
+  it('custom fallback 失败后结束 loading 并显示可重试错误', async () => {
+    vi.mocked(dependencies.translateFallback).mockRejectedValue(new Error('fallback failed'));
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
+    register(); trustedMouseUp();
+    await vi.waitFor(() => expect(dependencies.getPublicConfig).toHaveBeenCalled());
+    (view().querySelector('[name="engine"]') as HTMLSelectElement).value = 'custom-work';
+    (view().querySelector('[aria-label="翻译选中内容"]') as HTMLButtonElement).click();
+
+    dependencies.port.emit({ type: 'selection-error', engineId: 'custom-work', canFallback: true, error: '流式失败' });
+
+    await vi.waitFor(() => expect(view().querySelector('[data-result]')).toHaveTextContent('翻译失败，请重试'));
+    trustedMouseUp(view());
+    (view().querySelector('[data-action="retry"]') as HTMLButtonElement).click();
+    expect(vi.mocked(dependencies.port.postMessage).mock.calls.filter(([message]) => (message as { type?: string }).type === 'translate-selection')).toHaveLength(2);
+  });
+
+  it('requestId 隔离旧流和旧 fallback，并把 engine/context/AbortSignal 传给回退', async () => {
     let resolveFallback!: (value: string) => void;
     vi.mocked(dependencies.translateFallback).mockReturnValue(new Promise((resolve) => { resolveFallback = resolve; }));
     dependencies.selection = selectionFor(document.querySelector('#text')!, 'first');
     register(); trustedMouseUp();
+    await vi.waitFor(() => expect(dependencies.getPublicConfig).toHaveBeenCalled());
+    (view().querySelector('[name="engine"]') as HTMLSelectElement).value = 'custom-work';
     (view().querySelector('[aria-label="翻译选中内容"]') as HTMLButtonElement).click();
     const firstRequest = vi.mocked(dependencies.port.postMessage).mock.calls[0][0] as { requestId: string };
-    dependencies.port.emit({ type: 'selection-error', requestId: firstRequest.requestId, error: '失败' });
-    expect(dependencies.translateFallback).toHaveBeenCalledWith(firstRequest.requestId, 'first', expect.any(String), 'Hello selection context', expect.any(AbortSignal));
+    dependencies.port.emit({ type: 'selection-error', requestId: firstRequest.requestId, canFallback: true, error: '失败' });
+    expect(dependencies.translateFallback).toHaveBeenCalledWith(firstRequest.requestId, 'first', expect.any(String), 'Hello selection context', 'custom-work', expect.any(AbortSignal));
 
     trustedMouseUp(view());
     (view().querySelector('[data-action="retry"]') as HTMLButtonElement).click();
@@ -244,6 +308,31 @@ describe('划词翻译控制器', () => {
     resolveFallback('旧回退');
     await Promise.resolve();
     expect(view().querySelector('[data-result]')?.textContent).toBe('新');
+  });
+
+  it('重试前使用旧 requestId 取消流和 fallback，并先中止本地 fallback', async () => {
+    let oldSignal: AbortSignal | undefined;
+    vi.mocked(dependencies.translateFallback).mockImplementation((_requestId, _text, _target, _context, _engine, signal) => {
+      oldSignal = signal;
+      return new Promise(() => undefined);
+    });
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
+    register(); trustedMouseUp();
+    await vi.waitFor(() => expect(dependencies.getPublicConfig).toHaveBeenCalled());
+    (view().querySelector('[name="engine"]') as HTMLSelectElement).value = 'custom-work';
+    (view().querySelector('[aria-label="翻译选中内容"]') as HTMLButtonElement).click();
+    const firstRequest = vi.mocked(dependencies.port.postMessage).mock.calls[0][0] as { requestId: string };
+    dependencies.port.emit({ type: 'selection-error', requestId: firstRequest.requestId, engineId: 'custom-work', canFallback: true, error: '流式失败' });
+    await vi.waitFor(() => expect(oldSignal).toBeDefined());
+
+    trustedMouseUp(view());
+    (view().querySelector('[data-action="retry"]') as HTMLButtonElement).click();
+
+    expect(oldSignal?.aborted).toBe(true);
+    expect(dependencies.port.postMessage).toHaveBeenCalledWith({ type: 'cancel-selection', requestId: firstRequest.requestId });
+    expect(dependencies.cancelFallback).toHaveBeenCalledWith(firstRequest.requestId, 'custom-work');
+    const secondRequest = vi.mocked(dependencies.port.postMessage).mock.calls.at(-1)![0] as { requestId: string };
+    expect(secondRequest.requestId).not.toBe(firstRequest.requestId);
   });
 
   it('支持复制、重试和目标语言切换', async () => {
@@ -271,7 +360,7 @@ describe('划词翻译控制器', () => {
     expect(document.querySelector('[data-vast-selection-host]')).toBeNull();
     expect(dependencies.port.disconnect).toHaveBeenCalled();
     expect(dependencies.port.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'cancel-selection', requestId: expect.any(String) }));
-    expect(dependencies.cancelFallback).toHaveBeenCalledWith(expect.any(String));
+    expect(dependencies.cancelFallback).toHaveBeenCalledWith(expect.any(String), 'google');
 
     dependencies.selection = selectionFor(document.querySelector('#text')!, 'Again');
     trustedMouseUp();
@@ -334,8 +423,25 @@ describe('划词翻译视图隔离', () => {
     const t: Translator = (key) => ({ selectionTranslate: 'Translate selection', selectionDialog: 'Selection translation', actionClose: 'Close', actionCopy: 'Copy', actionRetry: 'Retry' }[key] ?? key);
     const view = new SelectionView(document, new DOMRect(0, 0, 10, 10), { translate: vi.fn(), copy: vi.fn(), close: vi.fn() }, t);
     expect(root!.querySelector('[aria-label="Translate selection"]')).not.toBeNull();
-    expect([...root!.querySelectorAll('option')].map((option) => option.value)).toContain('it');
-    expect([...root!.querySelectorAll('option')].map((option) => option.value)).toEqual(SUPPORTED_LANGUAGES);
+    const languages = [...root!.querySelectorAll<HTMLOptionElement>('[name="target-language"] option')].map((option) => option.value);
+    expect(languages).toContain('it');
+    expect(languages).toEqual(SUPPORTED_LANGUAGES);
+    view.remove();
+  });
+
+  it('划词引擎选项清晰标识默认免费、备用、AI 和未就绪状态', () => {
+    let root: ShadowRoot | undefined;
+    const original = Element.prototype.attachShadow;
+    vi.spyOn(HTMLElement.prototype, 'attachShadow').mockImplementation(function (this: HTMLElement, options) { root = original.call(this, options); return root; });
+    const view = new SelectionView(document, new DOMRect(0, 0, 10, 10), { translate: vi.fn(), copy: vi.fn(), close: vi.fn() });
+    view.setEngines([
+      { id: 'google', kind: 'google', name: 'Google', ready: true },
+      { id: 'bing', kind: 'bing', name: 'Bing', ready: true },
+      { id: 'custom-work', kind: 'custom-ai', name: '工作接口', ready: false },
+    ], 'google');
+    const options = [...root!.querySelectorAll<HTMLOptionElement>('[name="engine"] option')];
+    expect(options.map((option) => option.textContent)).toEqual(['Google · 默认 · 免费', 'Bing · 备用', '工作接口 · AI · 未配置']);
+    expect(options[2].disabled).toBe(true);
     view.remove();
   });
 

@@ -1,8 +1,15 @@
 import { languageOptions } from '../shared/languages';
-import { createTranslator, type Translator } from '../shared/i18n';
+import type { Translator } from '../shared/i18n';
+import { engineDisplayName } from '../shared/config';
+
+const selectionMessages: Record<string, string> = {
+  selectionTranslate: '翻译选中内容', selectionDialog: '划词翻译', translationEngine: '翻译引擎', targetLanguage: '目标语言',
+  limitedContextShort: '有限上下文', actionClose: '关闭', preparing: '准备翻译…', actionCopy: '复制', actionRetry: '重试',
+};
+const selectionTranslator: Translator = (key) => selectionMessages[key] ?? key;
 
 export interface SelectionViewActions {
-  translate(targetLanguage: string, includeContext: boolean): void;
+  translate(targetLanguage: string, includeContext: boolean, engineId: string): void;
   copy(): void;
   close(): void;
 }
@@ -13,6 +20,7 @@ export interface SelectionViewHandle {
   open(targetLanguage: string): void;
   setTargetLanguage(targetLanguage: string): void;
   setIncludeContext(includeContext: boolean): void;
+  setEngines(engines: Array<{ id: string; kind: string; name: string; ready: boolean }>, activeEngineId: string): void;
   setResult(value: string): void;
   appendResult(chunk: string): void;
   getResult(): string;
@@ -28,7 +36,7 @@ export class SelectionView {
   private readonly expectedWidth = 32;
   private readonly expectedHeight = 32;
 
-  constructor(document: Document, rect: DOMRect, private readonly actions: SelectionViewActions, private readonly t: Translator = createTranslator()) {
+  constructor(document: Document, rect: DOMRect, private readonly actions: SelectionViewActions, private readonly t: Translator = selectionTranslator) {
     this.host = document.createElement('div');
     this.host.dataset.vastSelectionHost = '';
     this.host.dataset.vastState = 'ready';
@@ -42,8 +50,8 @@ export class SelectionView {
       <style>
         :host{all:initial;font-family:Inter,ui-sans-serif,system-ui,sans-serif;color:#17201d}
         button,select,input{font:inherit}button{cursor:pointer}
-        .trigger{width:32px;height:32px;border:0;border-radius:11px;background:#176b52;color:white;font-weight:800;box-shadow:0 8px 24px #052e2460}
-        .panel{display:none;width:320px;margin-top:6px;padding:14px;border:1px solid #c8d8d1;border-radius:16px;background:#f8fbf9;box-shadow:0 18px 50px #10251d35}
+        .trigger{width:32px;height:32px;border:0;border-radius:11px;background:#176b52;color:white;font-weight:800}
+        .panel{display:none;width:320px;padding:14px;border:1px solid #c8d8d1;border-radius:16px;background:#f8fbf9;box-shadow:0 18px 50px #10251d35}
         .panel.open{display:block}.top,.actions{display:flex;gap:8px;align-items:center}.top{justify-content:space-between}
         .result{min-height:64px;margin:12px 0;padding:10px;border-radius:10px;background:white;white-space:pre-wrap}
         .actions button{border:1px solid #b8ccc4;border-radius:8px;background:white;padding:6px 9px}
@@ -52,6 +60,7 @@ export class SelectionView {
       <button class="trigger" aria-label="${this.t('selectionTranslate')}">V</button>
       <section class="panel" role="dialog" aria-label="${this.t('selectionDialog')}">
         <div class="top">
+          <select name="engine" aria-label="${this.t('translationEngine')}"><option value="google">Google</option><option value="bing">Bing</option></select>
           <select name="target-language" aria-label="${this.t('targetLanguage')}">
             ${languageOptions.filter(({ value }) => value !== 'auto').map(({ value, label }) => `<option value="${value}">${label}</option>`).join('')}
           </select>
@@ -79,6 +88,17 @@ export class SelectionView {
 
   setIncludeContext(includeContext: boolean): void {
     (this.shadow.querySelector('[name="include-context"]') as HTMLInputElement).checked = includeContext;
+  }
+
+  setEngines(engines: Array<{ id: string; kind: string; name: string; ready: boolean }>, activeEngineId: string): void {
+    const select = this.shadow.querySelector('[name="engine"]') as HTMLSelectElement;
+    select.replaceChildren(...engines.map((engine) => {
+      const option = this.host.ownerDocument.createElement('option');
+      option.value = engine.id; option.disabled = !engine.ready; option.textContent = engineDisplayName(engine as Parameters<typeof engineDisplayName>[0]);
+      return option;
+    }));
+    select.value = activeEngineId;
+    this.host.dataset.vastReady = '';
   }
 
   setResult(value: string): void {
@@ -116,6 +136,9 @@ export class SelectionView {
     this.shadow.querySelector('[name="target-language"]')?.addEventListener('change', (event) => {
       if (event.isTrusted) this.requestTranslation();
     });
+    this.shadow.querySelector('[name="engine"]')?.addEventListener('change', (event) => {
+      if (event.isTrusted) this.requestTranslation();
+    });
   }
 
   private isTrustedGeometry(event: MouseEvent): boolean {
@@ -137,6 +160,7 @@ export class SelectionView {
     const language = (this.shadow.querySelector('[name="target-language"]') as HTMLSelectElement).value;
     const context = (this.shadow.querySelector('[name="include-context"]') as HTMLInputElement).checked;
     this.setResult('');
-    this.actions.translate(language, context);
+    const engineId = (this.shadow.querySelector('[name="engine"]') as HTMLSelectElement).value;
+    this.actions.translate(language, context, engineId);
   }
 }
