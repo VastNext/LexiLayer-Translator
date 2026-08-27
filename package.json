@@ -7,6 +7,7 @@
     "build": "vite build",
     "e2e": "playwright test --grep-invert @network",
     "e2e:network": "playwright test tests/e2e/network.spec.ts",
+    "e2e:switchyomega": "playwright test tests/e2e/network.spec.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

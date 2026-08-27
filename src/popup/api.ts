@@ -15,6 +15,7 @@ interface PopupChromeApi {
     query(queryInfo: chrome.tabs.QueryInfo): Promise<Array<{ id?: number; url?: string; active?: boolean }>>;
     sendMessage(tabId: number, message: unknown): Promise<unknown>;
   };
+  scripting?: { executeScript(injection: { target: { tabId: number }; files: string[] }): Promise<unknown> };
   i18n: { getMessage(key: string): string };
 }
 
@@ -70,7 +71,18 @@ export function createPopupApi(api: PopupChromeApi) {
     async sendToPage(message: unknown) {
       const tabId = await activeTabId();
       if (tabId === undefined) throw new Error(createTranslator(api.i18n.getMessage.bind(api.i18n))('pageUnavailable'));
-      return api.tabs.sendMessage(tabId, message);
+      try {
+        return await api.tabs.sendMessage(tabId, message);
+      } catch (error) {
+        const text = error instanceof Error ? error.message : String(error);
+        if (!/Receiving end does not exist|Could not establish connection/i.test(text) || !api.scripting) throw error;
+        try {
+          await api.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
+          return await api.tabs.sendMessage(tabId, message);
+        } catch {
+          throw new Error('当前页面暂时无法注入翻译脚本，请刷新页面后重试');
+        }
+      }
     },
     openOptions: () => void api.runtime.openOptionsPage(),
     async getProgress() {

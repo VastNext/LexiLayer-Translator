@@ -82,3 +82,23 @@ describe('精简 Popup', () => {
     expect(screen.getByRole('button', { name: '仅译文' })).toBeInTheDocument();
   });
 });
+
+describe('Popup 消息恢复', () => {
+  it('接收端不存在时注入 content.js 并重试一次', async () => {
+    const sendMessage = vi.fn()
+      .mockRejectedValueOnce(new Error('Could not establish connection. Receiving end does not exist.'))
+      .mockResolvedValueOnce({ ok: true });
+    const executeScript = vi.fn(async () => undefined);
+    const { createPopupApi } = await import('../../src/popup/api');
+    const api = createPopupApi({
+      runtime: { id: 'extension-id', sendMessage: vi.fn(), openOptionsPage: vi.fn(), onMessage: { addListener: vi.fn(), removeListener: vi.fn() } },
+      tabs: { getCurrent: vi.fn(async () => undefined), query: vi.fn(async () => [{ id: 7, active: true, url: 'https://example.com' }]), sendMessage },
+      scripting: { executeScript },
+      i18n: { getMessage: vi.fn(() => '') },
+    });
+
+    await expect(api.sendToPage({ type: 'translate-page' })).resolves.toEqual({ ok: true });
+    expect(executeScript).toHaveBeenCalledWith({ target: { tabId: 7 }, files: ['content.js'] });
+    expect(sendMessage).toHaveBeenCalledTimes(2);
+  });
+});

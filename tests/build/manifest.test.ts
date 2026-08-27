@@ -6,7 +6,7 @@ describe('manifest', () => {
   it('声明完整的 Manifest V3 入口、权限与快捷键', () => {
     expect(manifest.manifest_version).toBe(3);
     expect(manifest.host_permissions).toContain('<all_urls>');
-    expect(manifest.permissions).toEqual(expect.arrayContaining(['storage', 'contextMenus']));
+    expect(manifest.permissions).toEqual(expect.arrayContaining(['storage', 'contextMenus', 'scripting']));
     expect(manifest.action?.default_popup).toBe('popup.html');
     expect(manifest.options_page).toBe('options.html');
     expect(manifest.background?.service_worker).toBe('background.js');
