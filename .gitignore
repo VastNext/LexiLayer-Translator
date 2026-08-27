@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+test-results/
+playwright-report/
+tests/evidence/*.txt
+tests/evidence/task13-*
+*.log
+.env
+.env.*
+research/private-reference/
