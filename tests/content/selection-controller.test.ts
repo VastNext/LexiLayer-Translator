@@ -1,0 +1,437 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { createSelectionController, registerSelectionController, type SelectionDependencies } from '../../src/content/selection-controller';
+import { SelectionView, type SelectionViewActions, type SelectionViewHandle } from '../../src/content/selection-view';
+import { SUPPORTED_LANGUAGES } from '../../src/shared/languages';
+import type { Translator } from '../../src/shared/i18n';
+
+function selectionFor(element: Element, text: string): Selection {
+  return {
+    toString: () => text,
+    rangeCount: 1,
+    getRangeAt: () => ({
+      commonAncestorContainer: element.firstChild ?? element,
+      getBoundingClientRect: () => ({ left: 10, right: 50, top: 10, bottom: 30, width: 40, height: 20, x: 10, y: 10, toJSON() {} }),
+    }),
+  } as unknown as Selection;
+}
+
+function createPort() {
+  const messageListeners: Array<(message: unknown) => void> = [];
+  const disconnectListeners: Array<() => void> = [];
+  let requestId: string | undefined;
+  const port = {
+    postMessage: vi.fn((message: unknown) => { requestId = (message as { requestId?: string }).requestId; }),
+    disconnect: vi.fn(() => disconnectListeners.forEach((listener) => listener())),
+    onMessage: { addListener: (listener: (message: unknown) => void) => messageListeners.push(listener) },
+    onDisconnect: { addListener: (listener: () => void) => disconnectListeners.push(listener) },
+    emit: (message: unknown) => messageListeners.forEach((listener) => listener({ requestId, ...(message as object) })),
+  };
+  return port;
+}
+
+function createEventSource() {
+  const listeners = new Map<string, EventListener>();
+  return {
+    addEventListener: vi.fn((type: string, listener: EventListenerOrEventListenerObject) => {
+      listeners.set(type, listener as EventListener);
+    }),
+    removeEventListener: vi.fn((type: string) => listeners.delete(type)),
+    emit(type: string, event: Event) { listeners.get(type)?.(event); },
+  };
+}
+
+class TestSelectionView implements SelectionViewHandle {
+  readonly host = document.createElement('div');
+  private result = '';
+  private language = 'en';
+
+  constructor(private readonly actions: SelectionViewActions) {
+    this.host.dataset.vastSelectionHost = '';
+    this.host.innerHTML = `
+      <button aria-label="翻译选中内容">V</button>
+      <section role="dialog"><select name="target-language"><option value="zh-Hans">简体中文</option><option value="en">English</option><option value="ja">日本語</option></select>
+      <input name="include-context" type="checkbox" checked><div data-result></div>
+      <button data-action="copy">复制</button><button data-action="retry">重试</button></section>`;
+    this.host.querySelector('[aria-label="翻译选中内容"]')?.addEventListener('click', () => this.requestTranslation());
+    this.host.querySelector('[data-action="retry"]')?.addEventListener('click', () => this.requestTranslation());
+    this.host.querySelector('[data-action="copy"]')?.addEventListener('click', () => actions.copy());
+    this.host.querySelector('[name="target-language"]')?.addEventListener('change', (event) => {
+      this.language = (event.target as HTMLSelectElement).value;
+      this.requestTranslation();
+    });
+  }
+
+  mount(): void { document.body.append(this.host); }
+  open(language: string): void { this.setTargetLanguage(language); }
+  setTargetLanguage(language: string): void {
+    this.language = language;
+    (this.host.querySelector('[name="target-language"]') as HTMLSelectElement).value = language;
+  }
+  setIncludeContext(includeContext: boolean): void { (this.host.querySelector('[name="include-context"]') as HTMLInputElement).checked = includeContext; }
+  setResult(value: string): void {
+    this.result = value;
+    this.host.querySelector('[data-result]')!.textContent = value;
+  }
+  appendResult(chunk: string): void { this.setResult(this.result + chunk); }
+  getResult(): string { return this.result; }
+  remove(): void { this.host.remove(); }
+  private requestTranslation(): void {
+    const includeContext = (this.host.querySelector('[name="include-context"]') as HTMLInputElement).checked;
+    this.actions.translate(this.language, includeContext);
+  }
+}
+
+function createDependencies(): SelectionDependencies & {
+  port: ReturnType<typeof createPort>;
+  selection: Selection | null;
+  eventSource: ReturnType<typeof createEventSource>;
+} {
+  const port = createPort();
+  const eventSource = createEventSource();
+  return {
+    port,
+    eventSource,
+    selection: null,
+    getSelection() { return this.selection; },
+    connect: vi.fn(() => port),
+    translateFallback: vi.fn(async () => '非流式译文'),
+    cancelFallback: vi.fn(async () => undefined),
+    copy: vi.fn(async () => undefined),
+    getPublicConfig: vi.fn(async () => ({ targetLanguage: 'zh-Hans', selectionContext: true })),
+    events: eventSource,
+    createView: (_rect, actions) => new TestSelectionView(actions),
+  };
+}
+
+function view(): HTMLElement {
+  return document.querySelector<HTMLElement>('[data-vast-selection-host]')!;
+}
+
+describe('划词翻译控制器', () => {
+  let dependencies: ReturnType<typeof createDependencies>;
+  let controller: ReturnType<typeof createSelectionController>;
+
+  beforeEach(() => {
+    document.body.innerHTML = '<p id="text">Hello selection context</p><input value="secret"><div id="edit" contenteditable="true">editable</div>';
+    dependencies = createDependencies();
+  });
+
+  afterEach(() => {
+    controller?.dispose();
+    vi.restoreAllMocks();
+  });
+
+  function register(): void {
+    controller = createSelectionController(dependencies);
+    controller.register();
+  }
+
+  function trustedMouseUp(target?: EventTarget): void {
+    dependencies.eventSource.emit('mouseup', { isTrusted: true, target } as unknown as MouseEvent);
+  }
+
+  it('普通选区显示原创 V 按钮，点击后创建 Shadow DOM 浮层', async () => {
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
+    register();
+    trustedMouseUp();
+    expect(view().querySelector('[aria-label="翻译选中内容"]')?.textContent).toBe('V');
+
+    (view().querySelector('[aria-label="翻译选中内容"]') as HTMLButtonElement).click();
+    expect(view().querySelector('[role="dialog"]')).not.toBeNull();
+    expect(dependencies.port.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'translate-selection', text: 'Hello' }));
+  });
+
+  it('拒绝脚本派发的不可信 mouseup', () => {
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
+    register();
+
+    dependencies.eventSource.emit('mouseup', new MouseEvent('mouseup'));
+
+    expect(document.querySelector('[data-vast-selection-host]')).toBeNull();
+  });
+
+  it('可信 mouseup 产生的翻译授权只能消费一次', () => {
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
+    register();
+    trustedMouseUp();
+    const trigger = view().querySelector('[aria-label="翻译选中内容"]') as HTMLButtonElement;
+
+    trigger.click();
+    trigger.click();
+
+    expect(dependencies.connect).toHaveBeenCalledOnce();
+    expect(dependencies.port.postMessage).toHaveBeenCalledOnce();
+  });
+
+  it('可信 mouseup 产生的翻译授权过期后不可消费', () => {
+    let now = 1_000;
+    dependencies.now = () => now;
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
+    register();
+    trustedMouseUp();
+    now += 1_501;
+
+    (view().querySelector('[aria-label="翻译选中内容"]') as HTMLButtonElement).click();
+
+    expect(dependencies.connect).not.toHaveBeenCalled();
+    expect(dependencies.port.postMessage).not.toHaveBeenCalled();
+  });
+
+  it('拒绝超过 5000 字及 input、textarea、contenteditable 和 password 内选区', () => {
+    register();
+    for (const [selector, text] of [
+      ['#text', 'x'.repeat(5001)],
+      ['input', 'secret'],
+      ['#edit', 'editable'],
+    ]) {
+      dependencies.selection = selectionFor(document.querySelector(selector)!, text);
+      trustedMouseUp();
+      expect(document.querySelector('[data-vast-selection-host]')).toBeNull();
+    }
+  });
+
+  it('输入框 mouseup 不复用页面中遗留的普通文本选区', () => {
+    register();
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'old page selection');
+
+    trustedMouseUp(document.querySelector('input')!);
+
+    expect(document.querySelector('[data-vast-selection-host]')).toBeNull();
+  });
+
+  it('有限上下文开关只发送邻近上下文且可关闭', () => {
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'selection');
+    register();
+    trustedMouseUp();
+    (view().querySelector('[aria-label="翻译选中内容"]') as HTMLButtonElement).click();
+    expect(dependencies.port.postMessage).toHaveBeenLastCalledWith(expect.objectContaining({ context: 'Hello selection context' }));
+
+    (view().querySelector('[name="include-context"]') as HTMLInputElement).click();
+    trustedMouseUp(view());
+    (view().querySelector('[data-action="retry"]') as HTMLButtonElement).click();
+    expect(dependencies.port.postMessage).toHaveBeenLastCalledWith(expect.objectContaining({ context: undefined }));
+  });
+
+  it('流式累积，流式失败时回退非流式翻译', async () => {
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
+    register();
+    trustedMouseUp();
+    (view().querySelector('[aria-label="翻译选中内容"]') as HTMLButtonElement).click();
+    dependencies.port.emit({ type: 'selection-chunk', chunk: '你' });
+    dependencies.port.emit({ type: 'selection-chunk', chunk: '好' });
+    expect(view().querySelector('[data-result]')?.textContent).toBe('你好');
+
+    dependencies.port.emit({ type: 'selection-error', error: '流式响应格式无效' });
+    await vi.waitFor(() => expect(view().querySelector('[data-result]')?.textContent).toBe('非流式译文'));
+  });
+
+  it('requestId 隔离旧流和旧 fallback，并把 context 与 AbortSignal 传给回退', async () => {
+    let resolveFallback!: (value: string) => void;
+    vi.mocked(dependencies.translateFallback).mockReturnValue(new Promise((resolve) => { resolveFallback = resolve; }));
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'first');
+    register(); trustedMouseUp();
+    (view().querySelector('[aria-label="翻译选中内容"]') as HTMLButtonElement).click();
+    const firstRequest = vi.mocked(dependencies.port.postMessage).mock.calls[0][0] as { requestId: string };
+    dependencies.port.emit({ type: 'selection-error', requestId: firstRequest.requestId, error: '失败' });
+    expect(dependencies.translateFallback).toHaveBeenCalledWith(firstRequest.requestId, 'first', expect.any(String), 'Hello selection context', expect.any(AbortSignal));
+
+    trustedMouseUp(view());
+    (view().querySelector('[data-action="retry"]') as HTMLButtonElement).click();
+    const secondRequest = vi.mocked(dependencies.port.postMessage).mock.calls.at(-1)![0] as { requestId: string };
+    dependencies.port.emit({ type: 'selection-chunk', requestId: firstRequest.requestId, chunk: '旧' });
+    dependencies.port.emit({ type: 'selection-chunk', requestId: secondRequest.requestId, chunk: '新' });
+    resolveFallback('旧回退');
+    await Promise.resolve();
+    expect(view().querySelector('[data-result]')?.textContent).toBe('新');
+  });
+
+  it('支持复制、重试和目标语言切换', async () => {
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
+    register();
+    trustedMouseUp();
+    (view().querySelector('[aria-label="翻译选中内容"]') as HTMLButtonElement).click();
+    dependencies.port.emit({ type: 'selection-chunk', chunk: '译文' });
+    (view().querySelector('[data-action="copy"]') as HTMLButtonElement).click();
+    await vi.waitFor(() => expect(dependencies.copy).toHaveBeenCalledWith('译文'));
+
+    const language = view().querySelector('[name="target-language"]') as HTMLSelectElement;
+    language.value = 'ja';
+    trustedMouseUp();
+    language.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(dependencies.port.postMessage).toHaveBeenLastCalledWith(expect.objectContaining({ targetLanguage: 'ja' }));
+  });
+
+  it('Escape、外部点击和新选区都会中止并关闭旧浮层', () => {
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
+    register();
+    trustedMouseUp();
+    (view().querySelector('[aria-label="翻译选中内容"]') as HTMLButtonElement).click();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(document.querySelector('[data-vast-selection-host]')).toBeNull();
+    expect(dependencies.port.disconnect).toHaveBeenCalled();
+    expect(dependencies.port.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'cancel-selection', requestId: expect.any(String) }));
+    expect(dependencies.cancelFallback).toHaveBeenCalledWith(expect.any(String));
+
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'Again');
+    trustedMouseUp();
+    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    expect(document.querySelector('[data-vast-selection-host]')).toBeNull();
+  });
+});
+
+describe('划词翻译真实注册接线', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('注册入口把 chrome.i18n 英文翻译器注入真实 SelectionView', () => {
+    let root: ShadowRoot | undefined;
+    const original = Element.prototype.attachShadow;
+    vi.spyOn(HTMLElement.prototype, 'attachShadow').mockImplementation(function (this: HTMLElement, options) {
+      root = original.call(this, options);
+      return root;
+    });
+    const messages: Record<string, string> = {
+      selectionTranslate: 'Translate selection',
+      selectionDialog: 'Selection translation',
+      actionClose: 'Close',
+      actionCopy: 'Copy',
+      actionRetry: 'Retry',
+    };
+    vi.stubGlobal('chrome', {
+      runtime: { connect: vi.fn(), sendMessage: vi.fn(async () => ({ data: {} })) },
+      i18n: { getMessage: vi.fn((key: string) => messages[key] ?? key) },
+    });
+    const controller = registerSelectionController();
+
+    controller.showText('Hello');
+
+    expect(root!.querySelector('[aria-label="Translate selection"]')).not.toBeNull();
+    controller.dispose();
+    vi.unstubAllGlobals();
+  });
+});
+
+describe('划词翻译视图隔离', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('使用 closed shadow，网页无法读取翻译结果', () => {
+    const attachShadow = vi.spyOn(HTMLElement.prototype, 'attachShadow');
+    const view = new SelectionView(document, new DOMRect(0, 0, 10, 10), {
+      translate: vi.fn(), copy: vi.fn(), close: vi.fn(),
+    });
+    view.mount();
+
+    expect(view.host.shadowRoot).toBeNull();
+    expect(attachShadow).toHaveBeenCalledWith({ mode: 'closed' });
+    view.remove();
+    attachShadow.mockRestore();
+  });
+
+  it('划词视图支持英文核心标签和完整语言列表', () => {
+    let root: ShadowRoot | undefined;
+    const original = Element.prototype.attachShadow;
+    vi.spyOn(HTMLElement.prototype, 'attachShadow').mockImplementation(function (this: HTMLElement, options) { root = original.call(this, options); return root; });
+    const t: Translator = (key) => ({ selectionTranslate: 'Translate selection', selectionDialog: 'Selection translation', actionClose: 'Close', actionCopy: 'Copy', actionRetry: 'Retry' }[key] ?? key);
+    const view = new SelectionView(document, new DOMRect(0, 0, 10, 10), { translate: vi.fn(), copy: vi.fn(), close: vi.fn() }, t);
+    expect(root!.querySelector('[aria-label="Translate selection"]')).not.toBeNull();
+    expect([...root!.querySelectorAll('option')].map((option) => option.value)).toContain('it');
+    expect([...root!.querySelectorAll('option')].map((option) => option.value)).toEqual(SUPPORTED_LANGUAGES);
+    view.remove();
+  });
+
+  it('拒绝脚本触发的不可信翻译按钮 click', () => {
+    const translate = vi.fn();
+    let capturedRoot: ShadowRoot | undefined;
+    const original = Element.prototype.attachShadow;
+    vi.spyOn(HTMLElement.prototype, 'attachShadow').mockImplementation(function (this: HTMLElement, options) {
+      capturedRoot = original.call(this, options);
+      return capturedRoot;
+    });
+    const view = new SelectionView(document, new DOMRect(0, 0, 10, 10), {
+      translate, copy: vi.fn(), close: vi.fn(),
+    });
+
+    (capturedRoot!.querySelector('[aria-label="翻译选中内容"]') as HTMLButtonElement).click();
+
+    expect(translate).not.toHaveBeenCalled();
+    view.remove();
+  });
+
+  it('宿主视觉或位置被篡改时拒绝可信点击授权', () => {
+    const translate = vi.fn();
+    let capturedRoot: ShadowRoot | undefined;
+    let clickListener: EventListener | undefined;
+    const original = Element.prototype.attachShadow;
+    vi.spyOn(HTMLElement.prototype, 'attachShadow').mockImplementation(function (this: HTMLElement, options) { capturedRoot = original.call(this, options); return capturedRoot; });
+    const addEventListener = HTMLElement.prototype.addEventListener;
+    vi.spyOn(HTMLElement.prototype, 'addEventListener').mockImplementation(function (this: HTMLElement, type, listener, options) {
+      if (this.classList.contains('trigger') && type === 'click') clickListener = listener as EventListener;
+      return addEventListener.call(this, type, listener, options);
+    });
+    const view = new SelectionView(document, new DOMRect(10, 10, 20, 20), { translate, copy: vi.fn(), close: vi.fn() });
+    view.mount();
+    view.host.style.setProperty('opacity', '0', 'important');
+    expect(capturedRoot!.querySelector('.trigger')).not.toBeNull();
+    clickListener?.({ isTrusted: true, clientX: 31, clientY: 31 } as unknown as MouseEvent);
+    expect(translate).not.toHaveBeenCalled();
+  });
+
+  it('宿主点击安全相关样式全部使用内联 important', () => {
+    const view = new SelectionView(document, new DOMRect(10, 10, 20, 20), {
+      translate: vi.fn(), copy: vi.fn(), close: vi.fn(),
+    });
+    for (const property of ['position', 'z-index', 'left', 'top', 'opacity', 'visibility', 'display', 'pointer-events', 'transform']) {
+      expect(view.host.style.getPropertyPriority(property), property).toBe('important');
+    }
+  });
+
+  it('真实几何与命中栈正常时接受可信点击', () => {
+    const translate = vi.fn();
+    const close = vi.fn();
+    let capturedRoot: ShadowRoot | undefined;
+    let clickListener: EventListener | undefined;
+    const original = Element.prototype.attachShadow;
+    vi.spyOn(HTMLElement.prototype, 'attachShadow').mockImplementation(function (this: HTMLElement, options) { capturedRoot = original.call(this, options); return capturedRoot; });
+    const addEventListener = HTMLElement.prototype.addEventListener;
+    vi.spyOn(HTMLElement.prototype, 'addEventListener').mockImplementation(function (this: HTMLElement, type, listener, options) {
+      if (this.classList.contains('trigger') && type === 'click') clickListener = listener as EventListener;
+      return addEventListener.call(this, type, listener, options);
+    });
+    const view = new SelectionView(document, new DOMRect(10, 10, 20, 20), { translate, copy: vi.fn(), close });
+    vi.spyOn(view.host, 'getBoundingClientRect').mockReturnValue(new DOMRect(30, 30, 32, 32));
+    Object.defineProperty(document, 'elementsFromPoint', { configurable: true, value: vi.fn(() => [view.host]) });
+    view.mount();
+
+    clickListener?.({ isTrusted: true, clientX: 31, clientY: 31 } as unknown as MouseEvent);
+
+    expect(translate).toHaveBeenCalledOnce();
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['opacity', '0', new DOMRect(30, 30, 32, 32)],
+    ['transform', 'matrix(1, 0, 0, 1, 10, 0)', new DOMRect(30, 30, 32, 32)],
+    ['left', '80px', new DOMRect(80, 30, 32, 32)],
+    ['width', '96px', new DOMRect(30, 30, 96, 32)],
+  ])('拒绝 %s 篡改并关闭浮层', (property, value, attackedRect) => {
+    const translate = vi.fn();
+    const close = vi.fn();
+    let clickListener: EventListener | undefined;
+    const addEventListener = HTMLElement.prototype.addEventListener;
+    vi.spyOn(HTMLElement.prototype, 'addEventListener').mockImplementation(function (this: HTMLElement, type, listener, options) {
+      if (this.classList.contains('trigger') && type === 'click') clickListener = listener as EventListener;
+      return addEventListener.call(this, type, listener, options);
+    });
+    const view = new SelectionView(document, new DOMRect(10, 10, 20, 20), { translate, copy: vi.fn(), close });
+    const rect = vi.spyOn(view.host, 'getBoundingClientRect').mockReturnValue(new DOMRect(30, 30, 32, 32));
+    Object.defineProperty(document, 'elementsFromPoint', { configurable: true, value: vi.fn(() => [view.host]) });
+    view.mount();
+    view.host.style.setProperty(property, value, 'important');
+    rect.mockReturnValue(attackedRect);
+
+    clickListener?.({ isTrusted: true, clientX: attackedRect.left + 1, clientY: attackedRect.top + 1 } as unknown as MouseEvent);
+
+    expect(translate).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledOnce();
+  });
+});
