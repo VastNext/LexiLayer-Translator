@@ -1,38 +1,55 @@
 import { useEffect, useState } from 'react';
 import { BrandMark } from '../BrandMark';
-import { languageOptions } from '../shared/languages';
+import { engineDisplayName } from '../shared/config';
 import { createTranslator, type Translator } from '../shared/i18n';
+import { languageOptions } from '../shared/languages';
+import type { PopupConfigResponse } from './api';
+
+interface Progress { status: string; completed: number; failed: number; total: number }
 
 export interface PopupApi {
-  getConfig(): Promise<{ targetLanguage: string; displayMode: string }>;
+  getConfig(): Promise<PopupConfigResponse>;
+  savePreferences?(preferences: NonNullable<PopupConfigResponse['preferences']>): Promise<void>;
+  setActiveEngine?(engineId: string): Promise<void>;
   sendToPage(message: unknown): Promise<unknown>;
   openOptions(): void;
-  getProgress(): Promise<{ status: string; completed: number; failed: number; total: number } | undefined>;
-  subscribeProgress(listener: (progress: { status: string; completed: number; failed: number; total: number }) => void): (() => void) | Promise<() => void>;
+  getProgress(): Promise<Progress | undefined>;
+  subscribeProgress(listener: (progress: Progress) => void): (() => void) | Promise<() => void>;
 }
 
+const fallbackPreferences: NonNullable<PopupConfigResponse['preferences']> = {
+  targetLanguage: 'zh-Hans', displayMode: 'bilingual', scanScope: 'whole-page' as const,
+  translationPosition: 'after' as const, userInstruction: '', selectionContext: true,
+};
+
 export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: Translator }) {
-  const [targetLanguage, setTargetLanguage] = useState('en');
-  const [scope, setScope] = useState('main-content');
-  const [mode, setMode] = useState('bilingual');
+  const [preferences, setPreferences] = useState(fallbackPreferences);
+  const [engineId, setEngineId] = useState('google');
+  const [engines, setEngines] = useState<Array<{ id: string; kind: string; name: string; ready: boolean }>>([
+    { id: 'google', kind: 'google', name: 'Google', ready: true },
+    { id: 'bing', kind: 'bing', name: 'Bing', ready: true },
+  ]);
   const [status, setStatus] = useState(t('ready'));
   const [busy, setBusy] = useState(false);
+  const [pageActive, setPageActive] = useState(false);
 
   useEffect(() => {
     let disposed = false;
     let unsubscribe: (() => void) | undefined;
     void api.getConfig().then((config) => {
       if (disposed) return;
-      setTargetLanguage(config.targetLanguage);
-      setMode(config.displayMode === 'translation' ? 'translation-only' : config.displayMode);
-    });
-    void api.getProgress().then((progress) => { if (!disposed && progress) setStatus(formatProgress(progress)); });
-    void Promise.resolve(api.subscribeProgress((progress) => setStatus(formatProgress(progress))))
-      .then((cleanup) => { if (disposed) cleanup(); else unsubscribe = cleanup; });
+      if (config.preferences) setPreferences(config.preferences);
+      setEngineId(config.activeEngineId ?? 'google');
+      if (config.availableEngines?.length) setEngines(config.availableEngines);
+    }).catch((error) => setStatus(error instanceof Error ? error.message : t('statusFailed')));
+    void api.getProgress().then((progress) => { if (!disposed && progress) applyProgress(progress); }).catch(() => undefined);
+    void Promise.resolve(api.subscribeProgress((progress) => applyProgress(progress)))
+      .then((cleanup) => { if (disposed) cleanup(); else unsubscribe = cleanup; })
+      .catch(() => undefined);
     return () => { disposed = true; unsubscribe?.(); };
   }, [api]);
 
-  function formatProgress(progress: { status: string; completed: number; failed: number; total: number }): string {
+  function formatProgress(progress: Progress): string {
     if (progress.status === 'partial') return t('statusPartial', [String(progress.completed), String(progress.total), String(progress.failed)]);
     if (progress.status === 'translating') return t('statusProgress', [String(progress.completed), String(progress.total)]);
     if (progress.status === 'error') return t('statusError', [String(progress.failed), String(progress.total)]);
@@ -40,50 +57,56 @@ export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: T
     return t('ready');
   }
 
-  async function translate(): Promise<void> {
-    setStatus(t('statusTranslating'));
-    setBusy(true);
-    try {
-      await api.sendToPage({ type: 'translate-page', scope, mode, targetLanguage });
-      let progress = await api.getProgress();
-      for (let attempt = 0; progress?.status === 'translating' && attempt < 10; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 50));
-        progress = await api.getProgress();
-      }
-      setStatus((current) => progress ? formatProgress(progress) : current === t('statusTranslating') ? t('statusStarted') : current);
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : t('statusFailed'));
-    } finally {
-      setBusy(false);
-    }
+  function applyProgress(progress: Progress): void {
+    setStatus(formatProgress(progress));
+    setPageActive(progress.status !== 'idle' && progress.total > 0);
   }
 
-  const state = busy ? 'loading' : /失败|错误/.test(status) ? 'error' : 'ready';
-  return <main className="shell popup">
-    <header className="masthead">
-      <div className="brand-lockup"><BrandMark /><div><h1>Vast Translator</h1><p className="kicker">{t('popupKicker')}</p></div></div>
-      <span className="version">v0.1</span>
+  async function savePreferences(next: typeof preferences): Promise<void> {
+    setPreferences(next);
+    try { await api.savePreferences?.(next); }
+    catch (error) { setStatus(error instanceof Error ? error.message : t('statusFailed')); }
+  }
+
+  async function togglePage(): Promise<void> {
+    setBusy(true);
+    try {
+      if (pageActive) {
+        await api.sendToPage({ type: 'restore-page' });
+        setPageActive(false);
+        setStatus(t('ready'));
+      } else {
+        await api.sendToPage({
+          type: 'translate-page', engineId, scope: preferences.scanScope,
+          mode: preferences.displayMode === 'translation' ? 'translation-only' : 'bilingual',
+          targetLanguage: preferences.targetLanguage,
+        });
+        setPageActive(true);
+      }
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : t('statusFailed'));
+    } finally { setBusy(false); }
+  }
+
+  return <main className="shell popup popup--compact">
+    <header className="popup-toolbar">
+      <div className="brand-lockup"><BrandMark /><strong>Vast Translator</strong></div>
+      <button className="icon-button" aria-label={t('actionSettings')} title={t('actionSettings')} onClick={api.openOptions}>⚙</button>
     </header>
-    <section className="panel panel--marked" aria-labelledby="page-settings"><div className="section-header"><h2 id="page-settings">{t('popupCurrentPage')}</h2><span className="section-index">01 / READ</span></div>
-    <div className="grid">
-      <label className="field">{t('targetLanguage')}<select aria-label={t('targetLanguage')} value={targetLanguage} onChange={(event) => setTargetLanguage(event.target.value)}>
+    <div className="compact-controls">
+      <label className="compact-field"><span aria-hidden="true">◈</span><select aria-label={t('translationEngine')} value={engineId} onChange={(event) => {
+        const value = event.target.value; setEngineId(value);
+        void api.setActiveEngine?.(value).catch((error) => setStatus(error instanceof Error ? error.message : t('statusFailed')));
+      }}>{engines.map((engine) => <option key={engine.id} value={engine.id} disabled={!engine.ready}>{engineDisplayName(engine as Parameters<typeof engineDisplayName>[0])}</option>)}</select></label>
+      <label className="compact-field"><span aria-hidden="true">文</span><select aria-label={t('targetLanguage')} value={preferences.targetLanguage} onChange={(event) => void savePreferences({ ...preferences, targetLanguage: event.target.value })}>
         {languageOptions.map((language) => <option key={language.value} value={language.value}>{language.label}</option>)}
       </select></label>
-      <label className="field">{t('translationScope')}<select aria-label={t('translationScope')} value={scope} onChange={(event) => setScope(event.target.value)}>
-        <option value="main-content">{t('mainContent')}</option><option value="whole-page">{t('wholePage')}</option>
-      </select></label>
-      <label className="field">{t('displayMode')}<select aria-label={t('displayMode')} value={mode} onChange={(event) => setMode(event.target.value)}>
-        <option value="bilingual">{t('bilingual')}</option><option value="translation-only">{t('translationOnly')}</option>
+      <label className="compact-field"><span aria-hidden="true">◐</span><select aria-label={t('displayMode')} value={preferences.displayMode} onChange={(event) => void savePreferences({ ...preferences, displayMode: event.target.value as 'bilingual' | 'translation' })}>
+        <option value="bilingual">{t('bilingual')}</option><option value="translation">{t('translationOnly')}</option>
       </select></label>
     </div>
-    <p className="status" role="status" data-state={state}>{status}</p>
-    <div className="actions actions--primary">
-      <button className="primary" disabled={busy} aria-busy={busy} onClick={() => void translate()}>{busy ? t('statusTranslating') : t('actionTranslatePage')}</button>
-      <button className="secondary" disabled={busy} onClick={() => void api.sendToPage({ type: 'restore-page' })}>{t('actionRestore')}</button>
-      <button className="secondary" disabled={busy} onClick={() => void api.sendToPage({ type: 'retry-page-translation' })}>{t('actionRetry')}</button>
-      <button className="secondary" onClick={api.openOptions}>{t('actionSettings')}</button>
-    </div>
-    </section>
-    <p className="shortcut">{t('shortcut')} <kbd>Shift</kbd> + <kbd>Alt</kbd> + <kbd>A</kbd></p>
+    <p className="status" role="status">{status}</p>
+    <button className="primary primary--wide" disabled={busy} aria-busy={busy} onClick={() => void togglePage()}>{busy ? t('statusTranslating') : pageActive ? '显示原文' : '翻译'}</button>
+    <p className="shortcut"><kbd>Shift</kbd> + <kbd>Alt</kbd> + <kbd>A</kbd></p>
   </main>;
 }

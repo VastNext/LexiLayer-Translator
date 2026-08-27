@@ -68,7 +68,8 @@ describe('ParagraphStore 与 DomRenderer', () => {
     expect(document.querySelector('[data-vast-state="loading"]')?.textContent).toBe('翻译中…');
 
     renderer.renderError(paragraph, '翻译失败');
-    expect(document.querySelector('[data-vast-state="error"]')?.textContent).toBe('翻译失败');
+    expect(document.querySelector('[data-vast-state="error"]')?.textContent).toContain('翻译失败');
+    expect(document.querySelector('[data-vast-retry-all]')).not.toBeNull();
 
     renderer.renderTranslation(paragraph, '译文', {
       mode: 'bilingual', placement: 'after', ...request,

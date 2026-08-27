@@ -16,6 +16,82 @@ function jsonResponse(body: unknown, status = 200, headers?: HeadersInit): Respo
 }
 
 describe('OpenAiClient', () => {
+  it('响应头返回后响应体永不结束时仍由请求超时中止', async () => {
+    vi.useFakeTimers();
+    let requestSignal: AbortSignal | undefined;
+    const fetch = vi.fn((_url: string | URL | Request, init?: RequestInit) => {
+      requestSignal = init?.signal ?? undefined;
+      const body = new ReadableStream({
+        start(controller) {
+          init?.signal?.addEventListener('abort', () => controller.error(new DOMException('aborted', 'AbortError')));
+        },
+      });
+      return Promise.resolve(new Response(body, { headers: { 'Content-Type': 'application/json' } }));
+    });
+    const client = new OpenAiClient({
+      baseUrl: 'https://api.example.com/v1', apiKey: 'sk-secret', model: 'gpt-test', fetch, timeoutMs: 25,
+    });
+
+    const translation = client.translate(request).catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(24);
+    expect(requestSignal?.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+
+    await expect(translation).resolves.toMatchObject({ message: 'API 请求超时（25ms）' });
+    expect(requestSignal?.aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+    vi.useRealTimers();
+  });
+
+  it('响应头返回后外部取消仍中止未完成的响应体消费', async () => {
+    let requestSignal: AbortSignal | undefined;
+    const fetch = vi.fn((_url: string | URL | Request, init?: RequestInit) => {
+      requestSignal = init?.signal ?? undefined;
+      const body = new ReadableStream({
+        start(controller) {
+          init?.signal?.addEventListener('abort', () => controller.error(new DOMException('aborted', 'AbortError')));
+        },
+      });
+      return Promise.resolve(new Response(body, { headers: { 'Content-Type': 'application/json' } }));
+    });
+    const client = new OpenAiClient({ baseUrl: 'https://api.example.com/v1', apiKey: 'sk-secret', model: 'gpt-test', fetch });
+    const controller = new AbortController();
+
+    const translation = client.translate(request, controller.signal).catch((error: unknown) => error);
+    await vi.waitFor(() => expect(requestSignal).toBeDefined());
+    controller.abort();
+
+    await expect(translation).resolves.toMatchObject({ message: '任务已取消' });
+    expect(requestSignal?.aborted).toBe(true);
+  });
+
+  it('流式响应头返回后外部取消会中止 reader 并释放响应句柄', async () => {
+    let requestSignal: AbortSignal | undefined;
+    let responseBody: ReadableStream<Uint8Array> | null = null;
+    const fetch = vi.fn((_url: string | URL | Request, init?: RequestInit) => {
+      requestSignal = init?.signal ?? undefined;
+      const body = new ReadableStream({
+        start(controller) {
+          init?.signal?.addEventListener('abort', () => controller.error(new DOMException('aborted', 'AbortError')));
+        },
+      });
+      responseBody = body;
+      return Promise.resolve(new Response(body, { headers: { 'Content-Type': 'text/event-stream' } }));
+    });
+    const client = new OpenAiClient({ baseUrl: 'https://api.example.com/v1', apiKey: 'sk-secret', model: 'gpt-test', fetch });
+    const controller = new AbortController();
+    const consume = (async () => {
+      for await (const _chunk of client.streamText('Hello', 'en', 'zh-Hans', controller.signal)) { /* 等待取消。 */ }
+    })().catch((error: unknown) => error);
+    await vi.waitFor(() => expect(requestSignal).toBeDefined());
+
+    controller.abort();
+
+    await expect(consume).resolves.toMatchObject({ message: '任务已取消' });
+    expect(requestSignal?.aborted).toBe(true);
+    expect((responseBody as ReadableStream<Uint8Array> | null)?.locked).toBe(false);
+  });
+
   it('每次请求默认 45 秒超时并清理计时器', async () => {
     vi.useFakeTimers();
     const fetch = vi.fn((_url: string | URL | Request, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
@@ -185,6 +261,41 @@ describe('OpenAiClient', () => {
 
     await expect(client.translate(request)).resolves.toEqual([{ id: 'p1', text: '你好' }]);
     expect(fetch).toHaveBeenCalledTimes(3);
-    expect(sleep.mock.calls).toEqual([[2000], [2000]]);
+    expect(sleep.mock.calls).toEqual([[2000, undefined], [2000, undefined]]);
+  });
+
+  it('流式划词把自定义要求和有限上下文真正写入 system prompt', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response([
+      `data: ${JSON.stringify({ choices: [{ delta: { content: '你好' } }] })}\n\n`,
+      'data: [DONE]\n\n',
+    ].join(''), { headers: { 'Content-Type': 'text/event-stream' } }));
+    const client = new OpenAiClient({
+      baseUrl: 'https://api.example.com/work/v1', apiKey: 'work-key', model: 'work-model', fetch,
+    });
+
+    const chunks: string[] = [];
+    for await (const chunk of client.streamText('Hello', 'en', 'zh-Hans', undefined, '使用正式语气', '附近文本')) chunks.push(chunk);
+
+    expect(chunks).toEqual(['你好']);
+    const body = JSON.parse(fetch.mock.calls[0][1].body as string);
+    expect(body.messages).toEqual([
+      { role: 'system', content: expect.stringContaining('使用正式语气') },
+      { role: 'user', content: 'Hello' },
+    ]);
+    expect(body.messages[0].content).toContain('附近文本');
+  });
+
+  it('畸形 SSE 必须向调用方传播错误以触发非流式回退', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response('data: {invalid\n\n', {
+      headers: { 'Content-Type': 'text/event-stream' },
+    }));
+    const client = new OpenAiClient({
+      baseUrl: 'https://api.example.com/v1', apiKey: 'sk-secret', model: 'gpt-test', fetch,
+    });
+    const consume = async () => {
+      for await (const _chunk of client.streamText('Hello', 'en', 'zh-Hans')) { /* 消费完整流。 */ }
+    };
+
+    await expect(consume()).rejects.toThrow('流式响应格式无效');
   });
 });

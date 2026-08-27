@@ -25,6 +25,13 @@ export class DomRenderer {
 
   renderError(paragraph: ParagraphRecord, message: string): void {
     this.renderState(paragraph, 'error', message, 'after');
+    const wrapper = paragraph.wrapper!;
+    const button = wrapper.ownerDocument.createElement('button');
+    button.type = 'button';
+    button.dataset.vastRetryAll = '';
+    button.textContent = '重试';
+    button.addEventListener('click', () => wrapper.ownerDocument.dispatchEvent(new CustomEvent('vast-translator-retry-all')));
+    wrapper.append(' ', button);
   }
 
   renderTranslation(

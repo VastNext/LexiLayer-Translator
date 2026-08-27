@@ -19,19 +19,19 @@ const keyInput = {
   text: '  Hello\r\n   world  ',
   sourceLanguage: 'en',
   targetLanguage: 'zh-Hans',
-  baseUrl: 'https://api.example.com/v1/',
-  model: 'gpt-test',
+  engineId: 'custom-work',
+  engineFingerprint: 'custom-ai:https://api.example.com:gpt-test',
+  adapterVersion: 'custom-ai-v1',
   promptVersion: 'v1',
-  userInstruction: '保持术语',
+  effectiveInstruction: '保持术语',
 };
 
 describe('createCacheKey', () => {
-  it('对等价文本和 URL 生成稳定键', async () => {
+  it('对等价文本生成稳定键', async () => {
     const first = await createCacheKey(keyInput);
     const second = await createCacheKey({
       ...keyInput,
       text: 'Hello\n world',
-      baseUrl: 'https://api.example.com/v1',
     });
 
     expect(first).toBe(second);
@@ -42,9 +42,22 @@ describe('createCacheKey', () => {
   });
 
   it('划词有限上下文变化时隔离缓存', async () => {
-    const first = await createCacheKey({ ...keyInput, userInstruction: '以下邻近文本仅用于消歧，不要翻译或输出：first context' });
-    const second = await createCacheKey({ ...keyInput, userInstruction: '以下邻近文本仅用于消歧，不要翻译或输出：second context' });
+    const first = await createCacheKey({ ...keyInput, effectiveInstruction: '以下邻近文本仅用于消歧，不要翻译或输出：first context' });
+    const second = await createCacheKey({ ...keyInput, effectiveInstruction: '以下邻近文本仅用于消歧，不要翻译或输出：second context' });
     expect(first).not.toBe(second);
+  });
+
+  it('隔离 Google、Bing 和多个自定义实例', async () => {
+    const google = await createCacheKey({ ...keyInput, engineId: 'google', engineFingerprint: 'google' });
+    const bing = await createCacheKey({ ...keyInput, engineId: 'bing', engineFingerprint: 'bing' });
+    const customOther = await createCacheKey({ ...keyInput, engineId: 'custom-other' });
+    expect(new Set([google, bing, customOther]).size).toBe(3);
+  });
+
+  it('API Key 变化不影响缓存键', async () => {
+    const first = await createCacheKey({ ...keyInput, apiKey: 'first-secret' } as typeof keyInput);
+    const second = await createCacheKey({ ...keyInput, apiKey: 'second-secret' } as typeof keyInput);
+    expect(first).toBe(second);
   });
 });
 

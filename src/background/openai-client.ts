@@ -9,7 +9,15 @@ interface OpenAiClientOptions {
   model: string;
   fetch?: typeof globalThis.fetch;
   timeoutMs?: number;
-  sleep?: (milliseconds: number) => Promise<void>;
+  sleep?: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
+}
+
+interface ResponseHandle {
+  response: Response;
+  controller: AbortController;
+  externalSignal?: AbortSignal;
+  timeoutMs: number;
+  cleanup(): void;
 }
 
 function readResponseContent(payload: unknown): string {
@@ -38,12 +46,22 @@ export class OpenAiClient {
   async translate(request: TranslationRequest, signal?: AbortSignal): Promise<TranslationResult[]> {
     return withRetry(async () => {
       if (signal?.aborted) throw new Error('任务已取消');
-      const response = await this.send(request, true, signal);
-      if (response.status === 400 && await this.isResponseFormatUnsupported(response)) {
-        return this.readTranslations(await this.send(request, false, signal), request);
+      const first = await this.send(request, true, signal);
+      try {
+        if (first.response.status === 400 && await this.isResponseFormatUnsupported(first.response)) {
+          first.cleanup();
+          const fallback = await this.send(request, false, signal);
+          try {
+            return await this.readTranslations(fallback, request);
+          } finally {
+            fallback.cleanup();
+          }
+        }
+        return await this.readTranslations(first, request);
+      } finally {
+        first.cleanup();
       }
-      return this.readTranslations(response, request);
-    }, { sleep: this.options.sleep });
+    }, { sleep: this.options.sleep, signal });
   }
 
   async *streamText(
@@ -51,15 +69,17 @@ export class OpenAiClient {
     sourceLanguage: string,
     targetLanguage: string,
     signal?: AbortSignal,
+    userInstruction?: string,
     context?: string,
   ): AsyncGenerator<string> {
-    const response = await this.sendRaw({
+    const handle = await this.sendRaw({
       model: this.options.model,
       messages: [
         {
           role: 'system',
           content: [
             `将用户文本从 ${sourceLanguage} 翻译为 ${targetLanguage}，只输出译文。`,
+            userInstruction?.trim(),
             context ? `以下邻近文本仅用于消歧，不要翻译或输出：${context}` : '',
           ].filter(Boolean).join('\n'),
         },
@@ -68,25 +88,35 @@ export class OpenAiClient {
       temperature: 0,
       stream: true,
     }, signal);
-    if (!response.ok) throw new ApiError(response.status, undefined, parseRetryAfter(response.headers.get('Retry-After')));
-    if (!response.body) throw new Error('API 未返回流式内容');
+    const { response } = handle;
+    let reader: ReadableStreamDefaultReader<string> | undefined;
+    try {
+      if (!response.ok) throw new ApiError(response.status, undefined, parseRetryAfter(response.headers.get('Retry-After')));
+      if (!response.body) throw new Error('API 未返回流式内容');
 
-    const parser = new SseParser();
-    const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      const result = parser.push(value);
-      if (result.fallback) throw new Error('流式响应格式无效');
-      yield* result.chunks;
-      if (result.done) return;
+      const parser = new SseParser();
+      reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const result = parser.push(value);
+        if (result.fallback) throw new Error('流式响应格式无效');
+        yield* result.chunks;
+        if (result.done) return;
+      }
+      const final = parser.finish();
+      if (final.fallback) throw new Error('流式响应格式无效');
+      yield* final.chunks;
+    } catch (error) {
+      this.throwRequestAbort(handle, error);
+      throw error;
+    } finally {
+      await reader?.cancel().catch(() => undefined);
+      handle.cleanup();
     }
-    const final = parser.finish();
-    if (final.fallback) throw new Error('流式响应格式无效');
-    yield* final.chunks;
   }
 
-  private async send(request: TranslationRequest, useResponseFormat: boolean, signal?: AbortSignal): Promise<Response> {
+  private async send(request: TranslationRequest, useResponseFormat: boolean, signal?: AbortSignal): Promise<ResponseHandle> {
     const body: Record<string, unknown> = {
       model: this.options.model,
       messages: createTranslationMessages(request),
@@ -97,7 +127,7 @@ export class OpenAiClient {
     return this.sendRaw(body, signal);
   }
 
-  private async sendRaw(body: Record<string, unknown>, externalSignal?: AbortSignal): Promise<Response> {
+  private async sendRaw(body: Record<string, unknown>, externalSignal?: AbortSignal): Promise<ResponseHandle> {
     const timeoutMs = this.options.timeoutMs ?? 45_000;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -105,7 +135,7 @@ export class OpenAiClient {
     externalSignal?.addEventListener('abort', abort, { once: true });
 
     try {
-      return await this.fetch(buildChatCompletionsUrl(this.options.baseUrl), {
+      const response = await this.fetch(buildChatCompletionsUrl(this.options.baseUrl), {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${this.options.apiKey}`,
@@ -114,12 +144,24 @@ export class OpenAiClient {
         body: JSON.stringify(body),
         signal: controller.signal,
       });
+      let cleaned = false;
+      return {
+        response,
+        controller,
+        externalSignal,
+        timeoutMs,
+        cleanup() {
+          if (cleaned) return;
+          cleaned = true;
+          clearTimeout(timeout);
+          externalSignal?.removeEventListener('abort', abort);
+        },
+      };
     } catch {
-      if (externalSignal?.aborted) throw new Error('任务已取消');
-      throw new Error(controller.signal.aborted ? `API 请求超时（${timeoutMs}ms）` : 'API 请求失败');
-    } finally {
       clearTimeout(timeout);
       externalSignal?.removeEventListener('abort', abort);
+      if (externalSignal?.aborted) throw new Error('任务已取消');
+      throw new Error(controller.signal.aborted ? `API 请求超时（${timeoutMs}ms）` : 'API 请求失败');
     }
   }
 
@@ -129,7 +171,8 @@ export class OpenAiClient {
       && /does not support|not supported|unsupported|unknown parameter|unrecognized|extra fields?/i.test(body);
   }
 
-  private async readTranslations(response: Response, request: TranslationRequest): Promise<TranslationResult[]> {
+  private async readTranslations(handle: ResponseHandle, request: TranslationRequest): Promise<TranslationResult[]> {
+    const { response } = handle;
     if (!response.ok) {
       throw new ApiError(response.status, undefined, parseRetryAfter(response.headers.get('Retry-After')));
     }
@@ -137,11 +180,18 @@ export class OpenAiClient {
     let payload: unknown;
     try {
       payload = await response.json();
-    } catch {
+    } catch (error) {
+      this.throwRequestAbort(handle, error);
       throw new Error('API 响应不是有效 JSON');
     }
     const content = readResponseContent(payload);
 
     return parseTranslationResponse(content, request.segments.map(({ id }) => id));
+  }
+
+  private throwRequestAbort(handle: ResponseHandle, error: unknown): void {
+    if (handle.externalSignal?.aborted) throw new Error('任务已取消');
+    if (handle.controller.signal.aborted) throw new Error(`API 请求超时（${handle.timeoutMs}ms）`);
+    if (error instanceof DOMException && error.name === 'AbortError') throw error;
   }
 }
