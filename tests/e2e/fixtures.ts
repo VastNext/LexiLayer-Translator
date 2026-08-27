@@ -33,12 +33,14 @@ export const test = base.extend<ExtensionFixtures>({
     const userDataDir = await mkdtemp(resolve(tmpdir(), 'vast-e2e-'));
     const extensionPath = resolve(import.meta.dirname, '../../dist');
     const proxy = process.env.VAST_E2E_PROXY;
+    const switchyOmegaPath = process.env.VAST_E2E_SWITCHYOMEGA_PATH;
+    const extensionPaths = [extensionPath, ...(switchyOmegaPath ? [switchyOmegaPath] : [])].join(',');
     const context = await chromium.launchPersistentContext(userDataDir, {
       channel: 'chromium',
       headless: false,
       args: [
-        `--disable-extensions-except=${extensionPath}`,
-        `--load-extension=${extensionPath}`,
+        `--disable-extensions-except=${extensionPaths}`,
+        `--load-extension=${extensionPaths}`,
         '--no-first-run',
         '--disable-default-apps',
         ...(proxy ? [`--proxy-server=${proxy}`] : []),
@@ -50,7 +52,8 @@ export const test = base.extend<ExtensionFixtures>({
     void server;
   },
   serviceWorker: async ({ context }, use) => {
-    const worker = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker');
+    const existing = context.serviceWorkers().find((worker) => worker.url().endsWith('/background.js'));
+    const worker = existing ?? await context.waitForEvent('serviceworker', { predicate: (candidate) => candidate.url().endsWith('/background.js') });
     await use(worker);
   },
   extensionId: async ({ serviceWorker }, use) => {

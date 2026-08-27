@@ -4,6 +4,12 @@ interface NetworkResult { status?: number; text?: string; error?: string }
 
 test.describe.configure({ mode: 'serial' });
 
+test('可与 SwitchyOmega 扩展共同加载 @network', async ({ context }) => {
+  const expected = process.env.VAST_E2E_SWITCHYOMEGA_PATH;
+  if (!expected) test.skip(true, '未提供 VAST_E2E_SWITCHYOMEGA_PATH');
+  await expect.poll(() => context.serviceWorkers().map((worker) => worker.url())).toContain('chrome-extension://hihblcmlaaademjlakdpicchbjnnnkbo/x-background.js');
+});
+
 test('Google 匿名端点可经代理翻译 hello @network', async ({ serviceWorker }) => {
   expect(process.env.VAST_E2E_PROXY, 'Google 网络验证必须显式设置 VAST_E2E_PROXY').toBe('http://127.0.0.1:7890');
   const result = await serviceWorker.evaluate(async (): Promise<NetworkResult> => {
