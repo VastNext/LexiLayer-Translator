@@ -3,6 +3,7 @@ import { assertSafeBaseUrl } from './url';
 export type DisplayMode = 'bilingual' | 'translation';
 
 export interface ReadingPreferences {
+  sourceLanguage?: string;
   targetLanguage: string;
   displayMode: DisplayMode;
   userInstruction: string;
@@ -57,6 +58,7 @@ export const DEFAULT_SETTINGS: Settings = {
   schemaVersion: 2,
   mvpDefaultsVersion: 1,
   readingPreferences: {
+    sourceLanguage: 'auto',
     targetLanguage: 'auto',
     displayMode: 'bilingual',
     userInstruction: '',
@@ -85,6 +87,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function validatePreferences(value: unknown): string[] {
   if (!isRecord(value)) return ['阅读偏好必须是对象'];
   const errors: string[] = [];
+  if (value.sourceLanguage !== undefined && (typeof value.sourceLanguage !== 'string' || !value.sourceLanguage.trim())) errors.push('源语言不能为空');
   if (typeof value.targetLanguage !== 'string' || !value.targetLanguage.trim()) errors.push('目标语言不能为空');
   if (value.displayMode !== 'bilingual' && value.displayMode !== 'translation') errors.push('显示模式无效');
   if (typeof value.userInstruction !== 'string') errors.push('用户要求必须是字符串');
@@ -171,9 +174,11 @@ function cloneDefaults(): Settings {
 
 export function normalizeSettings(value: unknown): Settings {
   if (!isRecord(value) || value.schemaVersion !== 2) return cloneDefaults();
-  const errors = validateSettings(value).filter((error) => error !== '至少保留一个可用的翻译引擎' && error !== '当前翻译引擎必须可用');
+  const normalizedValue = structuredClone(value) as Record<string, unknown>;
+  if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.sourceLanguage === undefined) normalizedValue.readingPreferences.sourceLanguage = 'auto';
+  const errors = validateSettings(normalizedValue).filter((error) => error !== '至少保留一个可用的翻译引擎' && error !== '当前翻译引擎必须可用');
   if (errors.length) return cloneDefaults();
-  const settings = structuredClone(value) as unknown as Settings;
+  const settings = normalizedValue as unknown as Settings;
   const ready = settings.engines.filter(engineReady);
   if (!ready.length) return cloneDefaults();
   if (!ready.some((engine) => engine.id === settings.activeEngineId)) settings.activeEngineId = ready[0].id;
