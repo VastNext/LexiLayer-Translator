@@ -79,7 +79,7 @@ export class SelectionView implements SelectionViewHandle {
           <button class="icon" name="include-context" aria-pressed="true" title="${this.t('limitedContextHelp')}">◎</button>
           <button class="icon close" data-action="close" aria-label="${this.t('actionClose')}">×</button>
         </div>
-        <div class="result-wrap"><div class="result" data-result>${this.t('preparing')}</div><div class="result-actions"><button class="result-action" data-action="copy" aria-label="${this.t('actionCopy')}" title="${this.t('actionCopy')}">⧉</button><button class="result-action" data-action="retry" aria-label="${this.t('actionRetry')}" title="${this.t('actionRetry')}">↻</button></div></div>
+        <div class="result-wrap"><div class="result" data-result>${this.t('preparing')}</div><div class="result-actions"><button class="result-action" data-action="retry" aria-label="${this.t('actionRetry')}" title="${this.t('actionRetry')}">↻</button><button class="result-action" data-action="copy" aria-label="${this.t('actionCopy')}" title="${this.t('actionCopy')}">⧉</button></div></div>
       </section>`;
     this.bind();
   }
