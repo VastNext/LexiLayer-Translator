@@ -69,6 +69,7 @@ describe('后台 v2 多引擎编排', () => {
       ok: true,
       data: {
         preferences: { ...DEFAULT_SETTINGS.readingPreferences, targetLanguage: 'en' },
+        theme: 'pearl-reader',
         activeEngineId: 'google',
         availableEngines: [
           { id: 'google', kind: 'google', name: 'Google', ready: true, capabilities: { streaming: false } },

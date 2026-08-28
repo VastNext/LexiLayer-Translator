@@ -29,7 +29,7 @@ describe('manifest', () => {
       ],
       matches: ['<all_urls>'],
     }]);
-    expect(manifest.commands?.translate_page?.suggested_key?.default).toBe('Alt+Shift+A');
+    expect(manifest.commands?.translate_page?.suggested_key?.default).toBe('Alt+A');
   });
 
   it('声明 0.2.0、本地化名称描述和全尺寸原创图标', () => {

@@ -11,12 +11,29 @@ describe('界面视觉契约', () => {
     expect(enMessages.translationEngine.message).toBe('Translation engine');
   });
 
-  it('仅使用暖白、墨黑与酸绿色，不引入额外强调色', () => {
+  it('使用共享语义 token 驱动五套明显不同主题', () => {
     const css = readFileSync(resolve(import.meta.dirname, '../../src/ui.css'), 'utf8');
+    for (const theme of ['pearl-reader', 'command-translator', 'sage-global', 'editorial-lingua', 'precision-blue']) {
+      expect(css).toContain(`[data-theme="${theme}"]`);
+    }
+    for (const token of ['--page', '--panel', '--ink', '--muted', '--line', '--accent', '--focus', '--primary', '--radius-panel']) {
+      expect(css).toContain(token);
+    }
+    expect(css.match(/\.popup\s*\{/g)).toHaveLength(1);
+    expect(css).toMatch(/max-width:\s*1000px/);
+    expect(css).toMatch(/\.popup\s*\{[^}]*width:\s*360px/s);
+    expect(css).toContain('#07080a');
+    expect(css).toContain('#e9eee7');
+    expect(css).toContain('Georgia');
+    expect(css).toContain('#0f62fe');
+    expect(css).toMatch(/focus-visible/);
+  });
 
-    const colors = new Set(css.match(/#[0-9a-f]{6}/gi)?.map((color) => color.toLowerCase()));
-
-    expect(css).not.toMatch(/--(?:focus|error):/);
-    expect(colors).toEqual(new Set(['#f7f2e8', '#fffdf7', '#171713', '#58574f', '#b8b3a8', '#77736a', '#b8ff2c']));
+  it('BrandMark 使用 VastNext 路线、地平线与珊瑚信标并保留 aria', () => {
+    const source = readFileSync(resolve(import.meta.dirname, '../../src/BrandMark.tsx'), 'utf8');
+    expect(source).toContain('logo-horizon');
+    expect(source).toContain('logo-route');
+    expect(source).toContain('logo-beacon');
+    expect(source).toContain('aria-label');
   });
 });

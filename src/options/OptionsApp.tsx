@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { BrandMark } from '../BrandMark';
 import {
   DEFAULT_SETTINGS, MAX_CUSTOM_ENGINES, exportSafeSettings, validateEngine,
-  type CustomAiEngine, type OptionsEngine, type OptionsSettings, type ReadingPreferences, type SafeSettings,
+  type CustomAiEngine, type OptionsEngine, type OptionsSettings, type ReadingPreferences, type SafeSettings, type Theme,
 } from '../shared/config';
 import { languageOptions } from '../shared/languages';
 import { createTranslator, type Translator } from '../shared/i18n';
@@ -27,7 +27,16 @@ export interface OptionsApi {
   importSettings(settings: unknown): Promise<void>;
   clearCache(): Promise<void>;
   exportSettings(settings: SafeSettings): void;
+  saveTheme(theme: Theme): Promise<void>;
 }
+
+const themeChoices: Array<{ id: Theme; name: string; descriptionKey: string; swatch: string }> = [
+  { id: 'pearl-reader', name: 'Pearl Reader', descriptionKey: 'themePearlDescription', swatch: 'swatch-pearl' },
+  { id: 'command-translator', name: 'Command Translator', descriptionKey: 'themeCommandDescription', swatch: 'swatch-command' },
+  { id: 'sage-global', name: 'Sage Global', descriptionKey: 'themeSageDescription', swatch: 'swatch-sage' },
+  { id: 'editorial-lingua', name: 'Editorial Lingua', descriptionKey: 'themeEditorialDescription', swatch: 'swatch-editorial' },
+  { id: 'precision-blue', name: 'Precision Blue', descriptionKey: 'themePrecisionDescription', swatch: 'swatch-precision' },
+];
 
 function customDraft(engine: Extract<OptionsEngine, { kind: 'custom-ai' }>): CustomDraft {
   return { ...engine, apiKey: '', hasApiKey: engine.hasApiKey, savedBaseUrl: engine.baseUrl };
@@ -72,6 +81,7 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
       const value = await api.load();
       if (generation !== reloadGeneration.current) return;
       setSettings(value);
+      document.documentElement.dataset.theme = value.theme;
       setDrafts(value.engines.filter((engine): engine is Extract<OptionsEngine, { kind: 'custom-ai' }> => engine.kind === 'custom-ai').map(customDraft));
       if (message) setStatus(message);
     } catch (error) {
@@ -138,10 +148,40 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
   const customCount = drafts.length;
   const statusState = /失败|错误|无效|不能为空|不能|failed|invalid/i.test(status) ? 'error' : 'ready';
 
-  return <main className="shell options">
-    <header className="masthead"><div className="brand-lockup"><BrandMark /><div><h1>Vast Translator</h1><p className="kicker">{t('optionsKicker')}</p></div></div><span className="version">v0.2.0</span></header>
+  async function chooseTheme(theme: Theme): Promise<void> {
+    const previous = settings.theme;
+    setSettings((current) => ({ ...current, theme }));
+    document.documentElement.dataset.theme = theme;
+    try {
+      await api.saveTheme(theme);
+      setStatus(t('themeSaved'));
+    } catch (error) {
+      setSettings((current) => ({ ...current, theme: previous }));
+      document.documentElement.dataset.theme = previous;
+      setStatus(error instanceof Error ? error.message : t('statusSaveFailed'));
+    }
+  }
 
-    <section className="section section--marked" aria-label={t('builtinEngines')}>
+  function navigateTo(id: string): void {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  return <main className="shell options" data-theme={settings.theme}>
+    <aside className="options-nav">
+      <div className="options-brand"><span className="brand-icon"><BrandMark /></span><strong>Vast</strong></div>
+      <nav aria-label={t('settingsNavigation')}>
+        <button onClick={() => navigateTo('builtin-engines')}>{t('translationEngine')}</button>
+        <button onClick={() => navigateTo('custom-engines')}>{t('customAiEngines')}</button>
+        <button onClick={() => navigateTo('reading-preferences')}>{t('optionsReadingPreferences')}</button>
+        <button onClick={() => navigateTo('appearance-theme')}>{t('appearanceTheme')}</button>
+        <button onClick={() => navigateTo('data-privacy')}>{t('dataPrivacy')}</button>
+      </nav>
+      <small>v0.2.0</small>
+    </aside>
+    <div className="options-content">
+    <header className="masthead"><div><p className="eyebrow">VAST TRANSLATOR</p><h1>{t('optionsTitle')}</h1><p className="kicker">{t('optionsKicker')}</p></div><span className="version">v0.2.0</span></header>
+
+    <section id="builtin-engines" className="section section--marked" aria-label={t('builtinEngines')}>
       <div className="section-header"><h2>{t('builtinEngines')}</h2><span className="section-index">01 / BUILTIN</span></div>
       <div className="builtin-list">{settings.engines.filter((engine) => engine.kind !== 'custom-ai').map((engine) => <article className="engine-row" key={engine.id}>
         <div><h3>{engine.name}</h3><p className="engine-meta">{engine.id === 'google' ? t('googleDefaultFree') : t('bingBackup')}</p></div>
@@ -154,7 +194,7 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
       </article>)}</div>
     </section>
 
-    <section className="section" aria-labelledby="custom-engines-title">
+    <section id="custom-engines" className="section" aria-labelledby="custom-engines-title">
       <div className="section-header"><div><h2 id="custom-engines-title">{t('customAiEngines')}</h2><p className="section-copy">{t('customAiDescription')}</p></div><span className="section-index">02 / AI · {customCount}/{MAX_CUSTOM_ENGINES}</span></div>
       <div className="engine-stack">{drafts.map((draft, index) => {
         const changedOrigin = Boolean(draft.hasApiKey && origin(draft.baseUrl) !== origin(draft.savedBaseUrl));
@@ -187,7 +227,7 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
       }}>{t('addCustomAi')}</button>
     </section>
 
-    <section className="section" aria-labelledby="reading-title"><div className="section-header"><h2 id="reading-title">{t('optionsReadingPreferences')}</h2><span className="section-index">03 / READ</span></div><div className="grid">
+    <section id="reading-preferences" className="section" aria-labelledby="reading-title"><div className="section-header"><h2 id="reading-title">{t('optionsReadingPreferences')}</h2><span className="section-index">03 / READ</span></div><div className="grid">
       <label className="field">{t('targetLanguage')}<select aria-label={t('targetLanguage')} value={settings.readingPreferences.targetLanguage} onChange={(event) => updatePreferences('targetLanguage', event.target.value)}>{languageOptions.map((language) => <option key={language.value} value={language.value}>{language.label}</option>)}</select></label>
       <label className="field">{t('defaultMode')}<select aria-label={t('defaultMode')} value={settings.readingPreferences.displayMode} onChange={(event) => updatePreferences('displayMode', event.target.value as ReadingPreferences['displayMode'])}><option value="bilingual">{t('bilingual')}</option><option value="translation">{t('translationOnly')}</option></select></label>
       <label className="field">{t('translationPosition')}<select aria-label={t('translationPosition')} value={settings.readingPreferences.translationPosition} onChange={(event) => updatePreferences('translationPosition', event.target.value as ReadingPreferences['translationPosition'])}><option value="after">{t('positionAfter')}</option><option value="before">{t('positionBefore')}</option></select></label>
@@ -196,11 +236,18 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
       <label className="field field--wide">{t('customInstruction')}<textarea aria-label={t('customInstruction')} value={settings.readingPreferences.userInstruction} onChange={(event) => updatePreferences('userInstruction', event.target.value)} /><small>{t('instructionCustomOnly')}</small></label>
     </div><div className="actions actions--primary"><button className="primary" onClick={() => void act(() => api.savePreferences(settings.readingPreferences), t('statusSaved'))}>{t('savePreferences')}</button></div></section>
 
-    <section className="section" aria-labelledby="data-title"><div className="section-header"><h2 id="data-title">{t('optionsDataManagement')}</h2><span className="section-index">04 / LOCAL</span></div>
+    <section id="appearance-theme" className="section theme-section" aria-label={t('appearanceTheme')}><div className="section-header"><div><h2>{t('appearanceTheme')}</h2><p className="section-copy">{t('themeDescription')}</p></div><span className="section-index">04 / THEME</span></div>
+      <div className="theme-grid">{themeChoices.map((theme) => <button key={theme.id} className={`theme-choice ${settings.theme === theme.id ? 'selected' : ''}`} aria-pressed={settings.theme === theme.id} aria-label={`${theme.name}：${t(theme.descriptionKey)}`} onClick={() => void chooseTheme(theme.id)}>
+        <span className={`theme-swatch ${theme.swatch}`} aria-hidden="true" /><span><strong>{theme.name}</strong><small>{t(theme.descriptionKey)}</small></span><i aria-hidden="true">{settings.theme === theme.id ? '✓' : ''}</i>
+      </button>)}</div>
+    </section>
+
+    <section id="data-privacy" className="section" aria-labelledby="data-title"><div className="section-header"><div><h2 id="data-title">{t('dataPrivacy')}</h2><p className="section-copy">{t('privacyWarning')}</p></div><span className="section-index">05 / LOCAL</span></div>
       <input ref={importInput} hidden aria-label={t('actionImport')} type="file" accept="application/json" onChange={(event) => void importFile(event.target.files?.[0])} />
       <div className="actions"><button className="secondary" onClick={() => importInput.current?.click()}>{t('actionImport')}</button><button className="secondary" onClick={() => api.exportSettings(safeExport(settings, drafts))}>{t('actionExport')}</button>
       {!confirmCache ? <button className="danger" onClick={() => setConfirmCache(true)}>{t('actionClearCache')}</button> : <><span className="help">{t('confirmClear')}</span><button className="danger" onClick={() => void act(async () => { await api.clearCache(); setConfirmCache(false); }, t('cacheCleared'))}>{t('actionConfirmClear')}</button></>}</div>
     </section>
     <p className="status sticky-status" role="status" data-state={statusState}>{status || t('unchanged')} {loadFailed && <button className="secondary compact" onClick={() => void reload()}>{t('actionRetry')}</button>}</p>
+    </div>
   </main>;
 }

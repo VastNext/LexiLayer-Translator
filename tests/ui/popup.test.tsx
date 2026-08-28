@@ -13,7 +13,7 @@ const preferences = {
 function createApi(overrides: Partial<PopupApi> = {}): PopupApi {
   return {
     getConfig: vi.fn(async () => ({
-      preferences, activeEngineId: 'google',
+      preferences, activeEngineId: 'google', theme: 'pearl-reader' as const,
       availableEngines: [
         { id: 'google', kind: 'google', name: 'Google', ready: true, capabilities: { streaming: false } },
         { id: 'bing', kind: 'bing', name: 'Bing', ready: true, capabilities: { streaming: false } },
@@ -31,18 +31,20 @@ function createApi(overrides: Partial<PopupApi> = {}): PopupApi {
 }
 
 describe('精简 Popup', () => {
-  it('只展示引擎、目标语言、显示模式、主按钮和设置图标', async () => {
+  it('按正式结构展示品牌、同排语言、整行引擎、状态、模式主操作和设置', async () => {
     render(<PopupApp api={createApi()} />);
+    expect(await screen.findByRole('main')).toHaveAttribute('data-theme', 'pearl-reader');
     expect(await screen.findByLabelText('翻译引擎')).toHaveValue('google');
     expect(screen.getByLabelText('源语言')).toHaveValue('auto');
     expect(screen.getByLabelText('目标语言')).toHaveValue('zh-Hans');
     expect(screen.getByRole('button', { name: '双语对照' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '翻译' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '翻译 (Alt + A)' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '设置' })).toBeInTheDocument();
     expect(screen.queryByLabelText('翻译范围')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '重试' })).not.toBeInTheDocument();
     expect(screen.queryByText('当前页面')).not.toBeInTheDocument();
     expect(screen.queryByText(/01 \/ READ/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Shift')).not.toBeInTheDocument();
   });
 
   it('更改引擎、语言和显示模式时立即保存', async () => {
@@ -60,7 +62,7 @@ describe('精简 Popup', () => {
     let progressListener: ((progress: { status: string; completed: number; failed: number; total: number }) => void) | undefined;
     const api = createApi({ subscribeProgress: vi.fn((listener) => { progressListener = listener; return () => undefined; }) });
     render(<PopupApp api={api} />);
-    await userEvent.click(await screen.findByRole('button', { name: '翻译' }));
+    await userEvent.click(await screen.findByRole('button', { name: '翻译 (Alt + A)' }));
     expect(api.sendToPage).toHaveBeenCalledWith(expect.objectContaining({ type: 'translate-page', scope: 'whole-page', targetLanguage: 'zh-Hans' }));
     progressListener?.({ status: 'complete', completed: 1, failed: 0, total: 1 });
     await waitFor(() => expect(screen.getByRole('button', { name: '显示原文' })).toBeInTheDocument());
@@ -70,7 +72,7 @@ describe('精简 Popup', () => {
 
   it('重新打开时使用后台保存的偏好', async () => {
     const api = createApi({ getConfig: vi.fn(async () => ({
-      preferences: { ...preferences, targetLanguage: 'de', displayMode: 'translation' }, activeEngineId: 'bing',
+      preferences: { ...preferences, targetLanguage: 'de', displayMode: 'translation' }, activeEngineId: 'bing', theme: 'command-translator' as const,
       availableEngines: [
         { id: 'google', kind: 'google', name: 'Google', ready: true, capabilities: { streaming: false } },
         { id: 'bing', kind: 'bing', name: 'Bing', ready: true, capabilities: { streaming: false } },
@@ -80,6 +82,8 @@ describe('精简 Popup', () => {
     await waitFor(() => expect(screen.getByLabelText('翻译引擎')).toHaveValue('bing'));
     expect(screen.getByLabelText('目标语言')).toHaveValue('de');
     expect(screen.getByRole('button', { name: '仅译文' })).toBeInTheDocument();
+    expect(screen.getByRole('main')).toHaveAttribute('data-theme', 'command-translator');
+    expect(document.documentElement).toHaveAttribute('data-theme', 'command-translator');
   });
 });
 

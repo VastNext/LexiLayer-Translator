@@ -4,7 +4,7 @@ import { createProvider, streamProviderSelection } from './provider-registry';
 import type { Provider } from './provider';
 import {
   DEFAULT_SETTINGS, engineReady, exportSafeSettings, importSettings, migrateSettings, normalizeSettings, validateEngine, validateSettings,
-  type CustomAiEngine, type Engine, type ReadingPreferences, type Settings,
+  THEMES, type CustomAiEngine, type Engine, type ReadingPreferences, type Settings, type Theme,
 } from '../shared/config';
 import { mapChromeUiLanguage } from '../shared/languages';
 import type { TranslationRequest, TranslationResult, TranslationSegment } from '../shared/messages';
@@ -35,7 +35,7 @@ const allowedTypes = new Set([
   'translate-batch', 'cancel-task', 'get-public-config', 'get-popup-config', 'get-options-settings',
   'test-engine', 'translate-selection-fallback', 'cancel-selection-fallback', 'clear-cache',
   'save-reading-preferences', 'upsert-engine', 'delete-engine', 'set-active-engine', 'set-engine-enabled', 'reorder-engines', 'import-settings',
-  'save-popup-preferences',
+  'save-popup-preferences', 'save-theme',
   'clear-engine-api-key',
   'page-progress', 'get-page-progress',
 ]);
@@ -90,6 +90,7 @@ function effectivePreferences(settings: Settings, api: BackgroundChrome): Readin
 function publicConfig(settings: Settings, api: BackgroundChrome, dependencies: BackgroundDependencies) {
   return {
     preferences: effectivePreferences(settings, api),
+    theme: settings.theme,
     activeEngineId: settings.activeEngineId,
     availableEngines: settings.engines.map((engine) => {
       let capabilities = { streaming: engine.kind === 'custom-ai' };
@@ -177,7 +178,7 @@ export function createBackgroundController(api: BackgroundChrome, dependencies: 
   let settingsMutationQueue = Promise.resolve();
   const settingsMutationTypes = new Set([
     'save-reading-preferences', 'upsert-engine', 'delete-engine', 'set-active-engine', 'set-engine-enabled',
-    'save-popup-preferences',
+    'save-popup-preferences', 'save-theme',
     'reorder-engines', 'import-settings', 'clear-engine-api-key',
   ]);
   const translateWithProvider = (provider: Provider, request: TranslationRequest, signal: AbortSignal) => dependencies.translate?.(provider, request, signal) ?? provider.translate(request, signal);
@@ -230,6 +231,11 @@ export function createBackgroundController(api: BackgroundChrome, dependencies: 
         if (!hasOnlyKeys(message, ['type', 'readingPreferences'])) return { ok: false, error: '消息格式无效' };
         const candidate = { ...settings, readingPreferences: message.readingPreferences as ReadingPreferences };
         await saveSettings(candidate); return { ok: true };
+      }
+      if (message.type === 'save-theme') {
+        if (!hasOnlyKeys(message, ['type', 'theme']) || !THEMES.includes(message.theme as Theme)) return { ok: false, error: '消息格式无效' };
+        await saveSettings({ ...settings, theme: message.theme as Theme });
+        return { ok: true };
       }
       if (message.type === 'save-popup-preferences') {
         if (!hasOnlyKeys(message, ['type', 'engineId', 'readingPreferences']) || !isSafeId(message.engineId)) return { ok: false, error: '消息格式无效' };

@@ -141,6 +141,17 @@ describe('service worker 消息编排', () => {
     expect(JSON.stringify(options)).not.toContain('sk-secret-value');
   });
 
+  it('Popup 和 Options 读取主题，并可通过 save-theme 持久化', async () => {
+    let persisted = structuredClone(configured);
+    vi.mocked(chromeApi.storage.local.get).mockImplementation(async () => ({ translatorSettings: persisted }));
+    vi.mocked(chromeApi.storage.local.set).mockImplementation(async (items) => { persisted = (items as { translatorSettings: Settings }).translatorSettings; });
+
+    await expect(send({ type: 'get-popup-config' })).resolves.toEqual(expect.objectContaining({ data: expect.objectContaining({ theme: 'pearl-reader' }) }));
+    await expect(send({ type: 'save-theme', theme: 'command-translator' })).resolves.toEqual({ ok: true });
+    expect(persisted.theme).toBe('command-translator');
+    await expect(send({ type: 'save-theme', theme: 'unknown' })).resolves.toEqual({ ok: false, error: '消息格式无效' });
+  });
+
   it('公开配置把 auto 目标解析为 Chrome UI 语言', async () => {
     vi.mocked(chromeApi.storage.local.get).mockImplementation(async () => ({ translatorSettings: { ...configured, readingPreferences: { ...configured.readingPreferences, targetLanguage: 'auto' } } }));
     chromeApi.i18n.getUILanguage = () => 'de-DE';

@@ -9,6 +9,7 @@
   "actionSettings": { "message": "Settings" },
   "statusTranslating": { "message": "Translating…" },
   "popupKicker": { "message": "Bilingual proofreading desk" },
+  "sourceLanguage": { "message": "Source language" },
   "targetLanguage": { "message": "Target language" },
   "translationEngine": { "message": "Translation engine" },
   "translationScope": { "message": "Translation scope" },
@@ -105,5 +106,19 @@
   "statusActiveChanged": { "message": "Default engine updated" },
   "statusOrderSaved": { "message": "Engine order saved" },
   "statusEngineDeleted": { "message": "Instance deleted" },
-  "importApplied": { "message": "Configuration imported safely" }
+  "importApplied": { "message": "Configuration imported safely" },
+  "translateShortcut": { "message": "Translate (Alt + A)" },
+  "showOriginal": { "message": "Show original" },
+  "modeToggleHelp": { "message": "Toggle bilingual and translation-only modes" },
+  "settingsNavigation": { "message": "Settings navigation" },
+  "optionsTitle": { "message": "Translation settings" },
+  "appearanceTheme": { "message": "Appearance theme" },
+  "dataPrivacy": { "message": "Data and privacy" },
+  "themeDescription": { "message": "Five themes share the same features and save immediately." },
+  "themeSaved": { "message": "Theme saved" },
+  "themePearlDescription": { "message": "Pearl blue, calm and lightweight for everyday reading." },
+  "themeCommandDescription": { "message": "A dark command surface built for speed and keyboard use." },
+  "themeSageDescription": { "message": "Warm sage tones with a friendly global reading feel." },
+  "themeEditorialDescription": { "message": "Cream, violet, and serif headings for an editorial voice." },
+  "themePrecisionDescription": { "message": "Structured precision blue with sharper geometry." }
 }

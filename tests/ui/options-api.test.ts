@@ -17,7 +17,7 @@ describe('Options v2 API', () => {
     expect(JSON.stringify(loaded)).not.toContain('apiKey');
   });
 
-  it('为多实例 CRUD、排序、启停、测试、清 key 与导入提供固定消息', async () => {
+  it('为多实例 CRUD、排序、启停、主题、测试、清 key 与导入提供固定消息', async () => {
     const messages: unknown[] = [];
     const sendMessage = vi.fn(async (message: unknown) => {
       messages.push(message);
@@ -28,6 +28,7 @@ describe('Options v2 API', () => {
     await api.upsertEngine(custom);
     await api.setActiveEngine(custom.id);
     await api.setEngineEnabled(custom.id, false);
+    await api.saveTheme('sage-global');
     await api.reorderEngines(['google', 'bing', custom.id]);
     await api.testEngine(custom.id, { ...custom, apiKey: '' });
     await api.clearEngineApiKey(custom.id);
@@ -37,6 +38,7 @@ describe('Options v2 API', () => {
       { type: 'upsert-engine', engine: custom },
       { type: 'set-active-engine', engineId: custom.id },
       { type: 'set-engine-enabled', engineId: custom.id, enabled: false },
+      { type: 'save-theme', theme: 'sage-global' },
       { type: 'reorder-engines', engineIds: ['google', 'bing', custom.id] },
       { type: 'test-engine', engineId: custom.id, candidate: { ...custom, apiKey: '' } },
       { type: 'clear-engine-api-key', engineId: custom.id },
