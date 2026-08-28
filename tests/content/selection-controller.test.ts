@@ -589,14 +589,16 @@ describe('划词翻译视图隔离', () => {
     view.remove();
   });
 
-  it('结果区右上角仅提供复制和重试 icon 按钮', () => {
+  it('结果区右上角按重试、复制顺序提供 icon 按钮', () => {
     let root: ShadowRoot | undefined;
     const original = Element.prototype.attachShadow;
     vi.spyOn(HTMLElement.prototype, 'attachShadow').mockImplementation(function (this: HTMLElement, options) { root = original.call(this, options); return root; });
     const view = new SelectionView(document, new DOMRect(10, 10, 20, 20), { translate: vi.fn(), copy: vi.fn(), close: vi.fn() });
 
     const wrap = root!.querySelector('.result-wrap');
+    const actions = [...wrap!.querySelectorAll<HTMLElement>('.result-actions [data-action]')];
     expect(wrap?.querySelector('[data-result]')).not.toBeNull();
+    expect(actions.map((action) => action.dataset.action)).toEqual(['retry', 'copy']);
     expect(wrap?.querySelector('[data-action="copy"]')).toHaveAttribute('aria-label', '复制');
     expect(wrap?.querySelector('[data-action="copy"]')).toHaveAttribute('title', '复制');
     expect(wrap?.querySelector('[data-action="retry"]')).toHaveAttribute('aria-label', '重试');
