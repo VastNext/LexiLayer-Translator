@@ -29,6 +29,7 @@
   "optionsKicker": { "message": "Connection and reading preferences" },
   "optionsApiConnection": { "message": "API connection" },
   "optionsReadingPreferences": { "message": "Reading preferences" },
+  "selectionPreferences": { "message": "Selection translation" },
   "optionsDataManagement": { "message": "Data management" },
   "optionsKeySaved": { "message": "An API key is saved; leave this field blank to keep it." },
   "model": { "message": "Model" },

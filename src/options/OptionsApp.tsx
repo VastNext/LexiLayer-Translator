@@ -71,6 +71,7 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
   const [confirmKey, setConfirmKey] = useState<string>();
   const [confirmCache, setConfirmCache] = useState(false);
   const importInput = useRef<HTMLInputElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const reloadGeneration = useRef(0);
 
   async function reload(message?: string): Promise<void> {
@@ -103,10 +104,21 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
   };
 
   async function act(action: () => Promise<void>, success: string, refresh = false): Promise<void> {
+    setStatus(t('statusSaving'));
     try {
       await action();
       if (refresh) await reload(success); else setStatus(success);
     } catch (error) { setStatus(error instanceof Error ? error.message : t('statusSaveFailed')); }
+  }
+
+  async function testConnection(engineId: string, candidate?: CustomAiEngine): Promise<void> {
+    setStatus(t('statusConnectionTesting'));
+    try {
+      await api.testEngine(engineId, candidate);
+      setStatus(t('statusConnectionSuccess'));
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : t('statusConnectionFailed'));
+    }
   }
 
   async function saveDraft(draft: CustomDraft): Promise<void> {
@@ -163,7 +175,10 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
   }
 
   function navigateTo(id: string): void {
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const content = contentRef.current;
+    const target = document.getElementById(id);
+    if (!content || !target) return;
+    content.scrollTo({ top: target.offsetTop - content.offsetTop, behavior: 'smooth' });
   }
 
   return <main className="shell options" data-theme={settings.theme}>
@@ -173,13 +188,14 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
         <button onClick={() => navigateTo('builtin-engines')}>{t('translationEngine')}</button>
         <button onClick={() => navigateTo('custom-engines')}>{t('customAiEngines')}</button>
         <button onClick={() => navigateTo('reading-preferences')}>{t('optionsReadingPreferences')}</button>
+        <button onClick={() => navigateTo('selection-preferences')}>{t('selectionPreferences')}</button>
         <button onClick={() => navigateTo('appearance-theme')}>{t('appearanceTheme')}</button>
         <button onClick={() => navigateTo('data-privacy')}>{t('dataPrivacy')}</button>
       </nav>
-      <small>v0.2.0</small>
+      <small>v0.3.0</small>
     </aside>
-    <div className="options-content">
-    <header className="masthead"><div><p className="eyebrow">VAST TRANSLATOR</p><h1>{t('optionsTitle')}</h1><p className="kicker">{t('optionsKicker')}</p></div><span className="version">v0.2.0</span></header>
+    <div className="options-content" ref={contentRef}>
+    <header className="masthead"><div><p className="eyebrow">VAST TRANSLATOR</p><h1>{t('optionsTitle')}</h1><p className="kicker">{t('optionsKicker')}</p></div><span className="version">v0.3.0</span></header>
 
     <section id="builtin-engines" className="section section--marked" aria-label={t('builtinEngines')}>
       <div className="section-header"><h2>{t('builtinEngines')}</h2><span className="section-index">01 / BUILTIN</span></div>
@@ -190,7 +206,7 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
           {settings.activeEngineId === engine.id && <span className="badge badge--active">{t('activeDefault')}</span>}
           <label className="toggle"><input type="checkbox" aria-label={`${engine.name} ${t('enabled')}`} checked={engine.enabled} onChange={(event) => void act(() => api.setEngineEnabled(engine.id, event.target.checked), t('statusEngineUpdated'), true)} /> {t('enabled')}</label>
           {settings.activeEngineId !== engine.id && <button className="secondary" disabled={!engine.enabled} onClick={() => void act(() => api.setActiveEngine(engine.id), t('statusActiveChanged'), true)}>{t('setDefault')}</button>}
-          <button className="secondary" disabled={!engine.enabled} onClick={() => void act(() => api.testEngine(engine.id), t('statusConnectionSuccess'))}>{t('actionTestConnection')}</button>
+          <button className="secondary compact-action" disabled={!engine.enabled} onClick={() => void testConnection(engine.id)}>{t('actionTestConnection')}</button>
         </div>
       </article>)}</div>
     </section>
@@ -211,7 +227,7 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
           {changedOrigin && <p className="note">{t('engineOriginChanged')}</p>}
           <div className="actions engine-actions">
             <button className="primary" onClick={() => void saveDraft(draft)}>{t('saveEngine')}</button>
-            <button className="secondary" onClick={() => void act(() => api.testEngine(draft.id, { id: draft.id, kind: 'custom-ai', name: draft.name, enabled: draft.enabled, order: draft.order, baseUrl: draft.baseUrl, model: draft.model, apiKey: draft.apiKey }), t('statusConnectionSuccess'))}>{t('actionTestConnection')}</button>
+            <button className="secondary compact-action" onClick={() => void testConnection(draft.id, { id: draft.id, kind: 'custom-ai', name: draft.name, enabled: draft.enabled, order: draft.order, baseUrl: draft.baseUrl, model: draft.model, apiKey: draft.apiKey })}>{t('actionTestConnection')}</button>
             <button className="secondary" disabled={!draft.enabled || changedOrigin || (!draft.hasApiKey && !draft.apiKey)} onClick={() => void act(() => api.setActiveEngine(draft.id), t('statusActiveChanged'), true)}>{t('setDefault')}</button>
             <button className="secondary compact" aria-label={t('moveUp')} disabled={index === 0} onClick={() => void move(draft.id, -1)}>↑ {t('moveUp')}</button>
             <button className="secondary compact" aria-label={t('moveDown')} disabled={index === drafts.length - 1} onClick={() => void move(draft.id, 1)}>↓ {t('moveDown')}</button>
@@ -233,25 +249,28 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
       <label className="field">{t('defaultMode')}<select aria-label={t('defaultMode')} value={settings.readingPreferences.displayMode} onChange={(event) => updatePreferences('displayMode', event.target.value as ReadingPreferences['displayMode'])}><option value="bilingual">{t('bilingual')}</option><option value="translation">{t('translationOnly')}</option></select></label>
       <label className="field">{t('translationPosition')}<select aria-label={t('translationPosition')} value={settings.readingPreferences.translationPosition} onChange={(event) => updatePreferences('translationPosition', event.target.value as ReadingPreferences['translationPosition'])}><option value="after">{t('positionAfter')}</option><option value="before">{t('positionBefore')}</option></select></label>
       <label className="field">{t('defaultScope')}<select aria-label={t('defaultScope')} value={settings.readingPreferences.scanScope} onChange={(event) => updatePreferences('scanScope', event.target.value as ReadingPreferences['scanScope'])}><option value="main-content">{t('mainContent')}</option><option value="whole-page">{t('wholePage')}</option></select></label>
+      <label className="field field--wide">{t('customInstruction')}<textarea aria-label={t('customInstruction')} value={settings.readingPreferences.userInstruction} onChange={(event) => updatePreferences('userInstruction', event.target.value)} /><small>{t('instructionCustomOnly')}</small></label>
+    </div></section>
+
+    <section id="selection-preferences" className="section" aria-label={t('selectionPreferences')}><div className="section-header"><h2>{t('selectionPreferences')}</h2><span className="section-index">04 / SELECT</span></div><div className="grid">
       <label className="field check-field"><input aria-label={t('limitedContext')} type="checkbox" checked={settings.readingPreferences.selectionContext} onChange={(event) => updatePreferences('selectionContext', event.target.checked)} /> {t('limitedContextLabel')}</label>
       <label className="field check-field"><input aria-label={t('selectionPopupEnabled')} type="checkbox" checked={settings.readingPreferences.selectionPopupEnabled} onChange={(event) => updatePreferences('selectionPopupEnabled', event.target.checked)} /> {t('selectionPopupEnabled')}</label>
       <label className="field">{t('inlineSelectionModifier')}<select aria-label={t('inlineSelectionModifier')} value={settings.readingPreferences.inlineSelectionModifier} onChange={(event) => updatePreferences('inlineSelectionModifier', event.target.value as ReadingPreferences['inlineSelectionModifier'])}>{['Control', 'Alt', 'Shift', 'Meta'].map((value) => <option key={value} value={value}>{value}</option>)}<option value="Off">{t('modifierOff')}</option></select></label>
       <p className="field field--wide context-help">{t('limitedContextHelp')}</p>
-      <label className="field field--wide">{t('customInstruction')}<textarea aria-label={t('customInstruction')} value={settings.readingPreferences.userInstruction} onChange={(event) => updatePreferences('userInstruction', event.target.value)} /><small>{t('instructionCustomOnly')}</small></label>
     </div><div className="actions actions--primary"><button className="primary" onClick={() => void act(() => api.savePreferences(settings.readingPreferences), t('statusSaved'))}>{t('savePreferences')}</button></div></section>
 
-    <section id="appearance-theme" className="section theme-section" aria-label={t('appearanceTheme')}><div className="section-header"><div><h2>{t('appearanceTheme')}</h2><p className="section-copy">{t('themeDescription')}</p></div><span className="section-index">04 / THEME</span></div>
+    <section id="appearance-theme" className="section theme-section" aria-label={t('appearanceTheme')}><div className="section-header"><div><h2>{t('appearanceTheme')}</h2><p className="section-copy">{t('themeDescription')}</p></div><span className="section-index">05 / THEME</span></div>
       <div className="theme-grid">{themeChoices.map((theme) => <button key={theme.id} className={`theme-choice ${settings.theme === theme.id ? 'selected' : ''}`} aria-pressed={settings.theme === theme.id} aria-label={`${theme.name}：${t(theme.descriptionKey)}`} onClick={() => void chooseTheme(theme.id)}>
         <span className={`theme-swatch ${theme.swatch}`} aria-hidden="true" /><span><strong>{theme.name}</strong><small>{t(theme.descriptionKey)}</small></span><i aria-hidden="true">{settings.theme === theme.id ? '✓' : ''}</i>
       </button>)}</div>
     </section>
 
-    <section id="data-privacy" className="section" aria-labelledby="data-title"><div className="section-header"><div><h2 id="data-title">{t('dataPrivacy')}</h2><p className="section-copy">{t('privacyWarning')}</p></div><span className="section-index">05 / LOCAL</span></div>
+    <section id="data-privacy" className="section" aria-labelledby="data-title"><div className="section-header"><div><h2 id="data-title">{t('dataPrivacy')}</h2><p className="section-copy">{t('privacyWarning')}</p></div><span className="section-index">06 / LOCAL</span></div>
       <input ref={importInput} hidden aria-label={t('actionImport')} type="file" accept="application/json" onChange={(event) => void importFile(event.target.files?.[0])} />
       <div className="actions"><button className="secondary" onClick={() => importInput.current?.click()}>{t('actionImport')}</button><button className="secondary" onClick={() => api.exportSettings(safeExport(settings, drafts))}>{t('actionExport')}</button>
       {!confirmCache ? <button className="danger" onClick={() => setConfirmCache(true)}>{t('actionClearCache')}</button> : <><span className="help">{t('confirmClear')}</span><button className="danger" onClick={() => void act(async () => { await api.clearCache(); setConfirmCache(false); }, t('cacheCleared'))}>{t('actionConfirmClear')}</button></>}</div>
     </section>
-    <p className="status sticky-status" role="status" data-state={statusState}>{status || t('unchanged')} {loadFailed && <button className="secondary compact" onClick={() => void reload()}>{t('actionRetry')}</button>}</p>
+    <p className="status status-toast" role="status" data-state={statusState}>{status || t('unchanged')} {loadFailed && <button className="secondary compact-action" onClick={() => void reload()}>{t('actionRetry')}</button>}</p>
     </div>
   </main>;
 }

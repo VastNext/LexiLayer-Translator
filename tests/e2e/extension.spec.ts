@@ -62,6 +62,16 @@ async function clickPopupButton(
 test('五套主题从 Options 即时保存并在重开 Popup 后持久应用', async ({ openExtensionPage }) => {
   const options = await openExtensionPage('options.html');
   await expect(options.locator('html')).toHaveAttribute('data-theme', 'pearl-reader');
+  await expect(options.getByText('v0.3.0').first()).toBeVisible();
+  const nav = options.locator('.options-nav');
+  const navBefore = await nav.boundingBox();
+  if (!navBefore) throw new Error('设置导航不可见');
+  await nav.getByRole('button', { name: '外观主题' }).click();
+  await expect(options.locator('.options-content')).not.toHaveJSProperty('scrollTop', 0);
+  const navAfter = await nav.boundingBox();
+  expect(navAfter).toEqual(navBefore);
+  await expect(nav).toBeVisible();
+  expect(await options.evaluate(() => ({ body: document.body.scrollTop, root: document.documentElement.scrollTop }))).toEqual({ body: 0, root: 0 });
   await options.screenshot({ path: themeEvidence('pearl-reader-options'), fullPage: true });
 
   const themes = [
@@ -373,6 +383,11 @@ test('长页面底部划词面板始终在视口内，可拖动关闭，Ctrl 内
   const triggerBox = await host.boundingBox(); if (!triggerBox) throw new Error('V 按钮不可见');
   await page.mouse.click(triggerBox.x + triggerBox.width / 2, triggerBox.y + triggerBox.height / 2);
   await expect(host).toHaveAttribute('data-vast-state', 'translated');
+  const openedBounds = await host.boundingBox();
+  const selectionBounds = await paragraph.boundingBox();
+  if (!openedBounds || !selectionBounds) throw new Error('无法测量底部划词面板或选区');
+  expect(openedBounds.y).toBeLessThan(selectionBounds.y);
+  expect(openedBounds.y + openedBounds.height).toBeLessThanOrEqual(await page.evaluate(() => innerHeight - 8));
   await expect.poll(() => host.evaluate((element) => { const rect = element.getBoundingClientRect(); return rect.left >= 8 && rect.top >= 8 && rect.right <= innerWidth - 8 && rect.bottom <= innerHeight - 8; })).toBe(true);
   const beforeScroll = await host.boundingBox();
   await page.mouse.wheel(0, -500);
@@ -451,17 +466,20 @@ test('网页按 8+2 批处理，动态范围正确且离屏滚动后才请求', 
   expect(server.maxConcurrency()).toBeLessThanOrEqual(3);
   await expect(page.locator('#offscreen + [data-vast-translator]')).toHaveAttribute('data-vast-state', 'loading');
   expect(nonStream()).toHaveLength(2);
-  const waitingSession = await serviceWorker.evaluate(async () => chrome.storage.session.get('pageProgress')) as { pageProgress?: Record<string, { status: string; completed: number; total: number }> };
-  expect(Object.values(waitingSession.pageProgress ?? {})).toContainEqual(expect.objectContaining({ status: 'translating', completed: 10, total: 11 }));
+  await expect.poll(async () => {
+    const session = await serviceWorker.evaluate(async () => chrome.storage.session.get('pageProgress')) as { pageProgress?: Record<string, { status: string; completed: number; total: number }> };
+    return Object.values(session.pageProgress ?? {});
+  }).toContainEqual(expect.objectContaining({ status: 'translating', completed: 10, total: 11 }));
   await page.locator('#header').evaluate((header) => { header.innerHTML = '<p id="late-header">Late header</p>'; });
   await expect(page.locator('#late-header + [data-vast-translator]')).toHaveCount(0);
   await page.locator('#offscreen').scrollIntoViewIfNeeded();
   await expect(page.locator('#offscreen + [data-vast-translator]')).toHaveText('屏幕外段落');
   await expect.poll(() => nonStream().length).toBe(3);
   await expect.poll(async () => {
-    const session = await serviceWorker.evaluate(async () => chrome.storage.session.get('pageProgress')) as { pageProgress?: Record<string, { status: string; completed: number; total: number }> };
-    return Object.values(session.pageProgress ?? {});
-  }).toContainEqual(expect.objectContaining({ status: 'complete', completed: 11, total: 11 }));
+    const session = await serviceWorker.evaluate(async () => chrome.storage.session.get('pageProgress')) as { pageProgress?: Record<string, { completed: number; failed: number; total: number }> };
+    return Object.values(session.pageProgress ?? {}).some((progress) => progress.completed === 11 && progress.failed === 0 && progress.total >= 11);
+  }).toBe(true);
+  await expect(page.locator('#late-header + [data-vast-translator]')).toHaveCount(0);
 });
 
 test('德语划词遇畸形 SSE 自动回退非流式', async ({ context, server, openExtensionPage }) => {

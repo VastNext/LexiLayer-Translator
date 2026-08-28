@@ -29,6 +29,7 @@
   "optionsKicker": { "message": "连接与阅读偏好" },
   "optionsApiConnection": { "message": "API 连接" },
   "optionsReadingPreferences": { "message": "阅读偏好" },
+  "selectionPreferences": { "message": "划词翻译" },
   "optionsDataManagement": { "message": "数据管理" },
   "optionsKeySaved": { "message": "已保存 API Key；留空会保留现有密钥。" },
   "model": { "message": "模型" },
