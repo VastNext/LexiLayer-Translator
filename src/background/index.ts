@@ -15,6 +15,7 @@ export interface BackgroundChrome {
   runtime: { id: string; sendMessage(message: unknown): Promise<unknown>; onMessage: { addListener(listener: AsyncMessageListener): void }; onConnect: { addListener(listener: (port: chrome.runtime.Port) => void): void } };
   commandsApi: { onCommand: { addListener(listener: (command: string) => void): void } };
   contextMenus: { create(properties: chrome.contextMenus.CreateProperties): void; removeAll(): Promise<void> | void; onClicked: { addListener(listener: (info: chrome.contextMenus.OnClickData, tab?: chrome.tabs.Tab) => void): void } };
+  action?: Pick<typeof chrome.action, 'setBadgeText' | 'setBadgeBackgroundColor'>;
   tabs: { query(queryInfo: chrome.tabs.QueryInfo): Promise<chrome.tabs.Tab[]>; sendMessage(tabId: number, message: unknown): Promise<unknown> };
   storage: { local: Pick<chrome.storage.StorageArea, 'get' | 'set'> & { setAccessLevel?(options: { accessLevel: 'TRUSTED_CONTEXTS' }): Promise<void> }; session?: { get(key: string): Promise<Record<string, unknown>>; set(items: Record<string, unknown>): Promise<void> } };
   i18n: { getUILanguage(): string; getMessage?(key: string): string };
@@ -190,6 +191,12 @@ export function createBackgroundController(api: BackgroundChrome, dependencies: 
     await api.storage.local.set({ translatorSettings: settings });
   }
 
+  async function setTranslationBadge(tabId: number, active: boolean): Promise<void> {
+    if (!api.action) return;
+    if (active) await api.action.setBadgeBackgroundColor({ tabId, color: '#16a34a' });
+    await api.action.setBadgeText({ tabId, text: active ? '✓' : '' });
+  }
+
   function withSettingsMutation<T>(mutation: () => Promise<T>): Promise<T> {
     const result = settingsMutationQueue.then(mutation, mutation);
     settingsMutationQueue = result.then(() => undefined, () => undefined);
@@ -338,6 +345,7 @@ export function createBackgroundController(api: BackgroundChrome, dependencies: 
         const progress = { status: String(status), completed: Number(completed), failed: Number(failed), total: Number(total), ...(engineId ? { engineId } : {}) };
         const value = await api.storage.session.get('pageProgress'); const stored = isRecord(value.pageProgress) ? value.pageProgress : {};
         await api.storage.session.set({ pageProgress: { ...stored, [key]: progress } });
+        await setTranslationBadge(sender.tab.id, status !== 'idle');
         void api.runtime.sendMessage({ type: 'page-progress', tabId: sender.tab.id, frameId: sender.frameId, progress }); return { ok: true };
       }
       if (message.type === 'get-page-progress') {
@@ -431,7 +439,10 @@ export function createBackgroundController(api: BackgroundChrome, dependencies: 
     api.contextMenus.onClicked.addListener((info, tab) => {
       if (tab?.id === undefined) return;
       const messages: Record<string, unknown> = { 'vast-translate-page': { type: 'translate-page' }, 'vast-restore-page': { type: 'restore-page' }, 'vast-translate-selection': { type: 'translate-selection', source: 'context-menu', text: info.selectionText ?? '' } };
-      const message = messages[String(info.menuItemId)]; if (message) void api.tabs.sendMessage(tab.id, message).catch(() => undefined);
+      const message = messages[String(info.menuItemId)];
+      if (info.menuItemId === 'vast-translate-page') void setTranslationBadge(tab.id, true).catch(() => undefined);
+      if (info.menuItemId === 'vast-restore-page') void setTranslationBadge(tab.id, false).catch(() => undefined);
+      if (message) void api.tabs.sendMessage(tab.id, message).catch(() => undefined);
     });
     void Promise.resolve(api.contextMenus.removeAll()).then(() => {
       api.contextMenus.create({ id: 'vast-translate-page', title: api.i18n.getMessage?.('menuTranslatePage') || '翻译页面', contexts: ['page'] });
@@ -443,5 +454,5 @@ export function createBackgroundController(api: BackgroundChrome, dependencies: 
 }
 
 if (typeof chrome !== 'undefined' && chrome.runtime?.id) {
-  createBackgroundController({ runtime: chrome.runtime, commandsApi: chrome.commands, contextMenus: chrome.contextMenus, tabs: chrome.tabs, storage: { local: chrome.storage.local, session: chrome.storage.session }, i18n: chrome.i18n }, createRuntimeDependencies()).register();
+  createBackgroundController({ runtime: chrome.runtime, commandsApi: chrome.commands, contextMenus: chrome.contextMenus, action: chrome.action, tabs: chrome.tabs, storage: { local: chrome.storage.local, session: chrome.storage.session }, i18n: chrome.i18n }, createRuntimeDependencies()).register();
 }

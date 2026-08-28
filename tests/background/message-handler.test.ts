@@ -44,6 +44,10 @@ function createChrome(): BackgroundChrome & {
       removeAll: vi.fn(async () => undefined),
       onClicked: { addListener: (listener) => menus.push(listener) },
     },
+    action: {
+      setBadgeText: vi.fn(async () => undefined),
+      setBadgeBackgroundColor: vi.fn(async () => undefined),
+    },
     tabs: {
       query: vi.fn(async () => [{ id: 7 } as chrome.tabs.Tab]),
       sendMessage: vi.fn(async () => undefined),
@@ -322,6 +326,23 @@ describe('service worker 消息编排', () => {
     await expect(send({ type: 'get-page-progress', tabId: 5, frameId: 0 })).resolves.toEqual({ ok: true, data: { status: 'partial', completed: 2, failed: 1, total: 3 } });
     await expect(send({ type: 'get-page-progress', tabId: 5, frameId: 2 })).resolves.toEqual({ ok: true, data: undefined });
     expect(chromeApi.storage.session?.set).toHaveBeenCalledWith({ pageProgress: { '5:0': { status: 'partial', completed: 2, failed: 1, total: 3 } } });
+  });
+
+  it.each(['translating', 'complete', 'partial', 'error'] as const)('页面进度 %s 时按 tab 显示绿色勾 Badge', async (status) => {
+    const page = { id: 'extension-id', tab: { id: 6 } as chrome.tabs.Tab, frameId: 0, documentId: 'doc' };
+
+    await send({ type: 'page-progress', progress: { status, completed: 0, failed: 0, total: 0 } }, page);
+
+    expect(chromeApi.action?.setBadgeBackgroundColor).toHaveBeenCalledWith({ tabId: 6, color: '#16a34a' });
+    expect(chromeApi.action?.setBadgeText).toHaveBeenCalledWith({ tabId: 6, text: '✓' });
+  });
+
+  it('页面进度 idle 时按 tab 清除 Badge', async () => {
+    const page = { id: 'extension-id', tab: { id: 6 } as chrome.tabs.Tab, frameId: 0, documentId: 'doc' };
+
+    await send({ type: 'page-progress', progress: { status: 'idle', completed: 0, failed: 0, total: 0 } }, page);
+
+    expect(chromeApi.action?.setBadgeText).toHaveBeenCalledWith({ tabId: 6, text: '' });
   });
 
   it('service worker controller 重建后从 storage.session 恢复进度', async () => {

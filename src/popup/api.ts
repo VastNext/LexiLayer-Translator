@@ -17,6 +17,10 @@ interface PopupChromeApi {
     sendMessage(tabId: number, message: unknown): Promise<unknown>;
   };
   scripting?: { executeScript(injection: { target: { tabId: number }; files: string[] }): Promise<unknown> };
+  action?: {
+    setBadgeText(details: { tabId: number; text: string }): Promise<void>;
+    setBadgeBackgroundColor(details: { tabId: number; color: string }): Promise<void>;
+  };
   i18n: { getMessage(key: string): string };
 }
 
@@ -85,6 +89,12 @@ export function createPopupApi(api: PopupChromeApi) {
           throw new Error('当前页面暂时无法注入翻译脚本，请刷新页面后重试');
         }
       }
+    },
+    async setTranslationBadge(active: boolean) {
+      const tabId = await activeTabId();
+      if (tabId === undefined || !api.action) return;
+      if (active) await api.action.setBadgeBackgroundColor({ tabId, color: '#16a34a' });
+      await api.action.setBadgeText({ tabId, text: active ? '✓' : '' });
     },
     openOptions: () => void api.runtime.openOptionsPage(),
     async getProgress() {

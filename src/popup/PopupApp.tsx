@@ -13,6 +13,7 @@ export interface PopupApi {
   setActiveEngine?(engineId: string): Promise<void>;
   savePopupState?(engineId: string, preferences: NonNullable<PopupConfigResponse['preferences']>): Promise<void>;
   sendToPage(message: unknown): Promise<unknown>;
+  setTranslationBadge(active: boolean): Promise<void>;
   openOptions(): void;
   getProgress(): Promise<Progress | undefined>;
   subscribeProgress(listener: (progress: Progress) => void): (() => void) | Promise<() => void>;
@@ -65,29 +66,46 @@ export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: T
 
   function applyProgress(progress: Progress): void {
     setStatus(formatProgress(progress));
-    setPageActive(progress.status !== 'idle' && progress.total > 0);
+    setPageActive(progress.status !== 'idle');
   }
 
-  async function savePreferences(next: typeof preferences): Promise<void> {
+  function translationCommand(nextEngineId = engineId, nextPreferences = preferences) {
+    return {
+      type: 'translate-page', engineId: nextEngineId, scope: nextPreferences.scanScope,
+      sourceLanguage: nextPreferences.sourceLanguage ?? 'auto',
+      mode: nextPreferences.displayMode === 'translation' ? 'translation-only' : 'bilingual',
+      targetLanguage: nextPreferences.targetLanguage,
+    };
+  }
+
+  async function savePreferences(next: typeof preferences, retranslate = false): Promise<void> {
     setPreferences(next);
-    try { await (api.savePopupState ? api.savePopupState(engineId, next) : api.savePreferences?.(next)); }
+    try {
+      await (api.savePopupState ? api.savePopupState(engineId, next) : api.savePreferences?.(next));
+      if (retranslate && pageActive) await api.sendToPage(translationCommand(engineId, next));
+    }
     catch (error) { setStatus(error instanceof Error ? error.message : t('statusFailed')); }
+  }
+
+  async function changeEngine(nextEngineId: string): Promise<void> {
+    setEngineId(nextEngineId);
+    try {
+      await (api.savePopupState ? api.savePopupState(nextEngineId, preferences) : api.setActiveEngine?.(nextEngineId) ?? Promise.resolve());
+      if (pageActive) await api.sendToPage(translationCommand(nextEngineId));
+    } catch (error) { setStatus(error instanceof Error ? error.message : t('statusFailed')); }
   }
 
   async function togglePage(): Promise<void> {
     setBusy(true);
     try {
       if (pageActive) {
+        await api.setTranslationBadge(false);
         await api.sendToPage({ type: 'restore-page' });
         setPageActive(false);
         setStatus(t('ready'));
       } else {
-        await api.sendToPage({
-          type: 'translate-page', engineId, scope: preferences.scanScope,
-          sourceLanguage: preferences.sourceLanguage ?? 'auto',
-          mode: preferences.displayMode === 'translation' ? 'translation-only' : 'bilingual',
-          targetLanguage: preferences.targetLanguage,
-        });
+        await api.setTranslationBadge(true);
+        await api.sendToPage(translationCommand());
         setPageActive(true);
       }
     } catch (error) {
@@ -110,14 +128,12 @@ export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: T
       </select></label>
       </div>
       <label className="engine-control"><span className="engine-label">{t('translationEngine')}</span><select aria-label={t('translationEngine')} value={engineId} onChange={(event) => {
-        const value = event.target.value; setEngineId(value);
-        const saving = api.savePopupState ? api.savePopupState(value, preferences) : api.setActiveEngine?.(value) ?? Promise.resolve();
-        void saving.catch((error) => setStatus(error instanceof Error ? error.message : t('statusFailed')));
+        void changeEngine(event.target.value);
       }}>{engines.map((engine) => <option key={engine.id} value={engine.id} disabled={!engine.ready}>{engineDisplayName(engine as Parameters<typeof engineDisplayName>[0])}</option>)}</select></label>
     </div>
     <p className="status translation-status" role="status"><span className="status-dot" aria-hidden="true" />{status}</p>
     <div className="primary-actions">
-      <button className="mode-icon" aria-label={preferences.displayMode === 'bilingual' ? t('bilingual') : t('translationOnly')} title={t('modeToggleHelp')} onClick={() => void savePreferences({ ...preferences, displayMode: preferences.displayMode === 'bilingual' ? 'translation' : 'bilingual' })}>{preferences.displayMode === 'bilingual' ? '◫' : '▣'}</button>
+      <button className="mode-icon" aria-label={preferences.displayMode === 'bilingual' ? t('bilingual') : t('translationOnly')} title={t('modeToggleHelp')} onClick={() => void savePreferences({ ...preferences, displayMode: preferences.displayMode === 'bilingual' ? 'translation' : 'bilingual' }, true)}>{preferences.displayMode === 'bilingual' ? '◫' : '▣'}</button>
       <button className="primary primary--wide" disabled={busy} aria-busy={busy} onClick={() => void togglePage()}>{busy ? t('statusTranslating') : pageActive ? t('showOriginal') : t('translateShortcut')}</button>
     </div>
   </main>;
