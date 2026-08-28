@@ -1,3 +1,15 @@
 [data-vast-translator] {
   white-space: pre-wrap;
 }
+
+[data-vast-inline-selection-translation] {
+  margin: .45em 0;
+  padding: .55em .75em;
+  border-left: 3px solid #3b6ff5;
+  border-radius: 6px;
+  background: #eef3ff;
+  color: #1d1d1f;
+  font: inherit;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}

@@ -4,9 +4,10 @@ import { engineDisplayName } from '../shared/config';
 
 const selectionMessages: Record<string, string> = {
   selectionTranslate: '翻译选中内容', selectionDialog: '划词翻译', translationEngine: '翻译引擎', targetLanguage: '目标语言',
-  limitedContextShort: '有限上下文', actionClose: '关闭', preparing: '准备翻译…', actionCopy: '复制', actionRetry: '重试',
+  limitedContextHelp: '发送选区所在段落的有限文本帮助消歧，不翻译上下文本身。', actionClose: '关闭', preparing: '准备翻译…', actionCopy: '复制', actionRetry: '重试',
 };
 const selectionTranslator: Translator = (key) => selectionMessages[key] ?? key;
+const VIEWPORT_MARGIN = 8;
 
 export interface SelectionViewActions {
   translate(targetLanguage: string, includeContext: boolean, engineId: string): void;
@@ -27,21 +28,26 @@ export interface SelectionViewHandle {
   remove(): void;
 }
 
-export class SelectionView {
+export class SelectionView implements SelectionViewHandle {
   readonly host: HTMLElement;
   private readonly shadow: ShadowRoot;
   private result = '';
-  private readonly expectedLeft: number;
-  private readonly expectedTop: number;
-  private readonly expectedWidth = 32;
-  private readonly expectedHeight = 32;
+  private expectedLeft = 0;
+  private expectedTop = 0;
+  private expectedWidth = 32;
+  private expectedHeight = 32;
+  private panelOpen = false;
+  private dragOffsetX = 0;
+  private dragOffsetY = 0;
+  private dragging = false;
 
   constructor(document: Document, rect: DOMRect, private readonly actions: SelectionViewActions, private readonly t: Translator = selectionTranslator) {
     this.host = document.createElement('div');
     this.host.dataset.vastSelectionHost = '';
     this.host.dataset.vastState = 'ready';
-    this.expectedLeft = Math.max(8, rect.right);
-    this.expectedTop = Math.max(8, rect.bottom);
+    const position = this.clamp(rect.right, rect.bottom, 32, 32);
+    this.expectedLeft = position.left;
+    this.expectedTop = position.top;
     for (const [name, value] of [['position', 'fixed'], ['z-index', '2147483647'], ['left', `${this.expectedLeft}px`], ['top', `${this.expectedTop}px`], ['opacity', '1'], ['visibility', 'visible'], ['display', 'block'], ['pointer-events', 'auto'], ['transform', 'none']] as const) {
       this.host.style.setProperty(name, value, 'important');
     }
@@ -49,23 +55,26 @@ export class SelectionView {
     this.shadow.innerHTML = `
       <style>
         :host{all:initial;font-family:Inter,ui-sans-serif,system-ui,sans-serif;color:#17201d}
-        button,select,input{font:inherit}button{cursor:pointer}
+        button,select{font:inherit}button{cursor:pointer}
         .trigger{width:32px;height:32px;border:0;border-radius:11px;background:#176b52;color:white;font-weight:800}
-        .panel{display:none;width:320px;padding:14px;border:1px solid #c8d8d1;border-radius:16px;background:#f8fbf9;box-shadow:0 18px 50px #10251d35}
-        .panel.open{display:block}.top,.actions{display:flex;gap:8px;align-items:center}.top{justify-content:space-between}
-        .result{min-height:64px;margin:12px 0;padding:10px;border-radius:10px;background:white;white-space:pre-wrap}
-        .actions button{border:1px solid #b8ccc4;border-radius:8px;background:white;padding:6px 9px}
-        label{font-size:12px;color:#47645a}
+        .panel{display:none;width:min(320px,calc(100vw - 16px));max-height:calc(100vh - 16px);padding:12px;border:1px solid #c8d8d1;border-radius:16px;background:#f8fbf9;box-shadow:0 18px 50px #10251d35;overflow:hidden}
+        .panel.open{display:flex;flex-direction:column}.top,.actions{display:flex;gap:7px;align-items:center}.top{min-width:0;flex-wrap:nowrap}
+        .drag{flex:0 0 auto;width:20px;height:30px;display:grid;place-items:center;color:#688078;cursor:grab;touch-action:none;user-select:none}.drag:active{cursor:grabbing}
+        .top select{min-width:0;height:30px;border:1px solid #b8ccc4;border-radius:8px;background:white;color:#17201d}.top [name=engine]{flex:1 1 96px}.top [name=target-language]{flex:1 1 88px}
+        .icon{flex:0 0 30px;width:30px;height:30px;padding:0;border:1px solid #b8ccc4;border-radius:8px;background:white;color:#315f53;font-weight:800}.icon[aria-pressed=true]{background:#dceee7}.close{font-size:18px;line-height:1}
+        .result{min-height:64px;margin:10px 0;padding:10px;border-radius:10px;background:white;white-space:pre-wrap;overflow:auto}
+        .actions{flex:0 0 auto}.actions button{border:1px solid #b8ccc4;border-radius:8px;background:white;padding:6px 9px}
       </style>
       <button class="trigger" aria-label="${this.t('selectionTranslate')}">V</button>
       <section class="panel" role="dialog" aria-label="${this.t('selectionDialog')}">
         <div class="top">
+          <span class="drag" data-drag-handle aria-hidden="true">⋮⋮</span>
           <select name="engine" aria-label="${this.t('translationEngine')}"><option value="google">Google</option><option value="bing">Bing</option></select>
           <select name="target-language" aria-label="${this.t('targetLanguage')}">
             ${languageOptions.filter(({ value }) => value !== 'auto').map(({ value, label }) => `<option value="${value}">${label}</option>`).join('')}
           </select>
-          <label><input name="include-context" type="checkbox" checked> ${this.t('limitedContextShort')}</label>
-          <button data-action="close" aria-label="${this.t('actionClose')}">×</button>
+          <button class="icon" name="include-context" aria-pressed="true" title="${this.t('limitedContextHelp')}">◎</button>
+          <button class="icon close" data-action="close" aria-label="${this.t('actionClose')}">×</button>
         </div>
         <div class="result" data-result>${this.t('preparing')}</div>
         <div class="actions"><button data-action="copy">${this.t('actionCopy')}</button><button data-action="retry">${this.t('actionRetry')}</button></div>
@@ -75,11 +84,15 @@ export class SelectionView {
 
   mount(): void {
     this.host.ownerDocument.body.append(this.host);
+    this.reclamp();
   }
 
   open(targetLanguage: string): void {
     this.setTargetLanguage(targetLanguage);
+    this.panelOpen = true;
+    this.shadow.querySelector('.trigger')?.setAttribute('hidden', '');
     this.shadow.querySelector('.panel')?.classList.add('open');
+    this.reclamp();
   }
 
   setTargetLanguage(targetLanguage: string): void {
@@ -87,7 +100,7 @@ export class SelectionView {
   }
 
   setIncludeContext(includeContext: boolean): void {
-    (this.shadow.querySelector('[name="include-context"]') as HTMLInputElement).checked = includeContext;
+    this.shadow.querySelector('[name="include-context"]')?.setAttribute('aria-pressed', String(includeContext));
   }
 
   setEngines(engines: Array<{ id: string; kind: string; name: string; ready: boolean }>, activeEngineId: string): void {
@@ -113,11 +126,13 @@ export class SelectionView {
     this.setResult(this.result + chunk);
   }
 
-  getResult(): string {
-    return this.result;
-  }
+  getResult(): string { return this.result; }
 
   remove(): void {
+    const view = this.host.ownerDocument.defaultView;
+    view?.removeEventListener('resize', this.onResize);
+    view?.removeEventListener('pointermove', this.onPointerMove);
+    view?.removeEventListener('pointerup', this.onPointerUp);
     this.host.remove();
   }
 
@@ -128,28 +143,85 @@ export class SelectionView {
       this.open((this.shadow.querySelector('[name="target-language"]') as HTMLSelectElement).value);
       this.requestTranslation();
     });
-    this.shadow.querySelector('[data-action="retry"]')?.addEventListener('click', (event) => {
-      if (event.isTrusted) this.requestTranslation();
-    });
+    this.shadow.querySelector('[data-action="retry"]')?.addEventListener('click', (event) => { if (event.isTrusted) this.requestTranslation(); });
     this.shadow.querySelector('[data-action="copy"]')?.addEventListener('click', () => this.actions.copy());
     this.shadow.querySelector('[data-action="close"]')?.addEventListener('click', () => this.actions.close());
-    this.shadow.querySelector('[name="target-language"]')?.addEventListener('change', (event) => {
-      if (event.isTrusted) this.requestTranslation();
+    this.shadow.querySelector('[name="include-context"]')?.addEventListener('click', (event) => {
+      const button = event.currentTarget as HTMLButtonElement;
+      button.setAttribute('aria-pressed', String(button.getAttribute('aria-pressed') !== 'true'));
     });
-    this.shadow.querySelector('[name="engine"]')?.addEventListener('change', (event) => {
-      if (event.isTrusted) this.requestTranslation();
-    });
+    this.shadow.querySelector('[name="target-language"]')?.addEventListener('change', (event) => { if (event.isTrusted) this.requestTranslation(); });
+    this.shadow.querySelector('[name="engine"]')?.addEventListener('change', (event) => { if (event.isTrusted) this.requestTranslation(); });
+    this.shadow.querySelector('[data-drag-handle]')?.addEventListener('pointerdown', this.onPointerDown as EventListener);
+    this.host.ownerDocument.defaultView?.addEventListener('resize', this.onResize);
+  }
+
+  private readonly onResize = () => this.reclamp();
+  private readonly onPointerDown = (event: PointerEvent) => {
+    if (event.button !== 0) return;
+    this.dragging = true;
+    this.dragOffsetX = event.clientX - this.expectedLeft;
+    this.dragOffsetY = event.clientY - this.expectedTop;
+    const view = this.host.ownerDocument.defaultView;
+    view?.addEventListener('pointermove', this.onPointerMove);
+    view?.addEventListener('pointerup', this.onPointerUp);
+  };
+  private readonly onPointerMove = (event: PointerEvent) => {
+    if (!this.dragging) return;
+    const size = this.currentSize();
+    this.setPosition(this.clamp(event.clientX - this.dragOffsetX, event.clientY - this.dragOffsetY, size.width, size.height));
+    const hostRect = this.host.getBoundingClientRect();
+    if (hostRect.width && hostRect.height) this.setPosition(this.clamp(this.expectedLeft, this.expectedTop, hostRect.width, hostRect.height));
+  };
+  private readonly onPointerUp = () => {
+    this.dragging = false;
+    const view = this.host.ownerDocument.defaultView;
+    view?.removeEventListener('pointermove', this.onPointerMove);
+    view?.removeEventListener('pointerup', this.onPointerUp);
+  };
+
+  private currentSize(): { width: number; height: number } {
+    if (!this.panelOpen) return { width: 32, height: 32 };
+    const rect = this.shadow.querySelector('.panel')?.getBoundingClientRect();
+    return { width: rect?.width || 320, height: rect?.height || Math.min(220, (this.host.ownerDocument.defaultView?.innerHeight ?? 236) - 16) };
+  }
+
+  private reclamp(): void {
+    const size = this.currentSize();
+    this.expectedWidth = size.width;
+    this.expectedHeight = size.height;
+    this.setPosition(this.clamp(this.expectedLeft, this.expectedTop, size.width, size.height));
+    const hostRect = this.host.getBoundingClientRect();
+    if (hostRect.width && hostRect.height) {
+      this.expectedWidth = hostRect.width;
+      this.expectedHeight = hostRect.height;
+      this.setPosition(this.clamp(this.expectedLeft, this.expectedTop, hostRect.width, hostRect.height));
+    }
+  }
+
+  private clamp(left: number, top: number, width: number, height: number): { left: number; top: number } {
+    const view = this.host.ownerDocument.defaultView;
+    const maxLeft = Math.max(VIEWPORT_MARGIN, (view?.innerWidth ?? width + VIEWPORT_MARGIN * 2) - width - VIEWPORT_MARGIN);
+    const maxTop = Math.max(VIEWPORT_MARGIN, (view?.innerHeight ?? height + VIEWPORT_MARGIN * 2) - height - VIEWPORT_MARGIN);
+    return { left: Math.min(Math.max(VIEWPORT_MARGIN, left), maxLeft), top: Math.min(Math.max(VIEWPORT_MARGIN, top), maxTop) };
+  }
+
+  private setPosition(position: { left: number; top: number }): void {
+    this.expectedLeft = position.left;
+    this.expectedTop = position.top;
+    this.host.style.setProperty('left', `${position.left}px`, 'important');
+    this.host.style.setProperty('top', `${position.top}px`, 'important');
   }
 
   private isTrustedGeometry(event: MouseEvent): boolean {
     const view = this.host.ownerDocument.defaultView;
     const style = view?.getComputedStyle(this.host);
     const rect = this.host.getBoundingClientRect();
-    if (!style || style.opacity !== '1' || style.visibility !== 'visible' || style.display !== 'block'
+    if (!style || style.opacity !== '1' || style.visibility !== 'visible' || style.display !== 'block' || style.position !== 'fixed'
       || style.pointerEvents !== 'auto' || style.transform !== 'none') return false;
     if (Math.abs(rect.left - this.expectedLeft) > 2 || Math.abs(rect.top - this.expectedTop) > 2
       || Math.abs(rect.width - this.expectedWidth) > 2 || Math.abs(rect.height - this.expectedHeight) > 2
-      || rect.left < 0 || rect.top < 0
+      || rect.left < VIEWPORT_MARGIN || rect.top < VIEWPORT_MARGIN
       || rect.right > (view?.innerWidth ?? 0) || rect.bottom > (view?.innerHeight ?? 0)) return false;
     if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) return false;
     const top = this.host.ownerDocument.elementsFromPoint(event.clientX, event.clientY)[0];
@@ -158,7 +230,7 @@ export class SelectionView {
 
   private requestTranslation(): void {
     const language = (this.shadow.querySelector('[name="target-language"]') as HTMLSelectElement).value;
-    const context = (this.shadow.querySelector('[name="include-context"]') as HTMLInputElement).checked;
+    const context = this.shadow.querySelector('[name="include-context"]')?.getAttribute('aria-pressed') === 'true';
     this.setResult('');
     const engineId = (this.shadow.querySelector('[name="engine"]') as HTMLSelectElement).value;
     this.actions.translate(language, context, engineId);

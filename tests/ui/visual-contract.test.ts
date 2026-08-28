@@ -29,6 +29,13 @@ describe('界面视觉契约', () => {
     expect(css).toMatch(/focus-visible/);
   });
 
+  it('Pearl Reader 为 Popup 和 Options 提高基础字号与控件字号', () => {
+    const css = readFileSync(resolve(import.meta.dirname, '../../src/ui.css'), 'utf8');
+    expect(css).toMatch(/--ui-body-size:\s*16px/);
+    expect(css).toMatch(/--ui-control-size:\s*14px/);
+    expect(css).toMatch(/body\s*\{[^}]*font-size:\s*var\(--ui-body-size\)/s);
+  });
+
   it('BrandMark 使用 VastNext 路线、地平线与珊瑚信标并保留 aria', () => {
     const source = readFileSync(resolve(import.meta.dirname, '../../src/BrandMark.tsx'), 'utf8');
     expect(source).toContain('logo-horizon');

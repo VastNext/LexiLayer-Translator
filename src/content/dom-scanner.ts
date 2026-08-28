@@ -23,7 +23,10 @@ const builtInExclusions = [
   '[hidden]',
   '[aria-hidden="true"]',
   '[data-vast-translator]',
+  '[data-vast-inline-selection-translation]',
 ];
+const breadcrumbContainerSelector = 'nav[aria-label*="breadcrumb" i], [role="navigation"][aria-label*="breadcrumb" i], ol[class*="breadcrumb" i], [class*="breadcrumb" i]';
+const breadcrumbLeafSelector = 'a span, button a span, span[aria-current="page"], a';
 
 function queryRoots(root: Document | Element, rule: SiteRule, scope: ScanScope): Element[] {
   const document = root instanceof Document ? root : root.ownerDocument;
@@ -54,6 +57,24 @@ function hasText(element: Element): element is HTMLElement {
   return element instanceof HTMLElement && Boolean(element.textContent?.trim());
 }
 
+function breadcrumbCandidates(root: Document | Element): HTMLElement[] {
+  const containers = [
+    ...(root instanceof Element && root.matches(breadcrumbContainerSelector) ? [root] : []),
+    ...root.querySelectorAll(breadcrumbContainerSelector),
+  ];
+  const candidates = new Set<HTMLElement>();
+  for (const container of containers) {
+    for (const element of container.querySelectorAll(breadcrumbLeafSelector)) {
+      if (!(element instanceof HTMLElement) || element.closest('[aria-hidden="true"], [hidden]')) continue;
+      const text = element.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+      if (!text || !Array.from(element.childNodes).some((node) => node.nodeType === node.TEXT_NODE && Boolean(node.textContent?.trim()))) continue;
+      if (element.matches('a') && element.querySelector('span')) continue;
+      candidates.add(element);
+    }
+  }
+  return Array.from(candidates);
+}
+
 export function scanParagraphElements(
   root: Document | Element,
   rule: SiteRule,
@@ -73,6 +94,7 @@ export function scanParagraphElements(
     for (const candidate of candidates) {
       if (hasText(candidate) && !isExcluded(candidate, rule)) results.add(candidate);
     }
+    for (const candidate of breadcrumbCandidates(scanRoot)) results.add(candidate);
   }
 
   for (const candidate of forced) {

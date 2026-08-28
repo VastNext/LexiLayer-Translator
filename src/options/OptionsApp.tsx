@@ -184,9 +184,10 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
     <section id="builtin-engines" className="section section--marked" aria-label={t('builtinEngines')}>
       <div className="section-header"><h2>{t('builtinEngines')}</h2><span className="section-index">01 / BUILTIN</span></div>
       <div className="builtin-list">{settings.engines.filter((engine) => engine.kind !== 'custom-ai').map((engine) => <article className="engine-row" key={engine.id}>
-        <div><h3>{engine.name}</h3><p className="engine-meta">{engine.id === 'google' ? t('googleDefaultFree') : t('bingBackup')}</p></div>
+        <div><h3>{engine.name}</h3></div>
         <div className="engine-controls">
-          <span className={`badge ${settings.activeEngineId === engine.id ? 'badge--active' : ''}`}>{settings.activeEngineId === engine.id ? t('activeDefault') : t('builtin')}</span>
+          <span className="badge">{t('builtin')}</span>
+          {settings.activeEngineId === engine.id && <span className="badge badge--active">{t('activeDefault')}</span>}
           <label className="toggle"><input type="checkbox" aria-label={`${engine.name} ${t('enabled')}`} checked={engine.enabled} onChange={(event) => void act(() => api.setEngineEnabled(engine.id, event.target.checked), t('statusEngineUpdated'), true)} /> {t('enabled')}</label>
           {settings.activeEngineId !== engine.id && <button className="secondary" disabled={!engine.enabled} onClick={() => void act(() => api.setActiveEngine(engine.id), t('statusActiveChanged'), true)}>{t('setDefault')}</button>}
           <button className="secondary" disabled={!engine.enabled} onClick={() => void act(() => api.testEngine(engine.id), t('statusConnectionSuccess'))}>{t('actionTestConnection')}</button>
@@ -233,6 +234,9 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
       <label className="field">{t('translationPosition')}<select aria-label={t('translationPosition')} value={settings.readingPreferences.translationPosition} onChange={(event) => updatePreferences('translationPosition', event.target.value as ReadingPreferences['translationPosition'])}><option value="after">{t('positionAfter')}</option><option value="before">{t('positionBefore')}</option></select></label>
       <label className="field">{t('defaultScope')}<select aria-label={t('defaultScope')} value={settings.readingPreferences.scanScope} onChange={(event) => updatePreferences('scanScope', event.target.value as ReadingPreferences['scanScope'])}><option value="main-content">{t('mainContent')}</option><option value="whole-page">{t('wholePage')}</option></select></label>
       <label className="field check-field"><input aria-label={t('limitedContext')} type="checkbox" checked={settings.readingPreferences.selectionContext} onChange={(event) => updatePreferences('selectionContext', event.target.checked)} /> {t('limitedContextLabel')}</label>
+      <label className="field check-field"><input aria-label={t('selectionPopupEnabled')} type="checkbox" checked={settings.readingPreferences.selectionPopupEnabled} onChange={(event) => updatePreferences('selectionPopupEnabled', event.target.checked)} /> {t('selectionPopupEnabled')}</label>
+      <label className="field">{t('inlineSelectionModifier')}<select aria-label={t('inlineSelectionModifier')} value={settings.readingPreferences.inlineSelectionModifier} onChange={(event) => updatePreferences('inlineSelectionModifier', event.target.value as ReadingPreferences['inlineSelectionModifier'])}>{['Control', 'Alt', 'Shift', 'Meta'].map((value) => <option key={value} value={value}>{value}</option>)}<option value="Off">{t('modifierOff')}</option></select></label>
+      <p className="field field--wide context-help">{t('limitedContextHelp')}</p>
       <label className="field field--wide">{t('customInstruction')}<textarea aria-label={t('customInstruction')} value={settings.readingPreferences.userInstruction} onChange={(event) => updatePreferences('userInstruction', event.target.value)} /><small>{t('instructionCustomOnly')}</small></label>
     </div><div className="actions actions--primary"><button className="primary" onClick={() => void act(() => api.savePreferences(settings.readingPreferences), t('statusSaved'))}>{t('savePreferences')}</button></div></section>
 

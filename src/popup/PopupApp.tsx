@@ -21,6 +21,7 @@ export interface PopupApi {
 const fallbackPreferences: NonNullable<PopupConfigResponse['preferences']> = {
   sourceLanguage: 'auto', targetLanguage: 'zh-Hans', displayMode: 'bilingual', scanScope: 'whole-page' as const,
   translationPosition: 'after' as const, userInstruction: '', selectionContext: true,
+  selectionPopupEnabled: true, inlineSelectionModifier: 'Control' as const,
 };
 
 export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: Translator }) {

@@ -258,7 +258,7 @@ test('Popup 通过真实 Google/Bing clients 完成生产主链路并发送各�
   await popup.getByLabel('翻译引擎').selectOption('google');
   await clickPopupButton(popup, page, '翻译 (Alt + A)');
   await expect(page.locator('#hello + [data-vast-translator]')).toHaveText('你好');
-  await clickPopupButton(popup, page, '显示原文');
+  await clickPopupButton(popup, page, '显示原文 (Alt + A)');
   await expect(page.locator('[data-vast-translator]')).toHaveCount(0);
   await expect(page.locator('#hello')).toBeVisible();
   await expect(popup.getByRole('status')).toHaveText('就绪');
@@ -266,7 +266,7 @@ test('Popup 通过真实 Google/Bing clients 完成生产主链路并发送各�
   await popup.getByLabel('翻译引擎').selectOption('bing');
   await clickPopupButton(popup, page, '翻译 (Alt + A)');
   await expect(page.locator('#hello + [data-vast-translator]')).toHaveText('您好');
-  await clickPopupButton(popup, page, '显示原文');
+  await clickPopupButton(popup, page, '显示原文 (Alt + A)');
   await expect(page.locator('[data-vast-translator]')).toHaveCount(0);
   await expect(page.locator('#hello')).toBeVisible();
   await expect(popup.getByRole('status')).toHaveText('就绪');
@@ -299,16 +299,16 @@ test('普通文章由 Popup 翻译，支持进度、模式切换、动态更新�
   await expect(page.locator('[data-vast-translator][data-vast-state="translated"]')).toHaveCount(5);
   await expect(page.locator('#first + [data-vast-translator]')).toHaveText('用于翻译的第一段。');
   await expect(page.locator('#outside + [data-vast-translator]')).toHaveCount(1);
-  await expect(popup.getByRole('button', { name: '显示原文' })).toBeVisible();
+  await expect(popup.getByRole('button', { name: '显示原文 (Alt + A)' })).toBeVisible();
   await popup.screenshot({ path: evidence('popup'), fullPage: true });
   await page.screenshot({ path: evidence('translated-fixture'), fullPage: true });
 
   await popup.getByRole('button', { name: '双语对照' }).click();
-  await clickPopupButton(popup, page, '显示原文');
+  await clickPopupButton(popup, page, '显示原文 (Alt + A)');
   await clickPopupButton(popup, page, '翻译 (Alt + A)');
   await expect(page.locator('#first')).toBeHidden();
   await popup.getByRole('button', { name: '仅译文' }).click();
-  await clickPopupButton(popup, page, '显示原文');
+  await clickPopupButton(popup, page, '显示原文 (Alt + A)');
   await clickPopupButton(popup, page, '翻译 (Alt + A)');
   await expect(page.locator('#first')).toBeVisible();
 
@@ -317,7 +317,7 @@ test('普通文章由 Popup 翻译，支持进度、模式切换、动态更新�
   await page.locator('#first').evaluate((element) => { element.textContent = 'Changed source paragraph.'; });
   await expect(page.locator('#first + [data-vast-translator]')).toHaveText('修改后的原文段落。');
 
-  await clickPopupButton(popup, page, '显示原文');
+  await clickPopupButton(popup, page, '显示原文 (Alt + A)');
   await expect(page.locator('[data-vast-translator]')).toHaveCount(0);
   await expect(page.locator('#first')).toBeVisible();
   expect(extensionRequests.some((url) => /rules\/.+\.json/.test(url))).toBe(false);
@@ -341,6 +341,7 @@ test('真实鼠标划词使用 closed shadow，输入框选区不触发，结果
   const host = page.locator('[data-vast-selection-host]');
   await expect(host).toBeVisible();
   await expect(host).toHaveAttribute('data-vast-ready', '');
+  await expect(host).toHaveAttribute('data-vast-ready', '');
   expect(await host.evaluate((element) => element.shadowRoot)).toBeNull();
   const hostBox = await host.boundingBox();
   if (!hostBox) throw new Error('划词按钮不可见');
@@ -352,6 +353,69 @@ test('真实鼠标划词使用 closed shadow，输入框选区不触发，结果
   await page.keyboard.press('Escape');
   await page.locator('#editor').click({ clickCount: 3 });
   await expect(page.locator('[data-vast-selection-host]')).toHaveCount(0);
+});
+
+test('长页面底部划词面板始终在视口内，可拖动关闭，Ctrl 内联切换且 popup 可关闭', async ({ context, server, openExtensionPage }) => {
+  const options = await openExtensionPage('options.html');
+  await saveConfiguration(options, server.baseUrl);
+  await options.getByLabel('目标语言').selectOption('zh-Hans');
+  await options.getByRole('button', { name: '保存阅读偏好' }).click();
+  await options.close();
+  const page = await openFixture(context, server.selectionFixtureUrl);
+  const paragraph = page.locator('#bottom-selection');
+  await paragraph.scrollIntoViewIfNeeded();
+  const box = await paragraph.boundingBox(); if (!box) throw new Error('底部选区不可见');
+  await page.mouse.move(box.x + 4, box.y + box.height / 2); await page.mouse.down(); await page.mouse.move(box.x + box.width - 4, box.y + box.height / 2, { steps: 10 }); await page.mouse.up();
+  const host = page.locator('[data-vast-selection-host]');
+  await expect(host).toBeVisible();
+  await expect(host).toHaveAttribute('data-vast-ready', '');
+  await expect.poll(() => host.evaluate((element) => { const rect = element.getBoundingClientRect(); return rect.left >= 8 && rect.top >= 8 && rect.right <= innerWidth - 8 && rect.bottom <= innerHeight - 8; })).toBe(true);
+  const triggerBox = await host.boundingBox(); if (!triggerBox) throw new Error('V 按钮不可见');
+  await page.mouse.click(triggerBox.x + triggerBox.width / 2, triggerBox.y + triggerBox.height / 2);
+  await expect(host).toHaveAttribute('data-vast-state', 'translated');
+  await expect.poll(() => host.evaluate((element) => { const rect = element.getBoundingClientRect(); return rect.left >= 8 && rect.top >= 8 && rect.right <= innerWidth - 8 && rect.bottom <= innerHeight - 8; })).toBe(true);
+  const beforeScroll = await host.boundingBox();
+  await page.mouse.wheel(0, -500);
+  const afterScroll = await host.boundingBox();
+  expect(afterScroll?.x).toBeCloseTo(beforeScroll?.x ?? 0, 0); expect(afterScroll?.y).toBeCloseTo(beforeScroll?.y ?? 0, 0);
+  const hostBounds = await host.boundingBox(); if (!hostBounds) throw new Error('面板不可见');
+  await page.mouse.move(hostBounds.x + 22, hostBounds.y + 27); await page.mouse.down();
+  await page.mouse.move(Math.min(hostBounds.x + 80, 300), Math.min(hostBounds.y + 80, 200), { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(() => host.evaluate((element) => { const rect = element.getBoundingClientRect(); return rect.left >= 8 && rect.top >= 8 && rect.right <= innerWidth - 8 && rect.bottom <= innerHeight - 8; })).toBe(true);
+  const draggedBounds = await host.boundingBox(); if (!draggedBounds) throw new Error('拖动后面板不可见');
+  expect(Math.abs(draggedBounds.x - hostBounds.x) + Math.abs(draggedBounds.y - hostBounds.y)).toBeGreaterThan(10);
+  await page.screenshot({ path: evidence('selection-panel'), fullPage: false });
+  await page.mouse.click(draggedBounds.x + draggedBounds.width - 15, draggedBounds.y + 15);
+  await expect(host).toHaveCount(0);
+
+  await paragraph.scrollIntoViewIfNeeded();
+  const selectedBox = await paragraph.boundingBox(); if (!selectedBox) throw new Error('内联选区不可见');
+  await page.mouse.move(selectedBox.x + 4, selectedBox.y + selectedBox.height / 2); await page.mouse.down(); await page.mouse.move(selectedBox.x + selectedBox.width - 4, selectedBox.y + selectedBox.height / 2, { steps: 10 }); await page.mouse.up();
+  await page.keyboard.press('Control');
+  await expect(page.locator('#bottom-selection + [data-vast-inline-selection-translation]')).toContainText('请使用真实鼠标手势选择这句话');
+  await page.screenshot({ path: evidence('selection-inline'), fullPage: false });
+  await page.keyboard.press('Control');
+  await expect(page.locator('[data-vast-inline-selection-translation]')).toHaveCount(0);
+
+  const reopenedOptions = await openExtensionPage('options.html');
+  await reopenedOptions.getByRole('checkbox', { name: '显示划词悬浮按钮' }).uncheck();
+  await reopenedOptions.getByRole('button', { name: '保存阅读偏好' }).click();
+  await reopenedOptions.close();
+  await page.bringToFront();
+  const disabledBox = await paragraph.boundingBox(); if (!disabledBox) throw new Error('关闭悬浮按钮后的选区不可见');
+  await page.mouse.move(disabledBox.x + 4, disabledBox.y + disabledBox.height / 2); await page.mouse.down(); await page.mouse.move(disabledBox.x + disabledBox.width - 4, disabledBox.y + disabledBox.height / 2, { steps: 10 }); await page.mouse.up();
+  await expect(page.locator('[data-vast-selection-host]')).toHaveCount(0);
+});
+
+test('整个页面翻译 findryai 面包屑四个文本叶', async ({ context, server, openExtensionPage }) => {
+  const options = await openExtensionPage('options.html'); await saveConfiguration(options, server.baseUrl); await options.close();
+  const page = await openFixture(context, server.selectionFixtureUrl);
+  const popup = await openPopupForFixture(openExtensionPage, page);
+  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+  for (const text of ['Home', 'Category', 'Image Generation', 'trainengine ai']) {
+    await expect(page.getByText(text, { exact: true }).locator('+ [data-vast-translator]')).toHaveCount(1);
+  }
 });
 
 test('恶意页面篡改划词宿主视觉后真实点击被拒绝', async ({ context, server, openExtensionPage }) => {
