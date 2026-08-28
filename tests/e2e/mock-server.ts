@@ -15,6 +15,7 @@ export interface MockServer {
   batchFixtureUrl: string;
   networkFixtureUrl: string;
   selectionFixtureUrl: string;
+  adminFixtureUrl: string;
   requests: RecordedRequest[];
   hits: string[];
   maxConcurrency: () => number;
@@ -52,6 +53,17 @@ function selectionFixtureHtml(): string {
       <li><span aria-current="page">trainengine ai</span></li>
     </ol></nav>
     <div style="height:4200px"></div><p id="bottom-selection">Select this sentence with a real mouse gesture.</p>
+  </main></body></html>`;
+}
+
+function adminFixtureHtml(): string {
+  const items = ['Property details','Property access management','Property change history','Property data API quota history','Custom insights','Scheduled emails','Analytics Intelligence search history'];
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Admin Fixture</title></head><body><main>
+    <div class="admin-link-group-list-container"><ga-admin-link-group><xap-card>
+      <xap-card-header><xap-card-title><h3 id="property-title">Property</h3></xap-card-title></xap-card-header>
+      <xap-card-sub-header><xap-card-subtitle><span id="property-description" class="admin-card-description">These settings affect your property <a id="property-help-link" href="#">What's a property?</a></span></xap-card-subtitle></xap-card-sub-header>
+      <xap-card-content><mat-list class="admin-group-links-list">${items.map((text, index) => `<mat-list-item><span class="mdc-list-item__content"><ga-admin-link><div class="admin-link"><a role="link" id="admin-link-${index}"><img alt=""><div class="admin-link-text"><div id="admin-text-${index}" class="admin-link-text-title">${text}</div></div></a><ga-help-tooltip><xap-icon-trigger role="button" aria-label="Tooltip for ${text}"><mat-icon aria-hidden="true">help_outline</mat-icon></xap-icon-trigger></ga-help-tooltip></div></ga-admin-link></span></mat-list-item>`).join('')}</mat-list></xap-card-content>
+    </xap-card></ga-admin-link-group></div>
   </main></body></html>`;
 }
 
@@ -119,6 +131,9 @@ export async function startMockServer(): Promise<MockServer> {
     if (request.method === 'GET' && url.pathname === '/fixture-selection') {
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); response.end(selectionFixtureHtml()); return;
     }
+    if (request.method === 'GET' && url.pathname === '/fixture-admin') {
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); response.end(adminFixtureHtml()); return;
+    }
     if (request.method === 'GET' && url.pathname === '/favicon.ico') {
       response.writeHead(204).end();
       return;
@@ -177,6 +192,7 @@ export async function startMockServer(): Promise<MockServer> {
     batchFixtureUrl: `${origin}/fixture-batch`,
     networkFixtureUrl: `${origin}/fixture-network`,
     selectionFixtureUrl: `${origin}/fixture-selection`,
+    adminFixtureUrl: `${origin}/fixture-admin`,
     requests,
     hits,
     maxConcurrency: () => maxConcurrency,

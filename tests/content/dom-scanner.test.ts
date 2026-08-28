@@ -45,11 +45,11 @@ describe('scanParagraphElements', () => {
     ]);
   });
 
-  it('整个页面模式扫描页面正文但仍应用排除规则', () => {
+  it('整个页面模式扫描页面正文和导航可见文字，但仍排除危险节点', () => {
     const elements = scanParagraphElements(document, rule, 'whole-page');
 
     expect(elements.map((element) => element.id)).toContain('outside');
-    expect(elements.map((element) => element.textContent?.trim())).not.toContain('导航文字');
+    expect(elements.map((element) => element.textContent?.trim())).toContain('导航文字');
   });
 
   it.each(['whole-page', 'main-content'] as const)('识别 findryai 面包屑文本叶且不产生父子重复：%s', (scope) => {
@@ -74,6 +74,41 @@ describe('scanParagraphElements', () => {
       'Home', 'Category', 'Image Generation', 'trainengine ai',
     ]);
     expect(elements.map((element) => element.tagName)).toEqual(['SPAN', 'SPAN', 'SPAN', 'SPAN']);
+  });
+
+  it.each(['whole-page', 'main-content'] as const)('识别 Angular 管理卡片中的说明和菜单文本叶：%s', (scope) => {
+    document.body.innerHTML = `
+      <main>
+        <div class="admin-link-group-list-container">
+          <ga-admin-link-group class="admin-link-group-list-item">
+            <xap-card class="admin-link-group">
+              <xap-card-header><xap-card-title><h3>Property</h3></xap-card-title></xap-card-header>
+              <xap-card-sub-header><xap-card-subtitle><span class="admin-card-description">These settings affect your property <a href="#">What's a property?</a></span></xap-card-subtitle></xap-card-sub-header>
+              <xap-card-content><mat-list class="admin-group-links-list">
+                ${['Property details','Property access management','Property change history','Property data API quota history','Custom insights','Scheduled emails','Analytics Intelligence search history'].map((text) => `
+                  <mat-list-item><span class="mdc-list-item__content"><ga-admin-link><div class="admin-link"><a role="link"><img alt=""><div class="admin-link-text"><div class="admin-link-text-title">${text}</div></div></a><ga-help-tooltip><xap-icon-trigger role="button" aria-label="Tooltip for ${text}"><mat-icon aria-hidden="true">help_outline</mat-icon></xap-icon-trigger></ga-help-tooltip></div></ga-admin-link></span></mat-list-item>
+                `).join('')}
+              </mat-list></xap-card-content>
+            </xap-card>
+          </ga-admin-link-group>
+        </div>
+      </main>`;
+
+    const elements = scanParagraphElements(document, rule, scope);
+    const texts = elements.map((element) => element.textContent?.replace(/\s+/g, ' ').trim());
+
+    expect(texts).toEqual([
+      'Property',
+      "These settings affect your property What's a property?",
+      'Property details',
+      'Property access management',
+      'Property change history',
+      'Property data API quota history',
+      'Custom insights',
+      'Scheduled emails',
+      'Analytics Intelligence search history',
+    ]);
+    expect(texts.some((text) => text?.includes('Tooltip for') || text === 'help_outline')).toBe(false);
   });
 
   it('多个扫描根和选择器命中同一元素时只返回一次', () => {
