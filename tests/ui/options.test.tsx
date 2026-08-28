@@ -43,6 +43,11 @@ function createStatefulApi(settings: OptionsSettings = loaded): OptionsApi {
     current.engines = current.engines.map((engine) => engine.id === engineId ? { ...engine, enabled } : engine);
     if (!enabled && current.activeEngineId === engineId) current.activeEngineId = 'google';
   });
+  vi.mocked(api.upsertEngine).mockImplementation(async (engine) => {
+    current.engines = current.engines.some((item) => item.id === engine.id)
+      ? current.engines.map((item) => item.id === engine.id ? { ...engine, hasApiKey: Boolean(engine.apiKey) } : item)
+      : [...current.engines, { ...engine, hasApiKey: Boolean(engine.apiKey) }];
+  });
   vi.mocked(api.reorderEngines).mockImplementation(async (engineIds) => {
     current.engines = engineIds.map((id, order) => ({ ...current.engines.find((engine) => engine.id === id)!, order }));
   });
@@ -123,14 +128,18 @@ describe('Options v2 多引擎设置', () => {
     expect(screen.getByText(/发送选区所在段落的有限文本帮助消歧，不翻译上下文本身/)).toBeInTheDocument();
   });
 
-  it('测试连接立即显示测试中，成功失败均更新固定 Toast，按钮使用小号动作类', async () => {
+  it('测试连接立即显示测试中，成功失败均更新固定 Toast，设置动作按钮使用统一尺寸类', async () => {
     let resolveTest!: () => void;
     const api = createApi();
     vi.mocked(api.testEngine).mockReturnValue(new Promise<void>((resolve) => { resolveTest = resolve; }));
     render(<OptionsApp api={api} />);
     const builtins = await screen.findByRole('region', { name: '内置翻译引擎' });
     const button = within(builtins).getAllByRole('button', { name: '测试连接' })[0];
-    expect(button).toHaveClass('compact-action');
+    expect(button).toHaveClass('options-action');
+    const work = screen.getByRole('group', { name: '工作 AI' });
+    for (const name of ['保存实例', '设为默认', '清除 API Key']) {
+      expect(within(work).getByRole('button', { name })).toHaveClass('options-action');
+    }
     await userEvent.click(button);
     expect(screen.getByRole('status')).toHaveTextContent('正在测试连接');
     resolveTest();
@@ -160,6 +169,44 @@ describe('Options v2 多引擎设置', () => {
     await userEvent.click(within(home).getByRole('button', { name: '保存实例' }));
     expect(api.upsertEngine).toHaveBeenCalledWith(expect.objectContaining({ id: 'custom-home', name: '家庭 AI', apiKey: 'home-secret' }));
     expect(api.upsertEngine).not.toHaveBeenCalledWith(expect.objectContaining({ id: 'custom-work' }));
+  });
+
+  it('新增 draft 的启用状态只在本地切换，保存后刷新为后台实例', async () => {
+    const api = createStatefulApi();
+    render(<OptionsApp api={api} />);
+    await screen.findByRole('group', { name: '工作 AI' });
+    await userEvent.click(screen.getByRole('button', { name: '新增自定义 AI' }));
+
+    const draft = screen.getByRole('group', { name: '自定义 AI 3' });
+    const enabled = within(draft).getByRole('checkbox', { name: '启用' });
+    await userEvent.click(enabled);
+    expect(enabled).not.toBeChecked();
+    expect(api.setEngineEnabled).not.toHaveBeenCalled();
+
+    await userEvent.type(within(draft).getByLabelText('API Key'), 'draft-secret');
+    await userEvent.click(within(draft).getByRole('button', { name: '保存实例' }));
+    await waitFor(() => expect(api.load).toHaveBeenCalledTimes(2));
+    expect(api.upsertEngine).toHaveBeenCalledWith(expect.objectContaining({ enabled: false, apiKey: 'draft-secret' }));
+    expect(screen.getByRole('group', { name: '自定义 AI 3' })).toBeInTheDocument();
+  });
+
+  it('两个已保存 custom 与一个新 draft 排序时仅持久化完整的已保存引擎顺序', async () => {
+    const api = createApi();
+    render(<OptionsApp api={api} />);
+    await screen.findByRole('group', { name: '工作 AI' });
+    await userEvent.click(screen.getByRole('button', { name: '新增自定义 AI' }));
+
+    const newDraft = screen.getByRole('group', { name: '自定义 AI 3' });
+    await userEvent.click(within(newDraft).getByRole('button', { name: '上移' }));
+    expect(api.reorderEngines).not.toHaveBeenCalled();
+    expect(screen.getAllByRole('group').map((group) => group.getAttribute('aria-label'))).toEqual(['工作 AI', '自定义 AI 3', '个人 AI']);
+
+    await userEvent.click(within(screen.getByRole('group', { name: '工作 AI' })).getByRole('button', { name: '下移' }));
+    expect(api.reorderEngines).not.toHaveBeenCalled();
+
+    await userEvent.click(within(screen.getByRole('group', { name: '个人 AI' })).getByRole('button', { name: '上移' }));
+    await waitFor(() => expect(api.reorderEngines).toHaveBeenCalledWith(['google', 'bing', 'custom-home', 'custom-work']));
+    expect(screen.getByRole('group', { name: '自定义 AI 3' })).toBeInTheDocument();
   });
 
   it('同 origin 空 key 保留状态，修改 origin 后清除该实例 key 状态并要求重输', async () => {
@@ -195,12 +242,13 @@ describe('Options v2 多引擎设置', () => {
     expect(api.setActiveEngine).toHaveBeenCalledWith('custom-work');
     expect(api.setEngineEnabled).toHaveBeenCalledWith('custom-work', false);
     expect(api.testEngine).toHaveBeenCalledWith('custom-work', expect.objectContaining({ id: 'custom-work', apiKey: '' }));
-    expect(api.reorderEngines).toHaveBeenCalledTimes(2);
+    expect(api.reorderEngines).toHaveBeenCalledTimes(1);
+    expect(api.reorderEngines).toHaveBeenCalledWith(['google', 'bing', 'custom-home', 'custom-work']);
     expect(api.clearEngineApiKey).toHaveBeenCalledWith('custom-work');
     expect(api.deleteEngine).toHaveBeenCalledWith('custom-work');
   });
 
-  it('成功默认、启停、排序、清 key 和删除后立即 reload 并同步 UI', async () => {
+  it('成功默认、启停、清 key 和删除后 reload，排序直接同步 UI', async () => {
     const api = createStatefulApi();
     render(<OptionsApp api={api} />);
     const work = await screen.findByRole('group', { name: '工作 AI' });
@@ -223,7 +271,7 @@ describe('Options v2 多引擎设置', () => {
     await userEvent.click(within(homeAfterClear).getByRole('button', { name: '删除实例' }));
     await userEvent.click(within(homeAfterClear).getByRole('button', { name: '确认删除实例' }));
     await waitFor(() => expect(screen.queryByRole('group', { name: '个人 AI' })).not.toBeInTheDocument());
-    expect(api.load).toHaveBeenCalledTimes(6);
+    expect(api.load).toHaveBeenCalledTimes(5);
   });
 
   it('并发成功操作的旧 reload 响应不能覆盖较新的 settings', async () => {
