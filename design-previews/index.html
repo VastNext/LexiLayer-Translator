@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Vast Translator · 设计方案预览</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#eef0f3;color:#17181b;font-family:"Segoe UI Variable",system-ui,sans-serif}.hero{padding:42px max(28px,calc((100vw - 1500px)/2));background:#fff;border-bottom:1px solid #dddfe5}.hero small{color:#647083;font:700 11px ui-monospace,monospace;letter-spacing:.12em}.hero h1{margin:10px 0 8px;font-size:34px;letter-spacing:-.04em}.hero p{max-width:720px;margin:0;color:#626873;line-height:1.6}.grid{max-width:1500px;margin:0 auto;padding:32px 28px 72px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:26px}.card{overflow:hidden;border:1px solid #d9dce3;border-radius:16px;background:#fff;box-shadow:0 12px 34px rgba(27,35,52,.08)}.card-head{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:17px 18px;border-bottom:1px solid #e4e6ea}.card-head>div{display:flex;align-items:baseline;gap:10px}.number{color:#6d73ec;font:800 11px ui-monospace,monospace}.card h2{margin:0;font-size:17px;letter-spacing:-.02em}.card a{padding:7px 10px;border-radius:8px;background:#f0f2f6;color:#30343b;text-decoration:none;font-size:12px}.preview-frame{height:700px;overflow:hidden;background:#fff}.card iframe{display:block;width:1400px;height:1400px;border:0;background:white;transform:scale(.5);transform-origin:0 0;pointer-events:none}.card footer{padding:13px 18px;color:#747a85;font-size:12px;line-height:1.5}.card.recommended{border-color:#6d73ec;box-shadow:0 0 0 2px #dfe1ff,0 12px 34px rgba(27,35,52,.10)}.badge{padding:3px 7px;border-radius:999px;background:#ebeaff;color:#554fd2;font-size:10px;font-weight:700}@media(max-width:1000px){.grid{grid-template-columns:1fr}.preview-frame{height:735px}.card iframe{transform:scale(.55)}}@media(max-width:640px){.hero{padding:30px 20px}.grid{padding:20px 12px}.preview-frame{height:610px}.card iframe{transform:scale(.44)}}
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <small>VAST TRANSLATOR · DESIGN EXPLORATION</small>
+    <h1>5 套静态 UI 方案</h1>
+    <p>每套方案都使用相同功能结构，同时展示真实比例 Popup 与 Options 预览。可以直接操作下拉框、切换显示模式，以及点击“翻译 / 显示原文”。选定后再应用到正式插件。</p>
+  </header>
+  <main class="grid">
+    <article class="card recommended"><header class="card-head"><div><span class="number">01</span><h2>Pearl Reader</h2><span class="badge">推荐</span></div><a href="pearl-reader.html" target="_blank">全屏查看 ↗</a></header><div class="preview-frame"><iframe src="pearl-reader.html" title="Pearl Reader"></iframe></div><footer>珍珠白阅读工具。安静、精致、最接近成熟的原生浏览器产品。</footer></article>
+    <article class="card"><header class="card-head"><div><span class="number">02</span><h2>Command Translator</h2></div><a href="command-translator.html" target="_blank">全屏查看 ↗</a></header><div class="preview-frame"><iframe src="command-translator.html" title="Command Translator"></iframe></div><footer>深色命令面板。适合键盘重度用户和偏技术的效率工具定位。</footer></article>
+    <article class="card"><header class="card-head"><div><span class="number">03</span><h2>Sage Global</h2></div><a href="sage-global.html" target="_blank">全屏查看 ↗</a></header><div class="preview-frame"><iframe src="sage-global.html" title="Sage Global"></iframe></div><footer>成熟鼠尾草绿。友好、国际化，保留 Vast 当前绿色品牌基因。</footer></article>
+    <article class="card"><header class="card-head"><div><span class="number">04</span><h2>Editorial Lingua</h2></div><a href="editorial-lingua.html" target="_blank">全屏查看 ↗</a></header><div class="preview-frame"><iframe src="editorial-lingua.html" title="Editorial Lingua"></iframe></div><footer>编辑与语言产品气质。温暖奶油底、衬线品牌标题、现代无衬线控件。</footer></article>
+    <article class="card"><header class="card-head"><div><span class="number">05</span><h2>Precision Blue</h2></div><a href="precision-blue.html" target="_blank">全屏查看 ↗</a></header><div class="preview-frame"><iframe src="precision-blue.html" title="Precision Blue"></iframe></div><footer>精密蓝企业工具。结构清晰、设置管理能力最强、长期扩展最稳定。</footer></article>
+  </main>
+</body>
+</html>
