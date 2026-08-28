@@ -8,6 +8,7 @@ const themes = {
 
 const theme = document.body.dataset.theme;
 const meta = themes[theme];
+const logo = `<svg class="vastnext-logo" viewBox="0 0 48 48" fill="none" aria-hidden="true"><path class="logo-horizon" d="M5 35.5C15 39.5 29 39.5 43 34"/><path class="logo-route" d="M8 11L20.5 32L27 20L40 8V31"/><circle class="logo-beacon" cx="40" cy="8" r="3"/></svg>`;
 
 document.querySelector('#app').innerHTML = `
   <header class="preview-header">
@@ -21,7 +22,7 @@ document.querySelector('#app').innerHTML = `
       <p class="stage-label">CHROME POPUP · 360px</p>
       <article class="translator-popup">
         <header class="popup-head">
-          <div class="brand"><span class="brand-icon">V</span><span class="brand-name">Vast Translator</span></div>
+          <div class="brand"><span class="brand-icon">${logo}</span><span class="brand-name">Vast Translator</span></div>
           <button class="icon-button" aria-label="设置">⚙</button>
         </header>
 
@@ -29,13 +30,12 @@ document.querySelector('#app').innerHTML = `
           <label><span>源语言</span><select><option>自动检测</option><option>English</option><option>简体中文</option></select></label>
           <span class="direction">→</span>
           <label><span>目标语言</span><select><option>简体中文</option><option>English</option><option>日本語</option></select></label>
-          <button class="mode-toggle" aria-label="双语模式" title="切换双语 / 仅译文"><span class="mode-bilingual">◫</span><span class="mode-translation">▣</span></button>
         </div>
 
-        <label class="engine-control"><span class="engine-symbol">◈</span><select><option>Google · 默认免费</option><option>Bing · 备用</option><option>OpenRouter · AI</option></select></label>
+        <label class="engine-control"><span class="engine-label">翻译引擎</span><select><option>Google · 默认免费</option><option>Bing · 备用</option><option>OpenRouter · AI</option></select></label>
 
         <div class="translation-status"><span class="status-dot"></span><span class="status-copy">准备翻译当前网页</span></div>
-        <button class="translate-button">翻译</button>
+        <div class="primary-actions"><button class="mode-toggle" aria-label="双语模式" title="切换双语 / 仅译文"><span class="mode-bilingual">◫</span><span class="mode-translation">▣</span></button><button class="translate-button">翻译</button></div>
         <footer class="popup-footer"><span>Shift</span><b>+</b><span>Alt</span><b>+</b><span>A</span></footer>
       </article>
     </section>
@@ -44,8 +44,8 @@ document.querySelector('#app').innerHTML = `
       <p class="stage-label">OPTIONS · DESKTOP</p>
       <article class="options-shell">
         <aside class="options-nav">
-          <div class="options-brand"><span class="brand-icon">V</span><strong>Vast</strong></div>
-          <nav><button class="active">翻译引擎</button><button>自定义 AI</button><button>阅读偏好</button><button>数据与隐私</button></nav>
+          <div class="options-brand"><span class="brand-icon">${logo}</span><strong>Vast</strong></div>
+          <nav><button class="active">翻译引擎</button><button>自定义 AI</button><button>阅读偏好</button><button>外观主题</button><button>数据与隐私</button></nav>
           <small>v0.2.0</small>
         </aside>
         <div class="options-content">
@@ -73,6 +73,13 @@ document.querySelector('#app').innerHTML = `
               <label><span>显示方式</span><select><option>双语对照</option></select></label>
             </div>
           </section>
+
+          <section class="settings-section theme-section">
+            <div class="section-title"><div><h3>外观主题</h3><p>5 套主题共享相同功能结构，可随时切换。</p></div><span class="theme-saved">自动保存</span></div>
+            <div class="theme-grid">
+              ${Object.entries(themes).map(([key, item]) => `<button class="theme-choice ${key === theme ? 'selected' : ''}" data-preview-theme="${key}"><span class="theme-swatch swatch-${key}"></span><span><strong>${item.name}</strong><small>${key === 'pearl' ? '默认主题' : item.subtitle}</small></span><i>${key === theme ? '✓' : ''}</i></button>`).join('')}
+            </div>
+          </section>
         </div>
       </article>
     </section>
@@ -97,5 +104,14 @@ for (const button of document.querySelectorAll('.engine-choice')) {
   button.addEventListener('click', () => {
     document.querySelector('.engine-choice.selected')?.classList.remove('selected');
     button.classList.add('selected');
+  });
+}
+
+for (const button of document.querySelectorAll('.theme-choice')) {
+  button.addEventListener('click', () => {
+    document.querySelector('.theme-choice.selected')?.classList.remove('selected');
+    button.classList.add('selected');
+    document.querySelectorAll('.theme-choice i').forEach((icon) => { icon.textContent = ''; });
+    button.querySelector('i').textContent = '✓';
   });
 }
