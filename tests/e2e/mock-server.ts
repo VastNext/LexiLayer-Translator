@@ -14,6 +14,7 @@ export interface MockServer {
   fixtureUrl: string;
   batchFixtureUrl: string;
   networkFixtureUrl: string;
+  selectionFixtureUrl: string;
   requests: RecordedRequest[];
   hits: string[];
   maxConcurrency: () => number;
@@ -39,6 +40,19 @@ function batchFixtureHtml(): string {
   ${Array.from({ length: 10 }, (_, index) => `<p id="batch-${index}">Visible paragraph ${index}</p>`).join('')}
   <div style="height:5000px;display:block"></div><p id="offscreen">Offscreen paragraph</p><div id="dynamic"></div>
   </article></main></body></html>`;
+}
+
+function selectionFixtureHtml(): string {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Selection Fixture</title></head><body><main>
+    <nav aria-label="Breadcrumb"><ol>
+      <li><a href="/"><span>Home</span></a></li>
+      <li aria-hidden="true"><svg><path /></svg></li>
+      <li><button><a href="/category"><span>Category</span></a></button></li>
+      <li><a href="/category/image-generation"><span>Image Generation</span></a></li>
+      <li><span aria-current="page">trainengine ai</span></li>
+    </ol></nav>
+    <div style="height:4200px"></div><p id="bottom-selection">Select this sentence with a real mouse gesture.</p>
+  </main></body></html>`;
 }
 
 function segmentsFrom(body: Record<string, unknown>): Array<{ id: string; text: string }> {
@@ -102,6 +116,9 @@ export async function startMockServer(): Promise<MockServer> {
       response.end('<!doctype html><html lang="en"><main><p id="hello">hello</p></main></html>');
       return;
     }
+    if (request.method === 'GET' && url.pathname === '/fixture-selection') {
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); response.end(selectionFixtureHtml()); return;
+    }
     if (request.method === 'GET' && url.pathname === '/favicon.ico') {
       response.writeHead(204).end();
       return;
@@ -159,6 +176,7 @@ export async function startMockServer(): Promise<MockServer> {
     fixtureUrl: `${origin}/fixture`,
     batchFixtureUrl: `${origin}/fixture-batch`,
     networkFixtureUrl: `${origin}/fixture-network`,
+    selectionFixtureUrl: `${origin}/fixture-selection`,
     requests,
     hits,
     maxConcurrency: () => maxConcurrency,

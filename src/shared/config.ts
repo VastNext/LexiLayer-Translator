@@ -1,6 +1,7 @@
 import { assertSafeBaseUrl } from './url';
 
 export type DisplayMode = 'bilingual' | 'translation';
+export type InlineSelectionModifier = 'Control' | 'Alt' | 'Shift' | 'Meta' | 'Off';
 export type Theme = 'pearl-reader' | 'command-translator' | 'sage-global' | 'editorial-lingua' | 'precision-blue';
 
 export const THEMES: Theme[] = ['pearl-reader', 'command-translator', 'sage-global', 'editorial-lingua', 'precision-blue'];
@@ -13,6 +14,8 @@ export interface ReadingPreferences {
   translationPosition: 'before' | 'after';
   scanScope: 'main-content' | 'whole-page';
   selectionContext: boolean;
+  selectionPopupEnabled: boolean;
+  inlineSelectionModifier: InlineSelectionModifier;
 }
 
 interface EngineBase {
@@ -70,6 +73,8 @@ export const DEFAULT_SETTINGS: Settings = {
     translationPosition: 'after',
     scanScope: 'whole-page',
     selectionContext: true,
+    selectionPopupEnabled: true,
+    inlineSelectionModifier: 'Control',
   },
   engines: [
     { id: 'google', kind: 'google', name: 'Google', enabled: true, order: 0 },
@@ -99,6 +104,8 @@ function validatePreferences(value: unknown): string[] {
   if (value.translationPosition !== 'before' && value.translationPosition !== 'after') errors.push('译文位置无效');
   if (value.scanScope !== 'main-content' && value.scanScope !== 'whole-page') errors.push('翻译范围无效');
   if (typeof value.selectionContext !== 'boolean') errors.push('有限上下文配置无效');
+  if (typeof value.selectionPopupEnabled !== 'boolean') errors.push('划词悬浮按钮配置无效');
+  if (!['Control', 'Alt', 'Shift', 'Meta', 'Off'].includes(String(value.inlineSelectionModifier))) errors.push('选区内联翻译快捷键无效');
   return errors;
 }
 
@@ -170,8 +177,8 @@ export function getPublicEngineSummaries(settings: Settings): PublicEngineSummar
 }
 
 export function engineDisplayName(engine: Pick<Engine, 'id' | 'kind' | 'name'> & { ready?: boolean }): string {
-  const role = engine.kind === 'google' ? '默认 · 免费' : engine.kind === 'bing' ? '备用' : 'AI';
-  return `${engine.name} · ${role}${engine.ready === false ? ' · 未配置' : ''}`;
+  const name = engine.kind === 'google' ? 'Google' : engine.kind === 'bing' ? 'Bing' : engine.name;
+  return `${name}${engine.ready === false ? ' · 未配置' : ''}`;
 }
 
 function cloneDefaults(): Settings {
@@ -183,6 +190,8 @@ export function normalizeSettings(value: unknown): Settings {
   const normalizedValue = structuredClone(value) as Record<string, unknown>;
   if (normalizedValue.theme === undefined) normalizedValue.theme = DEFAULT_SETTINGS.theme;
   if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.sourceLanguage === undefined) normalizedValue.readingPreferences.sourceLanguage = 'auto';
+  if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.selectionPopupEnabled === undefined) normalizedValue.readingPreferences.selectionPopupEnabled = true;
+  if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.inlineSelectionModifier === undefined) normalizedValue.readingPreferences.inlineSelectionModifier = 'Control';
   const errors = validateSettings(normalizedValue).filter((error) => error !== '至少保留一个可用的翻译引擎' && error !== '当前翻译引擎必须可用');
   if (errors.length) return cloneDefaults();
   const settings = normalizedValue as unknown as Settings;
@@ -222,6 +231,8 @@ export function importSettings(value: unknown, current: Settings = DEFAULT_SETTI
 
   const input = structuredClone(value) as Record<string, unknown> & { engines: Array<Record<string, unknown>> };
   if (input.theme === undefined) input.theme = DEFAULT_SETTINGS.theme;
+  if (isRecord(input.readingPreferences) && input.readingPreferences.selectionPopupEnabled === undefined) input.readingPreferences.selectionPopupEnabled = true;
+  if (isRecord(input.readingPreferences) && input.readingPreferences.inlineSelectionModifier === undefined) input.readingPreferences.inlineSelectionModifier = 'Control';
   const inputIds = input.engines.map((engine) => engine.id);
   if (new Set(inputIds).size !== inputIds.length) throw new Error('翻译引擎 ID 不能重复');
   for (const engine of input.engines) {
@@ -259,16 +270,17 @@ export function migrateSettings(value: unknown): Settings {
   if (isRecord(value) && value.schemaVersion === 2) return normalizeSettings(value);
   if (!isRecord(value)) return cloneDefaults();
   const migrated = cloneDefaults();
-  if (validatePreferences(value).length === 0) {
-    migrated.readingPreferences = {
+  const legacyPreferences: ReadingPreferences = {
       targetLanguage: value.targetLanguage as string,
       displayMode: value.displayMode as DisplayMode,
       userInstruction: value.userInstruction as string,
       translationPosition: value.translationPosition as 'before' | 'after',
       scanScope: value.scanScope as 'main-content' | 'whole-page',
       selectionContext: value.selectionContext as boolean,
-    };
-  }
+      selectionPopupEnabled: true,
+      inlineSelectionModifier: 'Control',
+  };
+  if (validatePreferences(legacyPreferences).length === 0) migrated.readingPreferences = legacyPreferences;
   const candidate: CustomAiEngine = {
     id: 'custom-migrated', kind: 'custom-ai', name: '迁移的自定义 AI', enabled: true, order: 2,
     baseUrl: typeof value.baseUrl === 'string' ? value.baseUrl : '',

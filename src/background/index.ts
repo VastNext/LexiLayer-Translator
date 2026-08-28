@@ -33,7 +33,7 @@ interface RuntimeDependencyOptions { cache?: CacheLike; createProvider?: (engine
 type IncomingMessage = Record<string, unknown> & { type: string };
 const allowedTypes = new Set([
   'translate-batch', 'cancel-task', 'get-public-config', 'get-popup-config', 'get-options-settings',
-  'test-engine', 'translate-selection-fallback', 'cancel-selection-fallback', 'clear-cache',
+  'test-engine', 'translate-selection-inline', 'translate-selection-fallback', 'cancel-selection-fallback', 'clear-cache',
   'save-reading-preferences', 'upsert-engine', 'delete-engine', 'set-active-engine', 'set-engine-enabled', 'reorder-engines', 'import-settings',
   'save-popup-preferences', 'save-theme',
   'clear-engine-api-key',
@@ -227,6 +227,18 @@ export function createBackgroundController(api: BackgroundChrome, dependencies: 
         }) } };
       }
       if (message.type === 'clear-cache') { await dependencies.clearCache(); return { ok: true }; }
+      if (message.type === 'translate-selection-inline') {
+        if (!hasOnlyKeys(message, ['type', 'engineId', 'targetLanguage', 'text', 'context']) || !isSafeId(message.engineId) || !isSafeString(message.targetLanguage, 64) || !isSafeString(message.text, 5000) || (message.context !== undefined && (typeof message.context !== 'string' || message.context.length > 600))) return { ok: false, error: '消息格式无效' };
+        if (sender.tab?.id === undefined || sender.frameId === undefined || !sender.documentId) return { ok: false, error: '消息来源无效' };
+        const engine = requireEngine(settings, message.engineId);
+        const context = typeof message.context === 'string' && message.context ? `以下邻近文本仅用于消歧，不要翻译或输出：${message.context}` : '';
+        const userInstruction = engine.kind === 'custom-ai' ? [settings.readingPreferences.userInstruction, context].filter(Boolean).join('\n') || undefined : undefined;
+        const [result] = await translateWithProvider(dependencies.createProvider(engine), {
+          sourceLanguage: 'auto', targetLanguage: message.targetLanguage, segments: [{ id: 'selection-inline', text: message.text }], userInstruction,
+        }, new AbortController().signal);
+        if (!result) throw new Error('翻译响应格式无效');
+        return { ok: true, data: { text: result.text } };
+      }
       if (message.type === 'save-reading-preferences') {
         if (!hasOnlyKeys(message, ['type', 'readingPreferences'])) return { ok: false, error: '消息格式无效' };
         const candidate = { ...settings, readingPreferences: message.readingPreferences as ReadingPreferences };

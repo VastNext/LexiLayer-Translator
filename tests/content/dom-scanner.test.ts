@@ -29,6 +29,7 @@ describe('scanParagraphElements', () => {
         <p aria-hidden="true">辅助隐藏文本</p>
         <div contenteditable="true"><p>编辑文本</p></div>
         <div data-vast-translator><p>插件文本</p></div>
+        <div data-vast-inline-selection-translation><p>内联插件文本</p></div>
         <div class="sponsored"><p>广告文本</p></div>
       </main>
       <aside class="extra"><p id="extra">额外正文</p></aside>
@@ -49,6 +50,30 @@ describe('scanParagraphElements', () => {
 
     expect(elements.map((element) => element.id)).toContain('outside');
     expect(elements.map((element) => element.textContent?.trim())).not.toContain('导航文字');
+  });
+
+  it.each(['whole-page', 'main-content'] as const)('识别 findryai 面包屑文本叶且不产生父子重复：%s', (scope) => {
+    document.body.innerHTML = `
+      <main>
+        <nav aria-label="Breadcrumb">
+          <ol class="flex items-center">
+            <li><a href="/"><span>Home</span></a></li>
+            <li aria-hidden="true"><svg><path /></svg></li>
+            <li><button type="button"><a href="/category"><span>Category</span></a></button></li>
+            <li><a href="/category/image-generation"><span>Image Generation</span></a></li>
+            <li><span aria-current="page">trainengine ai</span></li>
+            <li aria-hidden="true"><span>Hidden crumb</span></li>
+            <li><a href="/icon"><svg aria-label="icon"><path /></svg></a></li>
+          </ol>
+        </nav>
+      </main>`;
+
+    const elements = scanParagraphElements(document, rule, scope);
+
+    expect(elements.map((element) => element.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
+      'Home', 'Category', 'Image Generation', 'trainengine ai',
+    ]);
+    expect(elements.map((element) => element.tagName)).toEqual(['SPAN', 'SPAN', 'SPAN', 'SPAN']);
   });
 
   it('多个扫描根和选择器命中同一元素时只返回一次', () => {

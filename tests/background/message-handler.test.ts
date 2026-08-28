@@ -246,6 +246,32 @@ describe('service worker 消息编排', () => {
     );
   });
 
+  it('内联选区翻译通过统一非流式 provider 路由，custom 合并 instruction/context，builtin 忽略', async () => {
+    await expect(send({ type: 'translate-selection-inline', engineId: 'custom-work', targetLanguage: 'zh-Hans', text: 'selected', context: 'nearby' }))
+      .resolves.toEqual({ ok: true, data: { text: '译:selected' } });
+    expect(dependencies.translate).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({
+      segments: [{ id: 'selection-inline', text: 'selected' }],
+      userInstruction: '以下邻近文本仅用于消歧，不要翻译或输出：nearby',
+    }), expect.any(AbortSignal));
+
+    await send({ type: 'translate-selection-inline', engineId: 'google', targetLanguage: 'zh-Hans', text: 'selected', context: 'nearby' });
+    expect(dependencies.translate).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ userInstruction: undefined }), expect.any(AbortSignal));
+  });
+
+  it('内联选区翻译严格校验 sender、text/context/engine/lang 并脱敏错误', async () => {
+    for (const message of [
+      { type: 'translate-selection-inline', engineId: 'google', targetLanguage: 'zh-Hans', text: 'x'.repeat(5001) },
+      { type: 'translate-selection-inline', engineId: 'google', targetLanguage: 'zh-Hans', text: 'ok', context: 'x'.repeat(601) },
+      { type: 'translate-selection-inline', engineId: '', targetLanguage: 'zh-Hans', text: 'ok' },
+      { type: 'translate-selection-inline', engineId: 'google', targetLanguage: '', text: 'ok' },
+    ]) await expect(send(message)).resolves.toEqual({ ok: false, error: '消息格式无效' });
+    await expect(send({ type: 'translate-selection-inline', engineId: 'google', targetLanguage: 'zh-Hans', text: 'ok' }, { id: 'extension-id' }))
+      .resolves.toEqual({ ok: false, error: '消息来源无效' });
+    vi.mocked(dependencies.translate!).mockRejectedValueOnce(new Error('Bearer sk-secret-value https://secret.example?token=leak'));
+    await expect(send({ type: 'translate-selection-inline', engineId: 'custom-work', targetLanguage: 'zh-Hans', text: 'ok' }))
+      .resolves.toEqual({ ok: false, error: '请求处理失败，请检查配置或网络后重试' });
+  });
+
   it('后台可按独立 selection requestId 中止 fallback fetch', async () => {
     let signal: AbortSignal | undefined;
     vi.mocked(dependencies.translate!).mockImplementationOnce((_provider, _request, value) => {

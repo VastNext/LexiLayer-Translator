@@ -46,6 +46,8 @@ describe('v2 settings', () => {
         translationPosition: 'after',
         scanScope: 'whole-page',
         selectionContext: true,
+        selectionPopupEnabled: true,
+        inlineSelectionModifier: 'Control',
       },
     });
     expect(resolveEngine(DEFAULT_SETTINGS)).toMatchObject({ id: 'google', kind: 'google' });
@@ -119,6 +121,7 @@ describe('migration and normalization', () => {
       readingPreferences: {
         targetLanguage: 'zh-Hans', displayMode: 'translation', userInstruction: '保留术语',
         translationPosition: 'before', scanScope: 'whole-page', selectionContext: false,
+        selectionPopupEnabled: true, inlineSelectionModifier: 'Control',
       },
       engines: [
         DEFAULT_SETTINGS.engines[0],
@@ -134,6 +137,22 @@ describe('migration and normalization', () => {
     expect(normalizeSettings(normalized)).toEqual(normalized);
     expect(normalizeSettings({ schemaVersion: 2, engines: [{ id: '__proto__' }] })).toEqual(DEFAULT_SETTINGS);
     expect(normalizeSettings('broken')).toEqual(DEFAULT_SETTINGS);
+  });
+
+  it('旧 v2 配置补齐划词悬浮按钮与内联快捷键默认值', () => {
+    const legacyV2 = structuredClone(settings) as Omit<Settings, 'readingPreferences'> & { readingPreferences: Partial<Settings['readingPreferences']> };
+    delete legacyV2.readingPreferences.selectionPopupEnabled;
+    delete legacyV2.readingPreferences.inlineSelectionModifier;
+
+    expect(normalizeSettings(legacyV2).readingPreferences).toMatchObject({
+      selectionPopupEnabled: true,
+      inlineSelectionModifier: 'Control',
+    });
+  });
+
+  it('校验划词悬浮开关与内联快捷键枚举', () => {
+    expect(validateSettings({ ...settings, readingPreferences: { ...settings.readingPreferences, selectionPopupEnabled: 'yes' } })).toContain('划词悬浮按钮配置无效');
+    expect(validateSettings({ ...settings, readingPreferences: { ...settings.readingPreferences, inlineSelectionModifier: 'CapsLock' } })).toContain('选区内联翻译快捷键无效');
   });
 
   it('为缺少主题的旧 v2 设置补 Pearl，并拒绝未知主题', () => {
@@ -165,7 +184,8 @@ describe('migration and normalization', () => {
     expect(migrateSettings({
       baseUrl: 'http://remote.example.com/v1', apiKey: '', model: '',
       targetLanguage: 'zh-Hant', displayMode: 'translation', userInstruction: '保留专名',
-      translationPosition: 'before', scanScope: 'whole-page', selectionContext: false,
+        translationPosition: 'before', scanScope: 'whole-page', selectionContext: false,
+        selectionPopupEnabled: true, inlineSelectionModifier: 'Control',
     })).toMatchObject({
       activeEngineId: 'google',
       readingPreferences: { targetLanguage: 'zh-Hant', displayMode: 'translation', userInstruction: '保留专名', translationPosition: 'before', scanScope: 'whole-page', selectionContext: false },

@@ -108,7 +108,7 @@
   "statusEngineDeleted": { "message": "Instance deleted" },
   "importApplied": { "message": "Configuration imported safely" },
   "translateShortcut": { "message": "Translate (Alt + A)" },
-  "showOriginal": { "message": "Show original" },
+  "showOriginal": { "message": "Show original (Alt + A)" },
   "modeToggleHelp": { "message": "Toggle bilingual and translation-only modes" },
   "settingsNavigation": { "message": "Settings navigation" },
   "optionsTitle": { "message": "Translation settings" },
@@ -120,5 +120,9 @@
   "themeCommandDescription": { "message": "A dark command surface built for speed and keyboard use." },
   "themeSageDescription": { "message": "Warm sage tones with a friendly global reading feel." },
   "themeEditorialDescription": { "message": "Cream, violet, and serif headings for an editorial voice." },
-  "themePrecisionDescription": { "message": "Structured precision blue with sharper geometry." }
+  "themePrecisionDescription": { "message": "Structured precision blue with sharper geometry." },
+  "selectionPopupEnabled": { "message": "Show selection popup button" },
+  "inlineSelectionModifier": { "message": "Inline selection translation shortcut" },
+  "modifierOff": { "message": "Off" },
+  "limitedContextHelp": { "message": "Send limited text from the selection's paragraph to help disambiguation; the context itself is not translated." }
 }

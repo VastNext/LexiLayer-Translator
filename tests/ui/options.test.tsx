@@ -93,15 +93,33 @@ describe('Options v2 多引擎设置', () => {
     expect(api.load).toHaveBeenCalledTimes(2);
   });
 
-  it('固定展示 Google 默认免费、Bing 备用，内置项没有 AI 连接字段', async () => {
+  it('内置引擎只显示简洁的内置标识，不展示默认免费或备用说明', async () => {
     render(<OptionsApp api={createApi()} />);
     const builtins = await screen.findByRole('region', { name: '内置翻译引擎' });
     expect(within(builtins).getByText('Google')).toBeInTheDocument();
-    expect(within(builtins).getByText(/默认.*免费/)).toBeInTheDocument();
+    expect(within(builtins).queryByText(/默认.*免费/)).not.toBeInTheDocument();
     expect(within(builtins).getByText('Bing')).toBeInTheDocument();
-    expect(within(builtins).getByText(/备用/)).toBeInTheDocument();
+    expect(within(builtins).queryByText(/备用/)).not.toBeInTheDocument();
+    expect(within(builtins).getAllByText('内置')).toHaveLength(2);
     expect(within(builtins).queryByLabelText(/Base URL/)).not.toBeInTheDocument();
     expect(within(builtins).queryByLabelText(/API Key/)).not.toBeInTheDocument();
+  });
+
+  it('保存划词悬浮按钮、内联快捷键，并解释有限上下文用途', async () => {
+    const api = createApi();
+    render(<OptionsApp api={api} />);
+    const popup = await screen.findByRole('checkbox', { name: '显示划词悬浮按钮' });
+    const modifier = screen.getByRole('combobox', { name: '选区内联翻译快捷键' });
+
+    await userEvent.click(popup);
+    await userEvent.selectOptions(modifier, 'Alt');
+    await userEvent.click(screen.getByRole('button', { name: '保存阅读偏好' }));
+
+    expect(api.savePreferences).toHaveBeenCalledWith(expect.objectContaining({
+      selectionPopupEnabled: false,
+      inlineSelectionModifier: 'Alt',
+    }));
+    expect(screen.getByText(/发送选区所在段落的有限文本帮助消歧，不翻译上下文本身/)).toBeInTheDocument();
   });
 
   it('展示多个独立 custom 表单及逐实例 hasApiKey，并保存指定实例', async () => {

@@ -103,7 +103,8 @@ function createDependencies(): SelectionDependencies & {
     translateFallback: vi.fn(async () => '非流式译文'),
     cancelFallback: vi.fn(async () => undefined),
     copy: vi.fn(async () => undefined),
-    getPublicConfig: vi.fn(async () => ({ targetLanguage: 'zh-Hans', selectionContext: true, activeEngineId: 'google', engines: [{ id: 'google', kind: 'google', name: 'Google', ready: true, capabilities: { streaming: false } }, { id: 'bing', kind: 'bing', name: 'Bing', ready: true, capabilities: { streaming: false } }, { id: 'custom-work', kind: 'custom-ai', name: '工作接口', ready: true, capabilities: { streaming: true } }] })),
+    translateInline: vi.fn(async () => '段后中文译文'),
+    getPublicConfig: vi.fn(async () => ({ targetLanguage: 'zh-Hans', selectionContext: true, selectionPopupEnabled: true, inlineSelectionModifier: 'Control' as const, activeEngineId: 'google', engines: [{ id: 'google', kind: 'google', name: 'Google', ready: true, capabilities: { streaming: false } }, { id: 'bing', kind: 'bing', name: 'Bing', ready: true, capabilities: { streaming: false } }, { id: 'custom-work', kind: 'custom-ai', name: '工作接口', ready: true, capabilities: { streaming: true } }] })),
     events: eventSource,
     createView: (_rect, actions) => new TestSelectionView(actions),
   };
@@ -367,6 +368,66 @@ describe('划词翻译控制器', () => {
     document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
     expect(document.querySelector('[data-vast-selection-host]')).toBeNull();
   });
+
+  it('closed shadow 内部 mousedown 通过 composedPath 识别为面板交互，不关闭浮层', () => {
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
+    register(); trustedMouseUp();
+    const host = view();
+    document.dispatchEvent(Object.assign(new MouseEvent('mousedown'), { composedPath: () => [document.createElement('button'), host, document] }));
+    expect(document.querySelector('[data-vast-selection-host]')).toBe(host);
+  });
+
+  it('关闭悬浮按钮后仍记住最近可信鼠标选区', async () => {
+    vi.mocked(dependencies.getPublicConfig).mockResolvedValue({ ...(await dependencies.getPublicConfig()), selectionPopupEnabled: false });
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
+    register();
+    trustedMouseUp();
+    await vi.waitFor(() => expect(dependencies.getPublicConfig).toHaveBeenCalled());
+
+    expect(document.querySelector('[data-vast-selection-host]')).toBeNull();
+    dependencies.selection = null;
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' }));
+    await vi.waitFor(() => expect(document.querySelector('[data-vast-inline-selection-translation]')).toHaveTextContent('段后中文译文'));
+  });
+
+  it('Control 在当前选区块后插入纯文本译文，再按一次移除', async () => {
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
+    register(); trustedMouseUp();
+    await vi.waitFor(() => expect(dependencies.getPublicConfig).toHaveBeenCalled());
+    dependencies.selection = null;
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' }));
+    await vi.waitFor(() => expect(document.querySelector('#text + [data-vast-inline-selection-translation]')).toHaveTextContent('段后中文译文'));
+    expect(dependencies.translateInline).toHaveBeenCalledWith('Hello', 'Hello selection context', 'google', 'zh-Hans');
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' }));
+    expect(document.querySelector('[data-vast-inline-selection-translation]')).toBeNull();
+  });
+
+  it('按配置 modifier 触发，Off、repeat、输入框与 contenteditable 均不响应', async () => {
+    vi.mocked(dependencies.getPublicConfig).mockResolvedValue({ ...(await dependencies.getPublicConfig()), inlineSelectionModifier: 'Alt' });
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
+    register(); trustedMouseUp();
+    await vi.waitFor(() => expect(dependencies.getPublicConfig).toHaveBeenCalled());
+    dependencies.selection = null;
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Alt', repeat: true }));
+    expect(dependencies.translateInline).not.toHaveBeenCalled();
+    document.querySelector('input')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Alt', bubbles: true }));
+    document.querySelector('#edit')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Alt', bubbles: true }));
+    expect(dependencies.translateInline).not.toHaveBeenCalled();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Alt' }));
+    await vi.waitFor(() => expect(dependencies.translateInline).toHaveBeenCalledOnce());
+  });
+
+  it('Off 完全禁用选区内联翻译', async () => {
+    vi.mocked(dependencies.getPublicConfig).mockResolvedValue({ ...(await dependencies.getPublicConfig()), inlineSelectionModifier: 'Off' });
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
+    register(); trustedMouseUp();
+    await vi.waitFor(() => expect(dependencies.getPublicConfig).toHaveBeenCalled());
+    dependencies.selection = null;
+    for (const key of ['Control', 'Alt', 'Shift', 'Meta']) document.dispatchEvent(new KeyboardEvent('keydown', { key }));
+    expect(dependencies.translateInline).not.toHaveBeenCalled();
+  });
 });
 
 describe('划词翻译真实注册接线', () => {
@@ -429,7 +490,7 @@ describe('划词翻译视图隔离', () => {
     view.remove();
   });
 
-  it('划词引擎选项清晰标识默认免费、备用、AI 和未就绪状态', () => {
+  it('划词引擎选项只显示内置名称，自定义未就绪追加未配置', () => {
     let root: ShadowRoot | undefined;
     const original = Element.prototype.attachShadow;
     vi.spyOn(HTMLElement.prototype, 'attachShadow').mockImplementation(function (this: HTMLElement, options) { root = original.call(this, options); return root; });
@@ -440,8 +501,68 @@ describe('划词翻译视图隔离', () => {
       { id: 'custom-work', kind: 'custom-ai', name: '工作接口', ready: false },
     ], 'google');
     const options = [...root!.querySelectorAll<HTMLOptionElement>('[name="engine"] option')];
-    expect(options.map((option) => option.textContent)).toEqual(['Google · 默认 · 免费', 'Bing · 备用', '工作接口 · AI · 未配置']);
+    expect(options.map((option) => option.textContent)).toEqual(['Google', 'Bing', '工作接口 · 未配置']);
     expect(options[2].disabled).toBe(true);
+    view.remove();
+  });
+
+  it('按钮和打开后的面板都 clamp 在 viewport 8px 内，滚动保持 fixed，resize 重新 clamp', () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 360 });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 240 });
+    let root: ShadowRoot | undefined;
+    const original = Element.prototype.attachShadow;
+    vi.spyOn(HTMLElement.prototype, 'attachShadow').mockImplementation(function (this: HTMLElement, options) { root = original.call(this, options); return root; });
+    const view = new SelectionView(document, new DOMRect(350, 230, 20, 20), { translate: vi.fn(), copy: vi.fn(), close: vi.fn() });
+    view.mount();
+    expect(view.host.style.position).toBe('fixed');
+    expect(parseFloat(view.host.style.left)).toBeLessThanOrEqual(320);
+    expect(parseFloat(view.host.style.top)).toBeLessThanOrEqual(200);
+    vi.spyOn(root!.querySelector('.panel')!, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 320, 220));
+    view.open('zh-Hans');
+    expect(parseFloat(view.host.style.left)).toBeLessThanOrEqual(32);
+    expect(parseFloat(view.host.style.top)).toBeLessThanOrEqual(12);
+    window.dispatchEvent(new Event('scroll'));
+    expect(view.host.style.position).toBe('fixed');
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 340 });
+    window.dispatchEvent(new Event('resize'));
+    expect(parseFloat(view.host.style.left)).toBeLessThanOrEqual(12);
+    view.remove();
+  });
+
+  it('标题栏控件保持单行、close 固定可见，有限上下文是 aria-pressed 图标 toggle', () => {
+    let root: ShadowRoot | undefined;
+    const original = Element.prototype.attachShadow;
+    vi.spyOn(HTMLElement.prototype, 'attachShadow').mockImplementation(function (this: HTMLElement, options) { root = original.call(this, options); return root; });
+    const view = new SelectionView(document, new DOMRect(10, 10, 20, 20), { translate: vi.fn(), copy: vi.fn(), close: vi.fn() });
+    const top = root!.querySelector('.top')!;
+    const context = root!.querySelector('[name="include-context"]') as HTMLButtonElement;
+    expect(top.querySelector('[data-drag-handle]')).not.toBeNull();
+    expect(top.querySelector('[data-action="close"]')).not.toBeNull();
+    expect(context.tagName).toBe('BUTTON');
+    expect(context).toHaveAttribute('aria-pressed', 'true');
+    expect(context.title).toContain('发送选区所在段落的有限文本帮助消歧，不翻译上下文本身');
+    expect(top.textContent).not.toContain('有限上下文');
+    view.remove();
+  });
+
+  it('拖动标题栏更新 host left/top 并 clamp，select 和 button 不启动拖动', () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 400 });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 300 });
+    let root: ShadowRoot | undefined;
+    const original = Element.prototype.attachShadow;
+    vi.spyOn(HTMLElement.prototype, 'attachShadow').mockImplementation(function (this: HTMLElement, options) { root = original.call(this, options); return root; });
+    const view = new SelectionView(document, new DOMRect(20, 20, 20, 20), { translate: vi.fn(), copy: vi.fn(), close: vi.fn() });
+    vi.spyOn(root!.querySelector('.panel')!, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 320, 220));
+    view.open('zh-Hans');
+    const before = view.host.style.left;
+    root!.querySelector('[name="engine"]')!.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 30, clientY: 30 }));
+    window.dispatchEvent(new MouseEvent('pointermove', { clientX: 200, clientY: 200 }));
+    expect(view.host.style.left).toBe(before);
+    root!.querySelector('[data-drag-handle]')!.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 30, clientY: 30 }));
+    window.dispatchEvent(new MouseEvent('pointermove', { clientX: 500, clientY: 500 }));
+    window.dispatchEvent(new MouseEvent('pointerup'));
+    expect(parseFloat(view.host.style.left)).toBeLessThanOrEqual(72);
+    expect(parseFloat(view.host.style.top)).toBeLessThanOrEqual(72);
     view.remove();
   });
 

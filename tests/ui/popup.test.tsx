@@ -8,6 +8,7 @@ afterEach(cleanup);
 const preferences = {
   targetLanguage: 'zh-Hans', displayMode: 'bilingual', scanScope: 'whole-page' as const,
   translationPosition: 'after' as const, userInstruction: '', selectionContext: true,
+  selectionPopupEnabled: true, inlineSelectionModifier: 'Control' as const,
 };
 
 function createApi(overrides: Partial<PopupApi> = {}): PopupApi {
@@ -65,8 +66,8 @@ describe('精简 Popup', () => {
     await userEvent.click(await screen.findByRole('button', { name: '翻译 (Alt + A)' }));
     expect(api.sendToPage).toHaveBeenCalledWith(expect.objectContaining({ type: 'translate-page', scope: 'whole-page', targetLanguage: 'zh-Hans' }));
     progressListener?.({ status: 'complete', completed: 1, failed: 0, total: 1 });
-    await waitFor(() => expect(screen.getByRole('button', { name: '显示原文' })).toBeInTheDocument());
-    await userEvent.click(await screen.findByRole('button', { name: '显示原文' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: '显示原文 (Alt + A)' })).toBeInTheDocument());
+    await userEvent.click(await screen.findByRole('button', { name: '显示原文 (Alt + A)' }));
     expect(api.sendToPage).toHaveBeenLastCalledWith({ type: 'restore-page' });
   });
 
