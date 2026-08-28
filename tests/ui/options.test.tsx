@@ -19,6 +19,7 @@ const loaded: OptionsSettings = {
 function createApi(settings: OptionsSettings = loaded): OptionsApi {
   return {
     load: vi.fn(async () => structuredClone(settings)),
+    getEngineApiKey: vi.fn(async (engineId) => engineId === 'custom-work' ? 'work-secret' : ''),
     savePreferences: vi.fn(async () => undefined),
     upsertEngine: vi.fn(async () => undefined),
     deleteEngine: vi.fn(async () => undefined),
@@ -161,6 +162,13 @@ describe('Options v2 多引擎设置', () => {
     render(<OptionsApp api={api} />);
     const work = await screen.findByRole('group', { name: '工作 AI' });
     const home = screen.getByRole('group', { name: '个人 AI' });
+    expect(within(work).queryByText('custom-work')).not.toBeInTheDocument();
+    expect(within(work).getByLabelText('API Key')).toHaveValue('work-secret');
+    expect(within(work).getByLabelText('API Key')).toHaveAttribute('type', 'password');
+    await userEvent.click(within(work).getByRole('button', { name: '显示 API Key' }));
+    expect(within(work).getByLabelText('API Key')).toHaveAttribute('type', 'text');
+    await userEvent.click(within(work).getByRole('button', { name: '隐藏 API Key' }));
+    expect(within(work).getByLabelText('API Key')).toHaveAttribute('type', 'password');
     expect(within(work).getByText(/已保存 API Key/)).toBeInTheDocument();
     expect(within(home).queryByText(/已保存 API Key/)).not.toBeInTheDocument();
     await userEvent.clear(within(home).getByLabelText('名称'));
@@ -215,9 +223,43 @@ describe('Options v2 多引擎设置', () => {
     const work = await screen.findByRole('group', { name: '工作 AI' });
     await userEvent.clear(within(work).getByLabelText('Base URL'));
     await userEvent.type(within(work).getByLabelText('Base URL'), 'https://other.example/v1');
+    expect(within(work).getByLabelText('API Key')).toHaveValue('');
+    expect(within(work).queryByText(/已保存 API Key/)).not.toBeInTheDocument();
     expect(within(work).getByText(/来源已变化.*重新输入 API Key/)).toBeInTheDocument();
     await userEvent.click(within(work).getByRole('button', { name: '保存实例' }));
     expect(api.upsertEngine).not.toHaveBeenCalled();
+  });
+
+  it('保存新 key 后 reload 并在密码框回显真实值，清 key 后清空', async () => {
+    const api = createStatefulApi({ ...loaded, engines: loaded.engines.filter((engine) => engine.id !== 'custom-home') });
+    let key = '';
+    vi.mocked(api.getEngineApiKey).mockImplementation(async () => key);
+    vi.mocked(api.upsertEngine).mockImplementation(async (engine) => { key = engine.apiKey; });
+    vi.mocked(api.clearEngineApiKey).mockImplementation(async () => { key = ''; });
+    render(<OptionsApp api={api} />);
+    const work = await screen.findByRole('group', { name: '工作 AI' });
+    await userEvent.clear(within(work).getByLabelText('API Key'));
+    await userEvent.type(within(work).getByLabelText('API Key'), 'new-secret');
+    await userEvent.click(within(work).getByRole('button', { name: '保存实例' }));
+    await waitFor(() => expect(within(screen.getByRole('group', { name: '工作 AI' })).getByLabelText('API Key')).toHaveValue('new-secret'));
+    const reloaded = screen.getByRole('group', { name: '工作 AI' });
+    await userEvent.click(within(reloaded).getByRole('button', { name: '清除 API Key' }));
+    await userEvent.click(within(reloaded).getByRole('button', { name: '确认清除 API Key' }));
+    await waitFor(() => expect(within(screen.getByRole('group', { name: '工作 AI' })).getByLabelText('API Key')).toHaveValue(''));
+  });
+
+  it('快捷键 option 保留内部值，但只显示用户可读标签', async () => {
+    render(<OptionsApp api={createApi()} />);
+    const modifier = await screen.findByRole('combobox', { name: '选区内联翻译快捷键' });
+    expect([...within(modifier).getAllByRole('option')].map((option) => ({ value: (option as HTMLOptionElement).value, text: option.textContent }))).toEqual([
+      { value: 'Control', text: 'Ctrl' },
+      { value: 'Alt', text: 'Alt' },
+      { value: 'Shift', text: 'Shift' },
+      { value: 'Meta', text: expect.stringMatching(/Win \/ Command|Command/) },
+      { value: 'Off', text: '关闭' },
+    ]);
+    expect(modifier).not.toHaveTextContent('Control');
+    expect(modifier).not.toHaveTextContent('Meta');
   });
 
   it('支持新增、默认、启停、测试、清 key、删除确认和上下排序', async () => {
@@ -241,7 +283,7 @@ describe('Options v2 多引擎设置', () => {
 
     expect(api.setActiveEngine).toHaveBeenCalledWith('custom-work');
     expect(api.setEngineEnabled).toHaveBeenCalledWith('custom-work', false);
-    expect(api.testEngine).toHaveBeenCalledWith('custom-work', expect.objectContaining({ id: 'custom-work', apiKey: '' }));
+    expect(api.testEngine).toHaveBeenCalledWith('custom-work', expect.objectContaining({ id: 'custom-work', apiKey: 'work-secret' }));
     expect(api.reorderEngines).toHaveBeenCalledTimes(1);
     expect(api.reorderEngines).toHaveBeenCalledWith(['google', 'bing', 'custom-home', 'custom-work']);
     expect(api.clearEngineApiKey).toHaveBeenCalledWith('custom-work');

@@ -145,6 +145,33 @@ describe('service worker 消息编排', () => {
     expect(JSON.stringify(options)).not.toContain('sk-secret-value');
   });
 
+  it('仅向本扩展 options.html 返回指定 custom API Key，并兼容 query/hash', async () => {
+    for (const url of [
+      'chrome-extension://extension-id/options.html',
+      'chrome-extension://extension-id/options.html?engine=custom-work',
+      'chrome-extension://extension-id/options.html#custom-work',
+    ]) {
+      await expect(send({ type: 'get-engine-api-key', engineId: 'custom-work' }, { id: 'extension-id', url }))
+        .resolves.toEqual({ ok: true, data: { key: 'sk-secret-value' } });
+    }
+  });
+
+  it('API Key 回显接口拒绝非 Options 来源、非 custom 引擎和危险 ID', async () => {
+    for (const sender of [
+      { id: 'extension-id', url: 'chrome-extension://extension-id/popup.html' },
+      { id: 'extension-id', url: 'chrome-extension://extension-id/options.html/extra' },
+      { id: 'extension-id', url: 'https://example.com/options.html', tab: { id: 1 } as chrome.tabs.Tab, frameId: 0, documentId: 'doc' },
+      { id: 'other-extension', url: 'chrome-extension://extension-id/options.html' },
+      { id: 'extension-id' },
+    ]) {
+      await expect(send({ type: 'get-engine-api-key', engineId: 'custom-work' }, sender)).resolves.toEqual({ ok: false, error: '消息来源无效' });
+    }
+    await expect(send({ type: 'get-engine-api-key', engineId: 'google' }, { id: 'extension-id', url: 'chrome-extension://extension-id/options.html' }))
+      .resolves.toEqual({ ok: false, error: '翻译引擎不存在' });
+    await expect(send({ type: 'get-engine-api-key', engineId: '__proto__' }, { id: 'extension-id', url: 'chrome-extension://extension-id/options.html' }))
+      .resolves.toEqual({ ok: false, error: '消息格式无效' });
+  });
+
   it('Popup 和 Options 读取主题，并可通过 save-theme 持久化', async () => {
     let persisted = structuredClone(configured);
     vi.mocked(chromeApi.storage.local.get).mockImplementation(async () => ({ translatorSettings: persisted }));

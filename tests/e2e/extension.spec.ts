@@ -18,7 +18,7 @@ async function addCustomEngine(
   await expect(card.getByLabel('Base URL')).toBeEnabled();
   await card.getByLabel('名称').fill(name);
   await card.getByLabel('Base URL').fill(baseUrl);
-  await card.getByLabel('API Key').fill(apiKey);
+  await card.getByLabel('API Key', { exact: true }).fill(apiKey);
   await card.getByLabel('模型').fill(model);
   await card.getByRole('button', { name: '保存实例' }).click();
   await expect(options.getByRole('status')).toHaveText('实例已保存');
@@ -139,7 +139,12 @@ test('MV3、Popup 与 Options 无错误加载，自定义实例可测试并在�
   expect(await secretProbe.content()).not.toContain(API_KEY);
   await secretProbe.close();
   await expect(card.getByLabel('Base URL')).toHaveValue(server.baseUrl);
-  await expect(card.getByLabel('API Key')).toHaveValue('');
+  await expect(card.getByLabel('API Key', { exact: true })).toHaveValue(API_KEY);
+  await expect(card.getByLabel('API Key', { exact: true })).toHaveAttribute('type', 'password');
+  await card.getByRole('button', { name: '显示 API Key' }).click();
+  await expect(card.getByLabel('API Key', { exact: true })).toHaveAttribute('type', 'text');
+  await card.getByRole('button', { name: '隐藏 API Key' }).click();
+  await expect(card.getByLabel('API Key', { exact: true })).toHaveAttribute('type', 'password');
   await expect(card.getByLabel('模型')).toHaveValue('e2e-model');
   await card.getByRole('button', { name: '测试连接' }).click();
   await expect.poll(() => server.requests.length, { message: `测试连接应到达本地模拟 API；命中记录: ${server.hits.join(', ')}` }).toBe(1);
@@ -153,13 +158,9 @@ test('MV3、Popup 与 Options 无错误加载，自定义实例可测试并在�
   const reopenedCard = reopened.getByRole('group', { name: 'E2E 自定义 AI' });
   await expect(reopenedCard.getByLabel('Base URL')).toHaveValue(server.baseUrl);
   await expect(reopenedCard.getByLabel('模型')).toHaveValue('e2e-model');
-  await expect(reopenedCard.getByLabel('API Key')).toHaveValue('');
+  await expect(reopenedCard.getByLabel('API Key', { exact: true })).toHaveValue(API_KEY);
   await expect(reopenedCard.getByText('已保存 API Key；留空会保留现有密钥。')).toBeVisible();
   expect(await reopened.evaluate(() => JSON.stringify(localStorage))).not.toContain(API_KEY);
-  expect(await reopened.evaluate(() => JSON.stringify({
-    html: document.documentElement.outerHTML,
-    keyValue: (document.querySelector('[aria-label="API Key"]') as HTMLInputElement)?.value,
-  }))).not.toContain(API_KEY);
   const downloadPromise = reopened.waitForEvent('download');
   await reopened.getByRole('button', { name: '导出配置' }).click();
   const download = await downloadPromise;
@@ -357,6 +358,22 @@ test('真实鼠标划词使用 closed shadow，输入框选区不触发，结果
   if (!hostBox) throw new Error('划词按钮不可见');
   await page.mouse.click(hostBox.x + Math.min(16, hostBox.width / 2), hostBox.y + Math.min(16, hostBox.height / 2));
   await expect(host).toHaveAttribute('data-vast-state', 'translated');
+  const resizeResult = await host.evaluate((element) => {
+    const host = element as HTMLElement;
+    const before = host.getBoundingClientRect();
+    host.style.setProperty('--vast-panel-width', '420px');
+    host.style.setProperty('--vast-panel-height', '260px');
+    return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => {
+      const after = host.getBoundingClientRect();
+      resolve({ grew: after.width > before.width && after.height > before.height, clamped: after.left >= 8 && after.top >= 8 && after.right <= innerWidth - 8 && after.bottom <= innerHeight - 8 });
+    })));
+  });
+  expect(resizeResult).toEqual({ grew: true, clamped: true });
+  const resizedBounds = await host.boundingBox();
+  if (!resizedBounds) throw new Error('缩放后的划词面板不可见');
+  await page.mouse.click(resizedBounds.x + resizedBounds.width - 27, resizedBounds.y + resizedBounds.height - 27);
+  await expect(host).toHaveAttribute('data-vast-toast', 'copied');
+  await expect(host).not.toHaveAttribute('data-vast-toast', { timeout: 2_500 });
   await expect.poll(() => server.requests.filter((request) => request.body.stream === true).length).toBe(1);
   expect(JSON.stringify(server.requests.at(-1)?.body)).toContain('Select this sentence');
 

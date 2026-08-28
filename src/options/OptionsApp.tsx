@@ -16,6 +16,7 @@ type CustomDraft = Omit<CustomAiEngine, 'apiKey'> & {
 
 export interface OptionsApi {
   load(): Promise<OptionsSettings>;
+  getEngineApiKey(engineId: string): Promise<string>;
   savePreferences(preferences: ReadingPreferences): Promise<void>;
   upsertEngine(engine: CustomAiEngine): Promise<void>;
   deleteEngine(engineId: string): Promise<void>;
@@ -70,6 +71,7 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
   const [confirmDelete, setConfirmDelete] = useState<string>();
   const [confirmKey, setConfirmKey] = useState<string>();
   const [confirmCache, setConfirmCache] = useState(false);
+  const [visibleApiKeys, setVisibleApiKeys] = useState<Set<string>>(() => new Set());
   const importInput = useRef<HTMLInputElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const reloadGeneration = useRef(0);
@@ -83,7 +85,13 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
       if (generation !== reloadGeneration.current) return;
       setSettings(value);
       document.documentElement.dataset.theme = value.theme;
-      setDrafts(value.engines.filter((engine): engine is Extract<OptionsEngine, { kind: 'custom-ai' }> => engine.kind === 'custom-ai').map(customDraft));
+      const customEngines = value.engines.filter((engine): engine is Extract<OptionsEngine, { kind: 'custom-ai' }> => engine.kind === 'custom-ai');
+      const loadedDrafts = customEngines.map(customDraft);
+      setDrafts(loadedDrafts);
+      setVisibleApiKeys(new Set());
+      const keys = await Promise.all(customEngines.map(async (engine) => engine.hasApiKey ? api.getEngineApiKey(engine.id) : ''));
+      if (generation !== reloadGeneration.current) return;
+      setDrafts(loadedDrafts.map((draft, index) => ({ ...draft, apiKey: keys[index] })));
       if (message) setStatus(message);
     } catch (error) {
       if (generation !== reloadGeneration.current) return;
@@ -102,6 +110,23 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
   const updateDraft = <K extends keyof CustomDraft>(id: string, key: K, value: CustomDraft[K]) => {
     setDrafts((current) => current.map((draft) => draft.id === id ? { ...draft, [key]: value } : draft));
   };
+  const updateBaseUrl = (id: string, value: string) => {
+    setDrafts((current) => current.map((draft) => {
+      if (draft.id !== id) return draft;
+      const changedOrigin = Boolean(draft.savedBaseUrl && origin(value) !== origin(draft.savedBaseUrl));
+      return changedOrigin ? { ...draft, baseUrl: value, apiKey: '', hasApiKey: false } : { ...draft, baseUrl: value };
+    }));
+    setVisibleApiKeys((current) => {
+      const next = new Set(current);
+      next.delete(id);
+      return next;
+    });
+  };
+  const toggleApiKey = (id: string) => setVisibleApiKeys((current) => {
+    const next = new Set(current);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
 
   async function act(action: () => Promise<void>, success: string, refresh = false): Promise<void> {
     setStatus(t('statusSaving'));
@@ -237,18 +262,18 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
     <section id="custom-engines" className="section" aria-labelledby="custom-engines-title">
       <div className="section-header"><div><h2 id="custom-engines-title">{t('customAiEngines')}</h2><p className="section-copy">{t('customAiDescription')}</p></div><span className="section-index">02 / AI · {customCount}/{MAX_CUSTOM_ENGINES}</span></div>
       <div className="engine-stack">{drafts.map((draft, index) => {
-        const changedOrigin = Boolean(draft.hasApiKey && origin(draft.baseUrl) !== origin(draft.savedBaseUrl));
+        const changedOrigin = Boolean(draft.savedBaseUrl && origin(draft.baseUrl) !== origin(draft.savedBaseUrl));
         return <fieldset className="engine-card" aria-label={draft.name} key={draft.id}>
           <legend>{draft.name}</legend>
-          <div className="engine-card-head"><div className="engine-identity"><span className="badge">AI</span><code>{draft.id}</code>{settings.activeEngineId === draft.id && <span className="badge badge--active">{t('activeDefault')}</span>}</div><label className="toggle"><input type="checkbox" aria-label={t('enabled')} checked={draft.enabled} onChange={(event) => {
+          <div className="engine-card-head"><div className="engine-identity"><span className="badge">AI</span>{settings.activeEngineId === draft.id && <span className="badge badge--active">{t('activeDefault')}</span>}</div><label className="toggle"><input type="checkbox" aria-label={t('enabled')} checked={draft.enabled} onChange={(event) => {
             if (draft.isNew) updateDraft(draft.id, 'enabled', event.target.checked);
             else void act(() => api.setEngineEnabled(draft.id, event.target.checked), t('statusEngineUpdated'), true);
           }} /> {t('enabled')}</label></div>
           <div className="grid engine-grid">
             <label className="field">{t('engineName')}<input aria-label={t('engineName')} value={draft.name} onChange={(event) => updateDraft(draft.id, 'name', event.target.value)} /></label>
             <label className="field">{t('model')}<input aria-label={t('model')} value={draft.model} onChange={(event) => updateDraft(draft.id, 'model', event.target.value)} /></label>
-            <label className="field field--wide">Base URL<input aria-label="Base URL" value={draft.baseUrl} onChange={(event) => updateDraft(draft.id, 'baseUrl', event.target.value)} /><small>{t('connectionDestination')}<span className="origin">{origin(draft.baseUrl) ?? t('invalidAddress')}</span></small></label>
-            <label className="field field--wide">API Key<input aria-label="API Key" type="password" autoComplete="off" value={draft.apiKey} onChange={(event) => updateDraft(draft.id, 'apiKey', event.target.value)} /><small>{draft.hasApiKey && !changedOrigin ? t('optionsKeySaved') : t('apiKeyHelp')}</small></label>
+            <label className="field field--wide">Base URL<input aria-label="Base URL" value={draft.baseUrl} onChange={(event) => updateBaseUrl(draft.id, event.target.value)} /><small>{t('connectionDestination')}<span className="origin">{origin(draft.baseUrl) ?? t('invalidAddress')}</span></small></label>
+            <label className="field field--wide">API Key<span className="input-wrapper"><input aria-label="API Key" type={visibleApiKeys.has(draft.id) ? 'text' : 'password'} autoComplete="off" value={draft.apiKey} onChange={(event) => updateDraft(draft.id, 'apiKey', event.target.value)} /><button type="button" className="input-icon-button" aria-label={visibleApiKeys.has(draft.id) ? t('hideApiKey') : t('showApiKey')} onClick={() => toggleApiKey(draft.id)}>{visibleApiKeys.has(draft.id) ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 4.2A10.8 10.8 0 0 1 12 4c5.5 0 9 5.1 9 8a8.7 8.7 0 0 1-2.1 3.8M6.2 6.2C4.2 7.6 3 10 3 12c0 2.9 3.5 8 9 8 1.2 0 2.3-.2 3.2-.6" /></svg> : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12c0-2.9 3.5-8 9-8s9 5.1 9 8-3.5 8-9 8-9-5.1-9-8Z" /><circle cx="12" cy="12" r="3" /></svg>}</button></span><small>{draft.hasApiKey && !changedOrigin ? t('optionsKeySaved') : t('apiKeyHelp')}</small></label>
           </div>
           {changedOrigin && <p className="note">{t('engineOriginChanged')}</p>}
           <div className="actions engine-actions">
@@ -281,7 +306,7 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
     <section id="selection-preferences" className="section" aria-label={t('selectionPreferences')}><div className="section-header"><h2>{t('selectionPreferences')}</h2><span className="section-index">04 / SELECT</span></div><div className="grid">
       <label className="field check-field"><input aria-label={t('limitedContext')} type="checkbox" checked={settings.readingPreferences.selectionContext} onChange={(event) => updatePreferences('selectionContext', event.target.checked)} /> {t('limitedContextLabel')}</label>
       <label className="field check-field"><input aria-label={t('selectionPopupEnabled')} type="checkbox" checked={settings.readingPreferences.selectionPopupEnabled} onChange={(event) => updatePreferences('selectionPopupEnabled', event.target.checked)} /> {t('selectionPopupEnabled')}</label>
-      <label className="field">{t('inlineSelectionModifier')}<select aria-label={t('inlineSelectionModifier')} value={settings.readingPreferences.inlineSelectionModifier} onChange={(event) => updatePreferences('inlineSelectionModifier', event.target.value as ReadingPreferences['inlineSelectionModifier'])}>{['Control', 'Alt', 'Shift', 'Meta'].map((value) => <option key={value} value={value}>{value}</option>)}<option value="Off">{t('modifierOff')}</option></select></label>
+      <label className="field">{t('inlineSelectionModifier')}<select aria-label={t('inlineSelectionModifier')} value={settings.readingPreferences.inlineSelectionModifier} onChange={(event) => updatePreferences('inlineSelectionModifier', event.target.value as ReadingPreferences['inlineSelectionModifier'])}><option value="Control">Ctrl</option><option value="Alt">Alt</option><option value="Shift">Shift</option><option value="Meta">{typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform) ? 'Command' : 'Win / Command'}</option><option value="Off">{t('modifierOff')}</option></select></label>
       <p className="field field--wide context-help">{t('limitedContextHelp')}</p>
     </div><div className="actions actions--primary"><button className="primary options-action" onClick={() => void act(() => api.savePreferences(settings.readingPreferences), t('statusSaved'))}>{t('savePreferences')}</button></div></section>
 

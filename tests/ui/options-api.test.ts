@@ -25,6 +25,7 @@ describe('Options v2 API', () => {
     });
     const api = createOptionsApi({ runtime: { sendMessage } });
     await api.load();
+    await api.getEngineApiKey(custom.id);
     await api.upsertEngine(custom);
     await api.setActiveEngine(custom.id);
     await api.setEngineEnabled(custom.id, false);
@@ -35,6 +36,7 @@ describe('Options v2 API', () => {
     await api.deleteEngine(custom.id);
     await api.importSettings(DEFAULT_SETTINGS);
     expect(messages.slice(1)).toEqual([
+      { type: 'get-engine-api-key', engineId: custom.id },
       { type: 'upsert-engine', engine: custom },
       { type: 'set-active-engine', engineId: custom.id },
       { type: 'set-engine-enabled', engineId: custom.id, enabled: false },
@@ -45,6 +47,12 @@ describe('Options v2 API', () => {
       { type: 'delete-engine', engineId: custom.id },
       { type: 'import-settings', settings: DEFAULT_SETTINGS },
     ]);
+  });
+
+  it('只从专用消息响应读取 API Key', async () => {
+    const sendMessage = vi.fn(async () => ({ ok: true, data: { key: 'secret-value' } }));
+    await expect(createOptionsApi({ runtime: { sendMessage } }).getEngineApiKey('custom-work')).resolves.toBe('secret-value');
+    expect(sendMessage).toHaveBeenCalledWith({ type: 'get-engine-api-key', engineId: 'custom-work' });
   });
 
   it('不再暴露可整体覆写含密钥设置的旧 saveSettings API', () => {

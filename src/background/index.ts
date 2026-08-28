@@ -33,7 +33,7 @@ export interface BackgroundDependencies {
 interface RuntimeDependencyOptions { cache?: CacheLike; createProvider?: (engine: Engine) => Provider }
 type IncomingMessage = Record<string, unknown> & { type: string };
 const allowedTypes = new Set([
-  'translate-batch', 'cancel-task', 'get-public-config', 'get-popup-config', 'get-options-settings',
+  'translate-batch', 'cancel-task', 'get-public-config', 'get-popup-config', 'get-options-settings', 'get-engine-api-key',
   'test-engine', 'translate-selection-inline', 'translate-selection-fallback', 'cancel-selection-fallback', 'clear-cache',
   'save-reading-preferences', 'upsert-engine', 'delete-engine', 'set-active-engine', 'set-engine-enabled', 'reorder-engines', 'import-settings',
   'save-popup-preferences', 'save-theme',
@@ -50,6 +50,16 @@ function isMessage(value: unknown): value is IncomingMessage { return isRecord(v
 function hasOnlyKeys(value: Record<string, unknown>, keys: string[]): boolean { return Object.keys(value).every((key) => keys.includes(key)); }
 function isSafeString(value: unknown, max = 10_000): value is string { return typeof value === 'string' && value.length > 0 && value.length <= max; }
 function isSafeId(value: unknown): value is string { return isSafeString(value, 200) && !['__proto__', 'prototype', 'constructor'].includes(value); }
+
+function isOptionsSender(sender: chrome.runtime.MessageSender, extensionId: string): boolean {
+  if (sender.id !== extensionId || !sender.url) return false;
+  try {
+    const url = new URL(sender.url);
+    return url.protocol === 'chrome-extension:' && url.hostname === extensionId && url.pathname === '/options.html';
+  } catch {
+    return false;
+  }
+}
 
 function parseSegments(value: unknown): TranslationSegment[] | undefined {
   if (!Array.isArray(value) || value.length < 1 || value.length > 8) return undefined;
@@ -206,6 +216,7 @@ export function createBackgroundController(api: BackgroundChrome, dependencies: 
   async function handle(message: unknown, sender: chrome.runtime.MessageSender): Promise<unknown> {
     if (sender.id !== api.runtime.id) return { ok: false, error: '消息来源无效' };
     if (!isMessage(message) || !allowedTypes.has(message.type)) return { ok: false, error: '不支持的消息类型' };
+    if (message.type === 'get-engine-api-key' && !isOptionsSender(sender, api.runtime.id)) return { ok: false, error: '消息来源无效' };
     if (message.type === 'cancel-selection-fallback') {
       if (!hasOnlyKeys(message, ['type', 'requestId']) || !isSafeId(message.requestId)) return { ok: false, error: '消息格式无效' };
       const key = pageTaskKey(sender, message.requestId);
@@ -232,6 +243,12 @@ export function createBackgroundController(api: BackgroundChrome, dependencies: 
           const original = settings.engines.find((item): item is CustomAiEngine => item.id === engine.id && item.kind === 'custom-ai');
           return { ...engine, ...(engine.kind === 'custom-ai' ? { hasApiKey: Boolean(original?.apiKey) } : {}) };
         }) } };
+      }
+      if (message.type === 'get-engine-api-key') {
+        if (!hasOnlyKeys(message, ['type', 'engineId']) || !isSafeId(message.engineId)) return { ok: false, error: '消息格式无效' };
+        const engine = settings.engines.find((item) => item.id === message.engineId);
+        if (engine?.kind !== 'custom-ai') return { ok: false, error: '翻译引擎不存在' };
+        return { ok: true, data: { key: engine.apiKey } };
       }
       if (message.type === 'clear-cache') { await dependencies.clearCache(); return { ok: true }; }
       if (message.type === 'translate-selection-inline') {

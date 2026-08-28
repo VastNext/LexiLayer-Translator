@@ -220,7 +220,7 @@ export function createSelectionController(dependencies: SelectionDependencies) {
     context = selected.context;
     const actions = {
       translate: start,
-      copy: () => { if (view?.getResult()) void dependencies.copy(view.getResult()); },
+      copy: () => view?.getResult() ? dependencies.copy(view.getResult()) : undefined,
       close,
     };
     view = dependencies.createView?.(selected.rect, actions)
@@ -238,7 +238,7 @@ export function createSelectionController(dependencies: SelectionDependencies) {
     context = undefined;
     authorizationAvailable = true;
     authorizationExpiresAt = now() + 1_500;
-    const actions = { translate: start, copy: () => { if (view?.getResult()) void dependencies.copy(view.getResult()); }, close };
+    const actions = { translate: start, copy: () => view?.getResult() ? dependencies.copy(view.getResult()) : undefined, close };
     view = dependencies.createView?.(new DOMRect(16, 16, 0, 0), actions) ?? new SelectionView(document, new DOMRect(16, 16, 0, 0), actions);
     view.mount();
     view.open(targetLanguage);

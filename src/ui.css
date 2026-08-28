@@ -138,6 +138,12 @@ h1, h2, h3 { font-family: var(--font-title); color: var(--ink); }
 .field { display: grid; align-content: start; gap: 6px; color: var(--muted); font-size: 13px; font-weight: 700; }
 .field--wide { grid-column: 1 / -1; }
 .field input:not([type="checkbox"]), .field select, .field textarea { width: 100%; min-height: 39px; padding: 8px 10px; border: 1px solid var(--input-line); border-radius: var(--radius-input); background: var(--input); color: var(--ink); font-size: 15px; }
+.input-wrapper { position: relative; display: block; }
+.input-wrapper input:not([type="checkbox"]) { padding-right: 42px; }
+.input-icon-button { position: absolute; top: 50%; right: 5px; width: 30px; height: 30px; display: grid; place-items: center; padding: 0; border: 0; border-radius: var(--radius-icon); transform: translateY(-50%); background: transparent; color: var(--muted); }
+.input-icon-button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.input-icon-button:hover { background: var(--hover); color: var(--ink); }
+.input-icon-button:active { transform: translateY(-50%) scale(.94); }
 .field textarea { min-height: 82px; resize: vertical; }
 .context-help { margin: 0; color: var(--muted); font-size: 13px; font-weight: 500; line-height: 1.5; }
 .check-field { display: flex; align-items: center; gap: 8px; min-height: 39px; }

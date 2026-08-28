@@ -55,4 +55,13 @@ describe('界面视觉契约', () => {
     expect(source).toContain('logo-beacon');
     expect(source).toContain('aria-label');
   });
+
+  it('扩展 SVG 图标使用蓝粉晚霞渐变和白色主标', () => {
+    const source = readFileSync(resolve(import.meta.dirname, '../../public/icons/vast-translator.svg'), 'utf8');
+    expect(source).toContain('#3568ff');
+    expect(source).toContain('#f06f92');
+    expect(source).toContain('linearGradient');
+    expect(source).toMatch(/stroke="#fff"/);
+    expect(source).toMatch(/fill="#fff"/);
+  });
 });

@@ -596,14 +596,84 @@ describe('划词翻译视图隔离', () => {
     const view = new SelectionView(document, new DOMRect(10, 10, 20, 20), { translate: vi.fn(), copy: vi.fn(), close: vi.fn() });
 
     const wrap = root!.querySelector('.result-wrap');
-    const actions = [...wrap!.querySelectorAll<HTMLElement>('.result-actions [data-action]')];
+    const actionRow = root!.querySelector('.result-actions')!;
+    const actions = [...actionRow.querySelectorAll<HTMLElement>('[data-action]')];
     expect(wrap?.querySelector('[data-result]')).not.toBeNull();
     expect(actions.map((action) => action.dataset.action)).toEqual(['retry', 'copy']);
-    expect(wrap?.querySelector('[data-action="copy"]')).toHaveAttribute('aria-label', '复制');
-    expect(wrap?.querySelector('[data-action="copy"]')).toHaveAttribute('title', '复制');
-    expect(wrap?.querySelector('[data-action="retry"]')).toHaveAttribute('aria-label', '重试');
-    expect(wrap?.querySelector('[data-action="retry"]')).toHaveAttribute('title', '重试');
-    expect(root!.querySelector('.actions')).toBeNull();
+    expect(wrap?.querySelector('.result-actions')).toBeNull();
+    expect(actionRow.previousElementSibling).toBe(wrap);
+    expect(actionRow.querySelector('[data-action="copy"]')).toHaveAttribute('aria-label', '复制');
+    expect(actionRow.querySelector('[data-action="copy"]')).not.toBeEmptyDOMElement();
+    expect(actionRow.querySelector('[data-action="retry"]')).toHaveAttribute('aria-label', '重试');
+    expect(actionRow.querySelector('[data-action="retry"]')).not.toBeEmptyDOMElement();
+    const style = root!.querySelector('style')!.textContent ?? '';
+    expect(style).toMatch(/\.result\{[^}]*padding:10px(?![^}]*78px)/s);
+    expect(style).toMatch(/\.result-actions\{[^}]*justify-content:flex-end/s);
+    view.remove();
+  });
+
+  it('复制 Promise 成功后显示 Toast，并在 1.5 秒后隐藏', async () => {
+    vi.useFakeTimers();
+    let root: ShadowRoot | undefined;
+    const original = Element.prototype.attachShadow;
+    vi.spyOn(HTMLElement.prototype, 'attachShadow').mockImplementation(function (this: HTMLElement, options) { root = original.call(this, options); return root; });
+    const copy = vi.fn(async () => undefined);
+    const view = new SelectionView(document, new DOMRect(10, 10, 20, 20), { translate: vi.fn(), copy, close: vi.fn() });
+    view.setResult('译文');
+
+    (root!.querySelector('[data-action="copy"]') as HTMLButtonElement).click();
+    await Promise.resolve();
+    expect(copy).toHaveBeenCalledOnce();
+    expect(root!.querySelector('[role="status"]')).toHaveTextContent('已复制');
+    expect(root!.querySelector('[role="status"]')).not.toHaveAttribute('hidden');
+    vi.advanceTimersByTime(1_500);
+    expect(root!.querySelector('[role="status"]')).toHaveAttribute('hidden');
+    view.remove();
+    vi.useRealTimers();
+  });
+
+  it('面板支持双向缩放，ResizeObserver 变化后 clamp 并在 remove 时断开', () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 500 });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 360 });
+    let callback!: ResizeObserverCallback;
+    const disconnect = vi.fn();
+    const observe = vi.fn();
+    vi.stubGlobal('ResizeObserver', vi.fn(function (this: ResizeObserver, value: ResizeObserverCallback) {
+      callback = value;
+      this.observe = observe;
+      this.disconnect = disconnect;
+      this.unobserve = vi.fn();
+    }));
+    let root: ShadowRoot | undefined;
+    const original = Element.prototype.attachShadow;
+    vi.spyOn(HTMLElement.prototype, 'attachShadow').mockImplementation(function (this: HTMLElement, options) { root = original.call(this, options); return root; });
+    const view = new SelectionView(document, new DOMRect(450, 330, 20, 20), { translate: vi.fn(), copy: vi.fn(), close: vi.fn() });
+    const panel = root!.querySelector('.panel') as HTMLElement;
+    const rect = vi.spyOn(panel, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 420, 300));
+    view.mount();
+    view.open('zh-Hans');
+    callback([], {} as ResizeObserver);
+    expect(observe).toHaveBeenCalledWith(panel);
+    expect(parseFloat(view.host.style.left)).toBeLessThanOrEqual(72);
+    expect(parseFloat(view.host.style.top)).toBeLessThanOrEqual(52);
+    expect(root!.querySelector('style')!.textContent).toMatch(/resize:both/);
+    expect(root!.querySelector('style')!.textContent).toMatch(/min-width:280px/);
+    expect(root!.querySelector('style')!.textContent).toMatch(/min-height:170px/);
+    rect.mockRestore();
+    view.remove();
+    expect(disconnect).toHaveBeenCalledOnce();
+    vi.unstubAllGlobals();
+  });
+
+  it('所有划词按钮都有 hover、active 与 focus-visible 状态', () => {
+    let root: ShadowRoot | undefined;
+    const original = Element.prototype.attachShadow;
+    vi.spyOn(HTMLElement.prototype, 'attachShadow').mockImplementation(function (this: HTMLElement, options) { root = original.call(this, options); return root; });
+    const view = new SelectionView(document, new DOMRect(10, 10, 20, 20), { translate: vi.fn(), copy: vi.fn(), close: vi.fn() });
+    const style = root!.querySelector('style')!.textContent ?? '';
+    for (const selector of ['.trigger:hover', '.icon:hover', '.result-action:hover', '.trigger:active', '.icon:active', '.result-action:active', 'button:focus-visible']) {
+      expect(style).toContain(selector);
+    }
     view.remove();
   });
 
