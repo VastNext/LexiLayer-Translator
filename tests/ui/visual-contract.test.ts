@@ -45,7 +45,7 @@ describe('界面视觉契约', () => {
     expect(css).toMatch(/\.options-nav nav button\s*\{[^}]*font-size:\s*14px/s);
     expect(css).toMatch(/\.field\s*\{[^}]*font-size:\s*13px/s);
     expect(css).toMatch(/\.field input:not\(\[type="checkbox"\]\), \.field select, \.field textarea\s*\{[^}]*font-size:\s*15px/s);
-    expect(css).toMatch(/\.compact-action\s*\{[^}]*font-size:\s*13px/s);
+    expect(css).toMatch(/\.options-action\s*\{[^}]*min-height:\s*32px[^}]*padding:\s*5px 8px[^}]*font-size:\s*13px/s);
   });
 
   it('BrandMark 使用 VastNext 路线、地平线与珊瑚信标并保留 aria', () => {

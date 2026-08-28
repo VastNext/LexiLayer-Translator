@@ -144,7 +144,7 @@ h1, h2, h3 { font-family: var(--font-title); color: var(--ink); }
 .actions { margin-top: 12px; }
 .actions--primary, .engine-actions { padding-top: 12px; border-top: 1px solid var(--line); }
 .compact { min-height: 32px; padding: 5px 8px; }
-.compact-action { min-height: 32px; padding: 5px 8px; font-size: 13px; }
+.options-action { min-height: 32px; padding: 5px 8px; font-size: 13px; }
 .add-engine { width: 100%; margin-top: 12px; border-style: dashed; }
 .note { margin: 10px 0 0; padding: 9px 10px; border-left: 3px solid var(--accent); background: var(--accent-soft); color: var(--ink); font-size: 13px; }
 .origin { word-break: break-all; font-family: var(--font-mono); }

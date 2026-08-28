@@ -134,12 +134,35 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
   }
 
   async function move(id: string, direction: -1 | 1): Promise<void> {
-    const ordered = [...settings.engines].sort((a, b) => a.order - b.order);
-    const index = ordered.findIndex((engine) => engine.id === id);
+    const index = drafts.findIndex((draft) => draft.id === id);
     const target = index + direction;
-    if (target < 0 || target >= ordered.length) return;
-    [ordered[index], ordered[target]] = [ordered[target], ordered[index]];
-    await act(() => api.reorderEngines(ordered.map(({ id: engineId }) => engineId)), t('statusOrderSaved'), true);
+    if (index < 0 || target < 0 || target >= drafts.length) return;
+    const orderedDrafts = [...drafts];
+    [orderedDrafts[index], orderedDrafts[target]] = [orderedDrafts[target], orderedDrafts[index]];
+    if (drafts[index].isNew || drafts[target].isNew) {
+      setDrafts(orderedDrafts);
+      return;
+    }
+
+    const customIds = orderedDrafts.filter((draft) => !draft.isNew).map((draft) => draft.id);
+    let customIndex = 0;
+    const engineIds = [...settings.engines].sort((a, b) => a.order - b.order).map((engine) => (
+      engine.kind === 'custom-ai' ? customIds[customIndex++] : engine.id
+    ));
+    setStatus(t('statusSaving'));
+    try {
+      await api.reorderEngines(engineIds);
+      setDrafts(orderedDrafts);
+      setSettings((current) => ({
+        ...current,
+        engines: current.engines
+          .map((engine) => ({ ...engine, order: engineIds.indexOf(engine.id) }))
+          .sort((a, b) => a.order - b.order),
+      }));
+      setStatus(t('statusOrderSaved'));
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : t('statusSaveFailed'));
+    }
   }
 
   async function importFile(file?: File): Promise<void> {
@@ -205,8 +228,8 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
           <span className="badge">{t('builtin')}</span>
           {settings.activeEngineId === engine.id && <span className="badge badge--active">{t('activeDefault')}</span>}
           <label className="toggle"><input type="checkbox" aria-label={`${engine.name} ${t('enabled')}`} checked={engine.enabled} onChange={(event) => void act(() => api.setEngineEnabled(engine.id, event.target.checked), t('statusEngineUpdated'), true)} /> {t('enabled')}</label>
-          {settings.activeEngineId !== engine.id && <button className="secondary" disabled={!engine.enabled} onClick={() => void act(() => api.setActiveEngine(engine.id), t('statusActiveChanged'), true)}>{t('setDefault')}</button>}
-          <button className="secondary compact-action" disabled={!engine.enabled} onClick={() => void testConnection(engine.id)}>{t('actionTestConnection')}</button>
+          {settings.activeEngineId !== engine.id && <button className="secondary options-action" disabled={!engine.enabled} onClick={() => void act(() => api.setActiveEngine(engine.id), t('statusActiveChanged'), true)}>{t('setDefault')}</button>}
+          <button className="secondary options-action" disabled={!engine.enabled} onClick={() => void testConnection(engine.id)}>{t('actionTestConnection')}</button>
         </div>
       </article>)}</div>
     </section>
@@ -217,7 +240,10 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
         const changedOrigin = Boolean(draft.hasApiKey && origin(draft.baseUrl) !== origin(draft.savedBaseUrl));
         return <fieldset className="engine-card" aria-label={draft.name} key={draft.id}>
           <legend>{draft.name}</legend>
-          <div className="engine-card-head"><div className="engine-identity"><span className="badge">AI</span><code>{draft.id}</code>{settings.activeEngineId === draft.id && <span className="badge badge--active">{t('activeDefault')}</span>}</div><label className="toggle"><input type="checkbox" aria-label={t('enabled')} checked={draft.enabled} onChange={(event) => void act(() => api.setEngineEnabled(draft.id, event.target.checked), t('statusEngineUpdated'), true)} /> {t('enabled')}</label></div>
+          <div className="engine-card-head"><div className="engine-identity"><span className="badge">AI</span><code>{draft.id}</code>{settings.activeEngineId === draft.id && <span className="badge badge--active">{t('activeDefault')}</span>}</div><label className="toggle"><input type="checkbox" aria-label={t('enabled')} checked={draft.enabled} onChange={(event) => {
+            if (draft.isNew) updateDraft(draft.id, 'enabled', event.target.checked);
+            else void act(() => api.setEngineEnabled(draft.id, event.target.checked), t('statusEngineUpdated'), true);
+          }} /> {t('enabled')}</label></div>
           <div className="grid engine-grid">
             <label className="field">{t('engineName')}<input aria-label={t('engineName')} value={draft.name} onChange={(event) => updateDraft(draft.id, 'name', event.target.value)} /></label>
             <label className="field">{t('model')}<input aria-label={t('model')} value={draft.model} onChange={(event) => updateDraft(draft.id, 'model', event.target.value)} /></label>
@@ -226,19 +252,19 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
           </div>
           {changedOrigin && <p className="note">{t('engineOriginChanged')}</p>}
           <div className="actions engine-actions">
-            <button className="primary" onClick={() => void saveDraft(draft)}>{t('saveEngine')}</button>
-            <button className="secondary compact-action" onClick={() => void testConnection(draft.id, { id: draft.id, kind: 'custom-ai', name: draft.name, enabled: draft.enabled, order: draft.order, baseUrl: draft.baseUrl, model: draft.model, apiKey: draft.apiKey })}>{t('actionTestConnection')}</button>
-            <button className="secondary" disabled={!draft.enabled || changedOrigin || (!draft.hasApiKey && !draft.apiKey)} onClick={() => void act(() => api.setActiveEngine(draft.id), t('statusActiveChanged'), true)}>{t('setDefault')}</button>
-            <button className="secondary compact" aria-label={t('moveUp')} disabled={index === 0} onClick={() => void move(draft.id, -1)}>↑ {t('moveUp')}</button>
-            <button className="secondary compact" aria-label={t('moveDown')} disabled={index === drafts.length - 1} onClick={() => void move(draft.id, 1)}>↓ {t('moveDown')}</button>
-            {draft.hasApiKey && confirmKey !== draft.id && <button className="danger" onClick={() => setConfirmKey(draft.id)}>{t('actionClearApiKey')}</button>}
-            {confirmKey === draft.id && <><span className="help">{t('confirmClearKey')}</span><button className="danger" onClick={() => void act(async () => { await api.clearEngineApiKey(draft.id); setConfirmKey(undefined); await reload(t('statusKeyCleared')); }, t('statusKeyCleared'))}>{t('actionConfirmClearKey')}</button></>}
-            {!draft.isNew && confirmDelete !== draft.id && <button className="danger" onClick={() => setConfirmDelete(draft.id)}>{t('deleteEngine')}</button>}
-            {confirmDelete === draft.id && <><span className="help">{t('confirmDeleteEngine')}</span><button className="danger" onClick={() => void act(async () => { await api.deleteEngine(draft.id); setConfirmDelete(undefined); await reload(t('statusEngineDeleted')); }, t('statusEngineDeleted'))}>{t('confirmDeleteEngineAction')}</button></>}
+            <button className="primary options-action" onClick={() => void saveDraft(draft)}>{t('saveEngine')}</button>
+            <button className="secondary options-action" onClick={() => void testConnection(draft.id, { id: draft.id, kind: 'custom-ai', name: draft.name, enabled: draft.enabled, order: draft.order, baseUrl: draft.baseUrl, model: draft.model, apiKey: draft.apiKey })}>{t('actionTestConnection')}</button>
+            <button className="secondary options-action" disabled={!draft.enabled || changedOrigin || (!draft.hasApiKey && !draft.apiKey)} onClick={() => void act(() => api.setActiveEngine(draft.id), t('statusActiveChanged'), true)}>{t('setDefault')}</button>
+            <button className="secondary options-action" aria-label={t('moveUp')} disabled={index === 0} onClick={() => void move(draft.id, -1)}>↑ {t('moveUp')}</button>
+            <button className="secondary options-action" aria-label={t('moveDown')} disabled={index === drafts.length - 1} onClick={() => void move(draft.id, 1)}>↓ {t('moveDown')}</button>
+            {draft.hasApiKey && confirmKey !== draft.id && <button className="danger options-action" onClick={() => setConfirmKey(draft.id)}>{t('actionClearApiKey')}</button>}
+            {confirmKey === draft.id && <><span className="help">{t('confirmClearKey')}</span><button className="danger options-action" onClick={() => void act(async () => { await api.clearEngineApiKey(draft.id); setConfirmKey(undefined); await reload(t('statusKeyCleared')); }, t('statusKeyCleared'))}>{t('actionConfirmClearKey')}</button></>}
+            {!draft.isNew && confirmDelete !== draft.id && <button className="danger options-action" onClick={() => setConfirmDelete(draft.id)}>{t('deleteEngine')}</button>}
+            {confirmDelete === draft.id && <><span className="help">{t('confirmDeleteEngine')}</span><button className="danger options-action" onClick={() => void act(async () => { await api.deleteEngine(draft.id); setConfirmDelete(undefined); await reload(t('statusEngineDeleted')); }, t('statusEngineDeleted'))}>{t('confirmDeleteEngineAction')}</button></>}
           </div>
         </fieldset>;
       })}</div>
-      <button className="secondary add-engine" disabled={!loaded || customCount >= MAX_CUSTOM_ENGINES} onClick={() => {
+      <button className="secondary options-action add-engine" disabled={!loaded || customCount >= MAX_CUSTOM_ENGINES} onClick={() => {
         const id = `custom-${Date.now().toString(36)}`;
         setDrafts((current) => [...current, { id, kind: 'custom-ai', name: `${t('newCustomAi')} ${current.length + 1}`, enabled: true, order: settings.engines.length + current.filter((item) => item.isNew).length, baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', apiKey: '', hasApiKey: false, savedBaseUrl: '', isNew: true }]);
       }}>{t('addCustomAi')}</button>
@@ -257,7 +283,7 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
       <label className="field check-field"><input aria-label={t('selectionPopupEnabled')} type="checkbox" checked={settings.readingPreferences.selectionPopupEnabled} onChange={(event) => updatePreferences('selectionPopupEnabled', event.target.checked)} /> {t('selectionPopupEnabled')}</label>
       <label className="field">{t('inlineSelectionModifier')}<select aria-label={t('inlineSelectionModifier')} value={settings.readingPreferences.inlineSelectionModifier} onChange={(event) => updatePreferences('inlineSelectionModifier', event.target.value as ReadingPreferences['inlineSelectionModifier'])}>{['Control', 'Alt', 'Shift', 'Meta'].map((value) => <option key={value} value={value}>{value}</option>)}<option value="Off">{t('modifierOff')}</option></select></label>
       <p className="field field--wide context-help">{t('limitedContextHelp')}</p>
-    </div><div className="actions actions--primary"><button className="primary" onClick={() => void act(() => api.savePreferences(settings.readingPreferences), t('statusSaved'))}>{t('savePreferences')}</button></div></section>
+    </div><div className="actions actions--primary"><button className="primary options-action" onClick={() => void act(() => api.savePreferences(settings.readingPreferences), t('statusSaved'))}>{t('savePreferences')}</button></div></section>
 
     <section id="appearance-theme" className="section theme-section" aria-label={t('appearanceTheme')}><div className="section-header"><div><h2>{t('appearanceTheme')}</h2><p className="section-copy">{t('themeDescription')}</p></div><span className="section-index">05 / THEME</span></div>
       <div className="theme-grid">{themeChoices.map((theme) => <button key={theme.id} className={`theme-choice ${settings.theme === theme.id ? 'selected' : ''}`} aria-pressed={settings.theme === theme.id} aria-label={`${theme.name}：${t(theme.descriptionKey)}`} onClick={() => void chooseTheme(theme.id)}>
@@ -267,10 +293,10 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
 
     <section id="data-privacy" className="section" aria-labelledby="data-title"><div className="section-header"><div><h2 id="data-title">{t('dataPrivacy')}</h2><p className="section-copy">{t('privacyWarning')}</p></div><span className="section-index">06 / LOCAL</span></div>
       <input ref={importInput} hidden aria-label={t('actionImport')} type="file" accept="application/json" onChange={(event) => void importFile(event.target.files?.[0])} />
-      <div className="actions"><button className="secondary" onClick={() => importInput.current?.click()}>{t('actionImport')}</button><button className="secondary" onClick={() => api.exportSettings(safeExport(settings, drafts))}>{t('actionExport')}</button>
-      {!confirmCache ? <button className="danger" onClick={() => setConfirmCache(true)}>{t('actionClearCache')}</button> : <><span className="help">{t('confirmClear')}</span><button className="danger" onClick={() => void act(async () => { await api.clearCache(); setConfirmCache(false); }, t('cacheCleared'))}>{t('actionConfirmClear')}</button></>}</div>
+      <div className="actions"><button className="secondary options-action" onClick={() => importInput.current?.click()}>{t('actionImport')}</button><button className="secondary options-action" onClick={() => api.exportSettings(safeExport(settings, drafts))}>{t('actionExport')}</button>
+      {!confirmCache ? <button className="danger options-action" onClick={() => setConfirmCache(true)}>{t('actionClearCache')}</button> : <><span className="help">{t('confirmClear')}</span><button className="danger options-action" onClick={() => void act(async () => { await api.clearCache(); setConfirmCache(false); }, t('cacheCleared'))}>{t('actionConfirmClear')}</button></>}</div>
     </section>
-    <p className="status status-toast" role="status" data-state={statusState}>{status || t('unchanged')} {loadFailed && <button className="secondary compact-action" onClick={() => void reload()}>{t('actionRetry')}</button>}</p>
+    <p className="status status-toast" role="status" data-state={statusState}>{status || t('unchanged')} {loadFailed && <button className="secondary options-action" onClick={() => void reload()}>{t('actionRetry')}</button>}</p>
     </div>
   </main>;
 }
