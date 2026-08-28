@@ -315,7 +315,7 @@ export function createRuntimeDependencies(): ContentControllerDependencies {
       for (const queue of visibilityQueues) queue.disconnect();
       visibilityQueues.clear();
     },
-    report(progress) { void chrome.runtime.sendMessage({ type: 'page-progress', progress }); },
+    report(progress) { void chrome.runtime.sendMessage({ type: 'page-progress', progress }).catch(() => undefined); },
   };
 }
 

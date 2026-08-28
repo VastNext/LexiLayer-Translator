@@ -385,6 +385,21 @@ describe('网页翻译控制器', () => {
 });
 
 describe('运行时可见性接线', () => {
+  it('扩展重载后进度上报失败不会产生未处理的 Promise rejection', () => {
+    const originalChrome = globalThis.chrome;
+    const catchRejection = vi.fn();
+    const sendMessage = vi.fn(() => ({ catch: catchRejection }));
+    Object.defineProperty(globalThis, 'chrome', { configurable: true, value: { runtime: { sendMessage } } });
+    try {
+      const dependencies = createRuntimeDependencies();
+      dependencies.report({ status: 'complete', completed: 1, failed: 0, total: 1 });
+      expect(sendMessage).toHaveBeenCalledWith({ type: 'page-progress', progress: { status: 'complete', completed: 1, failed: 0, total: 1 } });
+      expect(catchRejection).toHaveBeenCalledOnce();
+    } finally {
+      Object.defineProperty(globalThis, 'chrome', { configurable: true, value: originalChrome });
+    }
+  });
+
   it('IO 命中前不调用 worker，命中后把多个小 root 合成短批', async () => {
     const original = globalThis.IntersectionObserver;
     let notify!: (entries: Pick<IntersectionObserverEntry, 'target' | 'isIntersecting'>[]) => void;
