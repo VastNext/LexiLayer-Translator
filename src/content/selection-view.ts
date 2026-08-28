@@ -5,13 +5,14 @@ import { engineDisplayName } from '../shared/config';
 const selectionMessages: Record<string, string> = {
   selectionTranslate: '翻译选中内容', selectionDialog: '划词翻译', translationEngine: '翻译引擎', targetLanguage: '目标语言',
   limitedContextHelp: '发送选区所在段落的有限文本帮助消歧，不翻译上下文本身。', actionClose: '关闭', preparing: '准备翻译…', actionCopy: '复制', actionRetry: '重试',
+  copySuccess: '已复制',
 };
 const selectionTranslator: Translator = (key) => selectionMessages[key] ?? key;
 const VIEWPORT_MARGIN = 8;
 
 export interface SelectionViewActions {
   translate(targetLanguage: string, includeContext: boolean, engineId: string): void;
-  copy(): void;
+  copy(): void | Promise<void>;
   close(): void;
 }
 
@@ -41,6 +42,8 @@ export class SelectionView implements SelectionViewHandle {
   private dragOffsetY = 0;
   private dragging = false;
   private manualPosition = false;
+  private resizeObserver?: ResizeObserver;
+  private toastTimer?: number;
   private readonly anchor: DOMRect;
 
   constructor(document: Document, rect: DOMRect, private readonly actions: SelectionViewActions, private readonly t: Translator = selectionTranslator) {
@@ -58,15 +61,17 @@ export class SelectionView implements SelectionViewHandle {
     this.shadow.innerHTML = `
       <style>
         :host{all:initial;font-family:Inter,ui-sans-serif,system-ui,sans-serif;color:#17201d}
-        button,select{font:inherit}button{cursor:pointer}
-        .trigger{width:32px;height:32px;border:0;border-radius:11px;background:#176b52;color:white;font-weight:800}
-        .panel{display:none;width:min(320px,calc(100vw - 16px));max-height:calc(100vh - 16px);padding:12px;border:1px solid #c8d8d1;border-radius:16px;background:#f8fbf9;box-shadow:0 18px 50px #10251d35;overflow:hidden}
+        *{box-sizing:border-box}button,select{font:inherit}button{cursor:pointer;transition:background-color .15s ease,transform .1s ease}
+        button:focus-visible,select:focus-visible{outline:3px solid #3568ff;outline-offset:2px}
+        .trigger{width:32px;height:32px;border:0;border-radius:11px;background:#176b52;color:white;font-weight:800}.trigger:hover{background:#115b45}.trigger:active{transform:scale(.92)}
+        .panel{position:relative;display:none;width:var(--vast-panel-width,min(320px,calc(100vw - 16px)));height:var(--vast-panel-height,auto);min-width:280px;min-height:170px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);padding:12px;border:1px solid #c8d8d1;border-radius:16px;background:#f8fbf9;box-shadow:0 18px 50px #10251d35;overflow:auto;resize:both}
         .panel.open{display:flex;flex-direction:column}.top,.actions{display:flex;gap:7px;align-items:center}.top{min-width:0;flex-wrap:nowrap}
         .drag{flex:0 0 auto;width:20px;height:30px;display:grid;place-items:center;color:#688078;cursor:grab;touch-action:none;user-select:none}.drag:active{cursor:grabbing}
         .top select{min-width:0;height:30px;border:1px solid #b8ccc4;border-radius:8px;background:white;color:#17201d}.top [name=engine]{flex:1 1 96px}.top [name=target-language]{flex:1 1 88px}
-        .icon{flex:0 0 30px;width:30px;height:30px;padding:0;border:1px solid #b8ccc4;border-radius:8px;background:white;color:#315f53;font-weight:800}.icon[aria-pressed=true]{background:#dceee7}.close{font-size:18px;line-height:1}
-        .result-wrap{position:relative;min-height:64px;margin:10px 0}.result{min-height:64px;height:100%;padding:10px 78px 10px 10px;border-radius:10px;background:white;white-space:pre-wrap;overflow:auto}
-        .result-actions{position:absolute;top:6px;right:6px;display:flex;gap:5px}.result-action{width:30px;height:30px;padding:0;border:1px solid #b8ccc4;border-radius:8px;background:white;color:#315f53;font-weight:800}
+        .icon{flex:0 0 30px;width:30px;height:30px;padding:0;border:1px solid #b8ccc4;border-radius:8px;background:white;color:#315f53;font-weight:800}.icon:hover{background:#e8f1ed}.icon:active{transform:scale(.92)}.icon[aria-pressed=true]{background:#dceee7}.close{font-size:18px;line-height:1}
+        .result-wrap{min-height:64px;margin:10px 0 7px;flex:1 1 auto}.result{min-height:64px;height:100%;padding:10px;border-radius:10px;background:white;white-space:pre-wrap;overflow:auto}
+        .result-actions{display:flex;justify-content:flex-end;gap:5px}.result-action{width:30px;height:30px;display:grid;place-items:center;padding:0;border:1px solid #b8ccc4;border-radius:8px;background:white;color:#315f53;font-size:17px;font-weight:700}.result-action:hover{background:#e8f1ed}.result-action:active{transform:scale(.92)}
+        .copy-toast{position:absolute;right:12px;top:48px;padding:6px 9px;border-radius:7px;background:#111;color:#fff;font-size:12px;box-shadow:0 7px 20px #0003}.copy-toast[hidden]{display:none}
       </style>
       <button class="trigger" aria-label="${this.t('selectionTranslate')}">V</button>
       <section class="panel" role="dialog" aria-label="${this.t('selectionDialog')}">
@@ -79,7 +84,9 @@ export class SelectionView implements SelectionViewHandle {
           <button class="icon" name="include-context" aria-pressed="true" title="${this.t('limitedContextHelp')}">◎</button>
           <button class="icon close" data-action="close" aria-label="${this.t('actionClose')}">×</button>
         </div>
-        <div class="result-wrap"><div class="result" data-result>${this.t('preparing')}</div><div class="result-actions"><button class="result-action" data-action="retry" aria-label="${this.t('actionRetry')}" title="${this.t('actionRetry')}">↻</button><button class="result-action" data-action="copy" aria-label="${this.t('actionCopy')}" title="${this.t('actionCopy')}">⧉</button></div></div>
+        <div class="result-wrap"><div class="result" data-result>${this.t('preparing')}</div></div>
+        <div class="result-actions"><button class="result-action" data-action="retry" aria-label="${this.t('actionRetry')}" title="${this.t('actionRetry')}">↻</button><button class="result-action" data-action="copy" aria-label="${this.t('actionCopy')}" title="${this.t('actionCopy')}">⧉</button></div>
+        <span class="copy-toast" role="status" hidden></span>
       </section>`;
     this.bind();
   }
@@ -135,6 +142,8 @@ export class SelectionView implements SelectionViewHandle {
     view?.removeEventListener('resize', this.onResize);
     view?.removeEventListener('pointermove', this.onPointerMove);
     view?.removeEventListener('pointerup', this.onPointerUp);
+    this.resizeObserver?.disconnect();
+    if (this.toastTimer !== undefined) view?.clearTimeout(this.toastTimer);
     this.host.remove();
   }
 
@@ -146,7 +155,9 @@ export class SelectionView implements SelectionViewHandle {
       this.requestTranslation();
     });
     this.shadow.querySelector('[data-action="retry"]')?.addEventListener('click', (event) => { if (event.isTrusted) this.requestTranslation(); });
-    this.shadow.querySelector('[data-action="copy"]')?.addEventListener('click', () => this.actions.copy());
+    this.shadow.querySelector('[data-action="copy"]')?.addEventListener('click', () => {
+      Promise.resolve(this.actions.copy()).then(() => this.showToast(this.t('copySuccess'))).catch(() => undefined);
+    });
     this.shadow.querySelector('[data-action="close"]')?.addEventListener('click', () => this.actions.close());
     this.shadow.querySelector('[name="include-context"]')?.addEventListener('click', (event) => {
       const button = event.currentTarget as HTMLButtonElement;
@@ -156,6 +167,23 @@ export class SelectionView implements SelectionViewHandle {
     this.shadow.querySelector('[name="engine"]')?.addEventListener('change', (event) => { if (event.isTrusted) this.requestTranslation(); });
     this.shadow.querySelector('[data-drag-handle]')?.addEventListener('pointerdown', this.onPointerDown as EventListener);
     this.host.ownerDocument.defaultView?.addEventListener('resize', this.onResize);
+    const ResizeObserverClass = this.host.ownerDocument.defaultView?.ResizeObserver;
+    const panel = this.shadow.querySelector('.panel');
+    if (ResizeObserverClass && panel) {
+      this.resizeObserver = new ResizeObserverClass(() => this.reclamp());
+      this.resizeObserver.observe(panel);
+    }
+  }
+
+  private showToast(message: string): void {
+    const toast = this.shadow.querySelector('.copy-toast') as HTMLElement | null;
+    const view = this.host.ownerDocument.defaultView;
+    if (!toast || !view) return;
+    toast.textContent = message;
+    toast.hidden = false;
+    this.host.dataset.vastToast = 'copied';
+    if (this.toastTimer !== undefined) view.clearTimeout(this.toastTimer);
+    this.toastTimer = view.setTimeout(() => { toast.hidden = true; delete this.host.dataset.vastToast; }, 1_500);
   }
 
   private readonly onResize = () => this.reclamp();

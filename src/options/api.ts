@@ -13,6 +13,9 @@ export function createOptionsApi(chromeApi: OptionsChromeApi) {
     async load(): Promise<OptionsSettings> {
       return await request<OptionsSettings>({ type: 'get-options-settings' }) ?? structuredClone(DEFAULT_SETTINGS);
     },
+    async getEngineApiKey(engineId: string): Promise<string> {
+      return (await request<{ key: string }>({ type: 'get-engine-api-key', engineId }))?.key ?? '';
+    },
     savePreferences: (readingPreferences: ReadingPreferences) => request({ type: 'save-reading-preferences', readingPreferences }),
     saveTheme: (theme: Theme) => request({ type: 'save-theme', theme }),
     upsertEngine: (engine: Engine) => request({ type: 'upsert-engine', engine }),
