@@ -418,7 +418,7 @@ test('长页面底部划词面板始终在视口内，可拖动关闭，Ctrl 内
   const draggedBounds = await host.boundingBox(); if (!draggedBounds) throw new Error('拖动后面板不可见');
   expect(Math.abs(draggedBounds.x - hostBounds.x) + Math.abs(draggedBounds.y - hostBounds.y)).toBeGreaterThan(10);
   await page.screenshot({ path: evidence('selection-panel'), fullPage: false });
-  await page.mouse.click(draggedBounds.x + draggedBounds.width - 15, draggedBounds.y + 15);
+  await page.keyboard.press('Escape');
   await expect(host).toHaveCount(0);
 
   await paragraph.scrollIntoViewIfNeeded();
