@@ -50,7 +50,7 @@ export const manifest = {
   commands: {
     translate_page: {
       suggested_key: {
-        default: 'Alt+Shift+A',
+        default: 'Alt+A',
       },
       description: '__MSG_commandTranslatePage__',
     },

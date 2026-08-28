@@ -12,6 +12,7 @@ import {
   validateEngine,
   validateSettings,
   type CustomAiEngine,
+  type SafeSettings,
   type Settings,
 } from '../../src/shared/config';
 
@@ -36,6 +37,7 @@ describe('v2 settings', () => {
   it('默认启用 Google，并保留全部阅读偏好', () => {
     expect(DEFAULT_SETTINGS).toMatchObject({
       schemaVersion: 2,
+      theme: 'pearl-reader',
       activeEngineId: 'google',
       readingPreferences: {
         targetLanguage: 'auto',
@@ -113,6 +115,7 @@ describe('migration and normalization', () => {
     expect(migrateSettings(legacy)).toEqual({
       schemaVersion: 2,
       mvpDefaultsVersion: 1,
+      theme: 'pearl-reader',
       readingPreferences: {
         targetLanguage: 'zh-Hans', displayMode: 'translation', userInstruction: '保留术语',
         translationPosition: 'before', scanScope: 'whole-page', selectionContext: false,
@@ -131,6 +134,14 @@ describe('migration and normalization', () => {
     expect(normalizeSettings(normalized)).toEqual(normalized);
     expect(normalizeSettings({ schemaVersion: 2, engines: [{ id: '__proto__' }] })).toEqual(DEFAULT_SETTINGS);
     expect(normalizeSettings('broken')).toEqual(DEFAULT_SETTINGS);
+  });
+
+  it('为缺少主题的旧 v2 设置补 Pearl，并拒绝未知主题', () => {
+    const legacyV2 = structuredClone(settings) as Omit<Settings, 'theme'> & { theme?: Settings['theme'] };
+    delete legacyV2.theme;
+
+    expect(normalizeSettings(legacyV2).theme).toBe('pearl-reader');
+    expect(validateSettings({ ...settings, theme: 'neon-unknown' })).toContain('外观主题无效');
   });
 
   it('normalize 修复 disabled active，优先回退到 ready 引擎而不是重置全部偏好', () => {
@@ -178,6 +189,13 @@ describe('safe export and secure import', () => {
     const importedCustom = changed.engines.find((engine) => engine.id === customEngine.id);
     if (importedCustom?.kind === 'custom-ai') importedCustom.baseUrl = 'https://other.example.com/v1';
     expect(importSettings(changed, settings).engines.find((engine) => engine.id === customEngine.id)).toMatchObject({ apiKey: '' });
+  });
+
+  it('导入导出保留主题，旧导入配置补默认主题', () => {
+    expect(exportSafeSettings({ ...settings, theme: 'command-translator' }).theme).toBe('command-translator');
+    const legacyImport = exportSafeSettings(settings) as Omit<SafeSettings, 'theme'> & { theme?: SafeSettings['theme'] };
+    delete legacyImport.theme;
+    expect(importSettings(legacyImport, settings).theme).toBe('pearl-reader');
   });
 
   it('拒绝导入任意层级秘密和危险 key', () => {

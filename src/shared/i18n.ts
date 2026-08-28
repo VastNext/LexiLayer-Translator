@@ -1,7 +1,7 @@
 export type Translator = (key: string, substitutions?: string | string[]) => string;
 
 const fallbackMessages: Record<string, string> = {
-  popupKicker: '双语校样台', popupCurrentPage: '当前页面', translationEngine: '翻译引擎', targetLanguage: '目标语言', translationScope: '翻译范围', displayMode: '显示模式',
+  popupKicker: '双语校样台', popupCurrentPage: '当前页面', translationEngine: '翻译引擎', sourceLanguage: '源语言', targetLanguage: '目标语言', translationScope: '翻译范围', displayMode: '显示模式',
   mainContent: '主要内容', wholePage: '整个页面', bilingual: '双语对照', translationOnly: '仅译文', ready: '就绪',
   actionTranslatePage: '翻译当前页面', actionRestore: '恢复原文', actionRetry: '重试', actionSettings: '设置', statusTranslating: '翻译中…',
   statusStarted: '已开始翻译，关闭窗口不会中断', statusFailed: '翻译失败', statusPartial: '已完成 $1/$2，失败 $3',
@@ -22,6 +22,8 @@ const fallbackMessages: Record<string, string> = {
   customAiEngines: '自定义 AI', customAiDescription: '可添加多个 OpenAI 兼容服务，每个实例独立保存连接与密钥。', engineName: '名称', saveEngine: '保存实例', moveUp: '上移', moveDown: '下移', deleteEngine: '删除实例', confirmDeleteEngine: '再次点击确认删除', confirmDeleteEngineAction: '确认删除实例', addCustomAi: '新增自定义 AI', newCustomAi: '自定义 AI',
   engineOriginChanged: 'Base URL 来源已变化，旧 API Key 不会沿用，请重新输入 API Key。', instructionCustomOnly: '自定义翻译要求仅对自定义 AI 生效；Google 和 Bing 会忽略此项。', savePreferences: '保存阅读偏好',
   statusEngineSaved: '实例已保存', statusEngineUpdated: '引擎状态已更新', statusActiveChanged: '默认引擎已更新', statusOrderSaved: '引擎顺序已保存', statusEngineDeleted: '实例已删除', importApplied: '配置已安全导入',
+  translateShortcut: '翻译 (Alt + A)', showOriginal: '显示原文', modeToggleHelp: '切换双语对照与仅译文', settingsNavigation: '设置导航', optionsTitle: '翻译设置', appearanceTheme: '外观主题', dataPrivacy: '数据隐私', themeDescription: '五套主题共享相同功能结构，点击后立即保存。', themeSaved: '主题已保存',
+  themePearlDescription: '浅蓝珍珠，安静轻盈的默认阅读主题。', themeCommandDescription: '深色命令台，快速且键盘优先。', themeSageDescription: '鼠尾草绿，温暖友好的全球阅读感。', themeEditorialDescription: '奶油紫与衬线标题，内容编辑感更强。', themePrecisionDescription: '高精度蓝，理性、可靠且更方正。',
 };
 
 function substitute(message: string, substitutions?: string | string[]): string {

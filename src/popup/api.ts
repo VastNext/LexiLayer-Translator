@@ -1,3 +1,4 @@
+import type { Theme } from '../shared/config';
 import { createTranslator } from '../shared/i18n';
 
 interface PopupChromeApi {
@@ -29,6 +30,7 @@ interface Progress {
 export interface PopupConfigResponse {
   preferences?: { sourceLanguage?: string; targetLanguage: string; displayMode: string; scanScope: 'main-content' | 'whole-page'; translationPosition: 'before' | 'after'; userInstruction: string; selectionContext: boolean };
   activeEngineId?: string;
+  theme?: Theme;
   availableEngines?: Array<{ id: string; kind: string; name: string; ready: boolean; capabilities: { streaming: boolean } }>;
 }
 

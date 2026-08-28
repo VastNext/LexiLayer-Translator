@@ -29,6 +29,7 @@ function createApi(settings: OptionsSettings = loaded): OptionsApi {
     clearEngineApiKey: vi.fn(async () => undefined),
     importSettings: vi.fn(async () => undefined),
     clearCache: vi.fn(async () => undefined),
+    saveTheme: vi.fn(async () => undefined),
     exportSettings: vi.fn(),
   };
 }
@@ -53,6 +54,30 @@ function createStatefulApi(settings: OptionsSettings = loaded): OptionsApi {
 }
 
 describe('Options v2 多引擎设置', () => {
+  it('提供五张外观主题卡，点击后立即保存并应用到根节点', async () => {
+    const api = createApi();
+    render(<OptionsApp api={api} />);
+    expect(await screen.findByRole('main')).toHaveAttribute('data-theme', 'pearl-reader');
+    const themeRegion = screen.getByRole('region', { name: '外观主题' });
+    for (const name of ['Pearl Reader', 'Command Translator', 'Sage Global', 'Editorial Lingua', 'Precision Blue']) {
+      expect(within(themeRegion).getByRole('button', { name: new RegExp(name) })).toBeInTheDocument();
+    }
+    await userEvent.click(within(themeRegion).getByRole('button', { name: /Command Translator/ }));
+    expect(api.saveTheme).toHaveBeenCalledWith('command-translator');
+    expect(screen.getByRole('main')).toHaveAttribute('data-theme', 'command-translator');
+    expect(document.documentElement).toHaveAttribute('data-theme', 'command-translator');
+  });
+
+  it('使用左侧五项导航且不删除现有功能区', async () => {
+    render(<OptionsApp api={createApi()} />);
+    const nav = await screen.findByRole('navigation', { name: '设置导航' });
+    for (const name of ['翻译引擎', '自定义 AI', '阅读偏好', '外观主题', '数据隐私']) {
+      expect(within(nav).getByRole('button', { name })).toBeInTheDocument();
+    }
+    expect(screen.getByRole('button', { name: '新增自定义 AI' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '导出配置' })).toBeInTheDocument();
+  });
+
   it('reload 失败后结束加载、显示错误并允许重试成功', async () => {
     const api = createApi();
     vi.mocked(api.load)

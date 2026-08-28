@@ -4,6 +4,7 @@ import { expect, test } from './fixtures';
 
 const API_KEY = 'e2e-secret-key-not-for-dom';
 const evidence = (name: string) => resolve(import.meta.dirname, `../evidence/e2e-${name}.png`);
+const themeEvidence = (name: string) => resolve(import.meta.dirname, `../evidence/theme-${name}.png`);
 
 async function addCustomEngine(
   options: import('@playwright/test').Page,
@@ -57,6 +58,36 @@ async function clickPopupButton(
   await expect(button).toBeEnabled();
   await button.evaluate((element: HTMLButtonElement) => element.click());
 }
+
+test('五套主题从 Options 即时保存并在重开 Popup 后持久应用', async ({ openExtensionPage }) => {
+  const options = await openExtensionPage('options.html');
+  await expect(options.locator('html')).toHaveAttribute('data-theme', 'pearl-reader');
+  await options.screenshot({ path: themeEvidence('pearl-reader-options'), fullPage: true });
+
+  const themes = [
+    ['pearl-reader', 'Pearl Reader'],
+    ['command-translator', 'Command Translator'],
+    ['sage-global', 'Sage Global'],
+    ['editorial-lingua', 'Editorial Lingua'],
+    ['precision-blue', 'Precision Blue'],
+  ] as const;
+
+  for (const [theme, name] of themes) {
+    await options.getByRole('button', { name: new RegExp(name) }).click();
+    await expect(options.locator('html')).toHaveAttribute('data-theme', theme);
+    await expect(options.getByRole('status')).toHaveText('主题已保存');
+
+    const popup = await openExtensionPage('popup.html');
+    await expect(popup.locator('html')).toHaveAttribute('data-theme', theme);
+    await expect(popup.getByRole('main')).toHaveAttribute('data-theme', theme);
+    if (theme === 'command-translator') {
+      const background = await popup.evaluate(() => getComputedStyle(document.body).backgroundColor);
+      expect(background).toBe('rgb(7, 8, 10)');
+    }
+    await popup.screenshot({ path: themeEvidence(theme), fullPage: true });
+    await popup.close();
+  }
+});
 
 test('MV3、Popup 与 Options 无错误加载，自定义实例可测试并在保存后持久化', async ({
   context, extensionId, serviceWorker, server, openExtensionPage, errors,
@@ -225,7 +256,7 @@ test('Popup 通过真实 Google/Bing clients 完成生产主链路并发送各�
   await popup.getByLabel('目标语言').selectOption('zh-Hans');
 
   await popup.getByLabel('翻译引擎').selectOption('google');
-  await clickPopupButton(popup, page, '翻译');
+  await clickPopupButton(popup, page, '翻译 (Alt + A)');
   await expect(page.locator('#hello + [data-vast-translator]')).toHaveText('你好');
   await clickPopupButton(popup, page, '显示原文');
   await expect(page.locator('[data-vast-translator]')).toHaveCount(0);
@@ -233,7 +264,7 @@ test('Popup 通过真实 Google/Bing clients 完成生产主链路并发送各�
   await expect(popup.getByRole('status')).toHaveText('就绪');
 
   await popup.getByLabel('翻译引擎').selectOption('bing');
-  await clickPopupButton(popup, page, '翻译');
+  await clickPopupButton(popup, page, '翻译 (Alt + A)');
   await expect(page.locator('#hello + [data-vast-translator]')).toHaveText('您好');
   await clickPopupButton(popup, page, '显示原文');
   await expect(page.locator('[data-vast-translator]')).toHaveCount(0);
@@ -264,7 +295,7 @@ test('普通文章由 Popup 翻译，支持进度、模式切换、动态更新�
   expect(extensionRequests.some((url) => /rules\/(github|google-search|bing-search|youtube|reddit|x|stackoverflow|substack)\.json/.test(url))).toBe(false);
 
   const popup = await openPopupForFixture(openExtensionPage, page);
-  await clickPopupButton(popup, page, '翻译');
+  await clickPopupButton(popup, page, '翻译 (Alt + A)');
   await expect(page.locator('[data-vast-translator][data-vast-state="translated"]')).toHaveCount(5);
   await expect(page.locator('#first + [data-vast-translator]')).toHaveText('用于翻译的第一段。');
   await expect(page.locator('#outside + [data-vast-translator]')).toHaveCount(1);
@@ -274,11 +305,11 @@ test('普通文章由 Popup 翻译，支持进度、模式切换、动态更新�
 
   await popup.getByRole('button', { name: '双语对照' }).click();
   await clickPopupButton(popup, page, '显示原文');
-  await clickPopupButton(popup, page, '翻译');
+  await clickPopupButton(popup, page, '翻译 (Alt + A)');
   await expect(page.locator('#first')).toBeHidden();
   await popup.getByRole('button', { name: '仅译文' }).click();
   await clickPopupButton(popup, page, '显示原文');
-  await clickPopupButton(popup, page, '翻译');
+  await clickPopupButton(popup, page, '翻译 (Alt + A)');
   await expect(page.locator('#first')).toBeVisible();
 
   await page.locator('#dynamic-root').evaluate((root) => { root.innerHTML = '<p id="added">Dynamically added paragraph.</p>'; });
@@ -341,13 +372,13 @@ test('网页按 8+2 批处理，动态范围正确且离屏滚动后才请求', 
   const page = await openFixture(context, server.batchFixtureUrl);
   const initialOffscreen = await page.locator('#offscreen').boundingBox();
   expect(initialOffscreen?.y ?? 0).toBeGreaterThan(1000);
-  await page.bringToFront(); await page.keyboard.press('Alt+Shift+A');
+  await page.bringToFront(); await page.keyboard.press('Alt+A');
   const shortcutTriggered = await page.locator('[data-vast-state="translated"]').first().waitFor({ state: 'attached', timeout: 1500 }).then(() => true).catch(() => false);
   if (!shortcutTriggered) {
     const commands = await serviceWorker.evaluate(async () => chrome.commands.getAll());
     expect(commands).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'translate_page', description: expect.any(String) })]));
     const popup = await openPopupForFixture(openExtensionPage, page);
-    await clickPopupButton(popup, page, '翻译');
+    await clickPopupButton(popup, page, '翻译 (Alt + A)');
   }
   await expect(page.locator('[data-vast-state="translated"]')).toHaveCount(10);
   const nonStream = () => server.requests.filter((request) => request.body.stream !== true);
@@ -393,7 +424,7 @@ for (const mode of ['401', 'invalid-json'] as const) {
     server.setMode(mode);
     const page = await openFixture(context, server.fixtureUrl);
     const popup = await openPopupForFixture(openExtensionPage, page);
-    await clickPopupButton(popup, page, '翻译');
+    await clickPopupButton(popup, page, '翻译 (Alt + A)');
     await expect(page.locator('[data-vast-state="error"]')).toHaveCount(5);
     await expect(page.locator('[data-vast-state="loading"]')).toHaveCount(0);
     await expect(page.locator('[data-vast-retry-all]').first()).toBeVisible();

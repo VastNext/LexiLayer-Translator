@@ -1,6 +1,9 @@
 import { assertSafeBaseUrl } from './url';
 
 export type DisplayMode = 'bilingual' | 'translation';
+export type Theme = 'pearl-reader' | 'command-translator' | 'sage-global' | 'editorial-lingua' | 'precision-blue';
+
+export const THEMES: Theme[] = ['pearl-reader', 'command-translator', 'sage-global', 'editorial-lingua', 'precision-blue'];
 
 export interface ReadingPreferences {
   sourceLanguage?: string;
@@ -41,6 +44,7 @@ export type Engine = GoogleEngine | BingEngine | CustomAiEngine;
 export interface Settings {
   schemaVersion: 2;
   mvpDefaultsVersion?: 1;
+  theme: Theme;
   readingPreferences: ReadingPreferences;
   engines: Engine[];
   activeEngineId: string;
@@ -57,6 +61,7 @@ export const MAX_CUSTOM_ENGINES = 20;
 export const DEFAULT_SETTINGS: Settings = {
   schemaVersion: 2,
   mvpDefaultsVersion: 1,
+  theme: 'pearl-reader',
   readingPreferences: {
     sourceLanguage: 'auto',
     targetLanguage: 'auto',
@@ -129,6 +134,7 @@ export function validateSettings(settings: unknown): string[] {
   if (!isRecord(settings)) return ['设置必须是对象'];
   const errors: string[] = [];
   if (settings.schemaVersion !== 2) errors.push('设置版本无效');
+  if (!THEMES.includes(settings.theme as Theme)) errors.push('外观主题无效');
   errors.push(...validatePreferences(settings.readingPreferences));
   if (!Array.isArray(settings.engines)) {
     errors.push('翻译引擎列表无效');
@@ -175,6 +181,7 @@ function cloneDefaults(): Settings {
 export function normalizeSettings(value: unknown): Settings {
   if (!isRecord(value) || value.schemaVersion !== 2) return cloneDefaults();
   const normalizedValue = structuredClone(value) as Record<string, unknown>;
+  if (normalizedValue.theme === undefined) normalizedValue.theme = DEFAULT_SETTINGS.theme;
   if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.sourceLanguage === undefined) normalizedValue.readingPreferences.sourceLanguage = 'auto';
   const errors = validateSettings(normalizedValue).filter((error) => error !== '至少保留一个可用的翻译引擎' && error !== '当前翻译引擎必须可用');
   if (errors.length) return cloneDefaults();
@@ -214,6 +221,7 @@ export function importSettings(value: unknown, current: Settings = DEFAULT_SETTI
   if (!isRecord(value) || value.schemaVersion !== 2 || !Array.isArray(value.engines)) throw new Error('导入设置格式无效');
 
   const input = structuredClone(value) as Record<string, unknown> & { engines: Array<Record<string, unknown>> };
+  if (input.theme === undefined) input.theme = DEFAULT_SETTINGS.theme;
   const inputIds = input.engines.map((engine) => engine.id);
   if (new Set(inputIds).size !== inputIds.length) throw new Error('翻译引擎 ID 不能重复');
   for (const engine of input.engines) {

@@ -9,6 +9,7 @@
   "actionSettings": { "message": "设置" },
   "statusTranslating": { "message": "翻译中…" },
   "popupKicker": { "message": "双语校样台" },
+  "sourceLanguage": { "message": "源语言" },
   "targetLanguage": { "message": "目标语言" },
   "translationEngine": { "message": "翻译引擎" },
   "translationScope": { "message": "翻译范围" },
@@ -105,5 +106,19 @@
   "statusActiveChanged": { "message": "默认引擎已更新" },
   "statusOrderSaved": { "message": "引擎顺序已保存" },
   "statusEngineDeleted": { "message": "实例已删除" },
-  "importApplied": { "message": "配置已安全导入" }
+  "importApplied": { "message": "配置已安全导入" },
+  "translateShortcut": { "message": "翻译 (Alt + A)" },
+  "showOriginal": { "message": "显示原文" },
+  "modeToggleHelp": { "message": "切换双语对照与仅译文" },
+  "settingsNavigation": { "message": "设置导航" },
+  "optionsTitle": { "message": "翻译设置" },
+  "appearanceTheme": { "message": "外观主题" },
+  "dataPrivacy": { "message": "数据隐私" },
+  "themeDescription": { "message": "五套主题共享相同功能结构，点击后立即保存。" },
+  "themeSaved": { "message": "主题已保存" },
+  "themePearlDescription": { "message": "浅蓝珍珠，安静轻盈的默认阅读主题。" },
+  "themeCommandDescription": { "message": "深色命令台，快速且键盘优先。" },
+  "themeSageDescription": { "message": "鼠尾草绿，温暖友好的全球阅读感。" },
+  "themeEditorialDescription": { "message": "奶油紫与衬线标题，内容编辑感更强。" },
+  "themePrecisionDescription": { "message": "高精度蓝，理性、可靠且更方正。" }
 }
