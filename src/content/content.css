@@ -13,3 +13,5 @@
   line-height: 1.55;
   white-space: pre-wrap;
 }
+[data-vast-translator][data-vast-state="translated"] { margin-inline-start: .35em; }
+button [data-vast-translator], a [data-vast-translator], [role="button"] [data-vast-translator], [role="link"] [data-vast-translator] { display: inline; }

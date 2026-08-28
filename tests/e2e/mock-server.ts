@@ -59,6 +59,7 @@ function selectionFixtureHtml(): string {
 function adminFixtureHtml(): string {
   const items = ['Property details','Property access management','Property change history','Property data API quota history','Custom insights','Scheduled emails','Analytics Intelligence search history'];
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Admin Fixture</title></head><body><main>
+    <ga-secondary-nav role="navigation"><mat-tree role="tree"><mat-tree-node role="treeitem"><button id="reports-button"><span class="mdc-button__label"><span id="reports-label">Reports snapshot</span></span><span class="mat-focus-indicator"></span></button></mat-tree-node><mat-tree-node role="treeitem"><button id="leads-button"><span class="mdc-button__label"><mat-icon aria-hidden="true">arrow_drop_down</mat-icon><span id="leads-label">Generate leads</span></span></button></mat-tree-node></mat-tree></ga-secondary-nav>
     <div class="admin-link-group-list-container"><ga-admin-link-group><xap-card>
       <xap-card-header><xap-card-title><h3 id="property-title">Property</h3></xap-card-title></xap-card-header>
       <xap-card-sub-header><xap-card-subtitle><span id="property-description" class="admin-card-description">These settings affect your property <a id="property-help-link" href="#">What's a property?</a></span></xap-card-subtitle></xap-card-sub-header>

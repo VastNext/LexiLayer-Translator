@@ -70,7 +70,7 @@ export class DomRenderer {
     placement: TranslationPlacement,
     internal = false,
   ): void {
-    const wrapper = paragraph.wrapper ?? paragraph.element.ownerDocument.createElement('div');
+    const wrapper = paragraph.wrapper ?? paragraph.element.ownerDocument.createElement(this.requiresInlineWrapper(paragraph.element) ? 'span' : 'div');
     wrapper.dataset.vastTranslator = '';
     wrapper.dataset.vastState = state;
     wrapper.textContent = text;
@@ -86,6 +86,10 @@ export class DomRenderer {
 
   private requiresInternalWrapper(element: HTMLElement): boolean {
     return ['TD', 'TH', 'LI'].includes(element.tagName);
+  }
+
+  private requiresInlineWrapper(element: HTMLElement): boolean {
+    return Boolean(element.closest('button,a,[role="button"],[role="link"]'));
   }
 
   private ensureSourceWrapper(paragraph: ParagraphRecord): HTMLElement {
