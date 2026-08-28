@@ -38,7 +38,7 @@ describe('文档发布契约', () => {
     expect(Object.keys(en).sort()).toEqual(Object.keys(zh).sort());
   });
 
-  it('0.2.0 文档说明默认/备用/多 custom、端点、429、测试代理、迁移和能力差异', async () => {
+  it('0.3.0 文档说明默认/备用/多 custom、端点、429、测试代理、迁移和能力差异', async () => {
     const [pkg, readme, privacy, design, implementation] = await Promise.all([
       readFile(resolve('package.json'), 'utf8'),
       readFile(resolve('README.md'), 'utf8'),
@@ -48,9 +48,9 @@ describe('文档发布契约', () => {
     ]);
     const all = [readme, privacy, design, implementation].join('\n');
 
-    expect(JSON.parse(pkg)).toHaveProperty('version', '0.2.0');
-    expect(readme).toContain('0.2.0');
-    expect(privacy).toContain('0.2.0');
+    expect(JSON.parse(pkg)).toHaveProperty('version', '0.3.0');
+    expect(readme).toContain('0.3.0');
+    expect(privacy).toContain('0.3.0');
     expect(all).toMatch(/Google.*默认/s);
     expect(all).toMatch(/Bing.*备用/s);
     expect(all).toMatch(/多个.*自定义 AI|多.*custom/i);

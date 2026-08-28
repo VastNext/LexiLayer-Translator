@@ -40,8 +40,11 @@ export class SelectionView implements SelectionViewHandle {
   private dragOffsetX = 0;
   private dragOffsetY = 0;
   private dragging = false;
+  private manualPosition = false;
+  private readonly anchor: DOMRect;
 
   constructor(document: Document, rect: DOMRect, private readonly actions: SelectionViewActions, private readonly t: Translator = selectionTranslator) {
+    this.anchor = new DOMRect(rect.x, rect.y, rect.width, rect.height);
     this.host = document.createElement('div');
     this.host.dataset.vastSelectionHost = '';
     this.host.dataset.vastState = 'ready';
@@ -62,8 +65,8 @@ export class SelectionView implements SelectionViewHandle {
         .drag{flex:0 0 auto;width:20px;height:30px;display:grid;place-items:center;color:#688078;cursor:grab;touch-action:none;user-select:none}.drag:active{cursor:grabbing}
         .top select{min-width:0;height:30px;border:1px solid #b8ccc4;border-radius:8px;background:white;color:#17201d}.top [name=engine]{flex:1 1 96px}.top [name=target-language]{flex:1 1 88px}
         .icon{flex:0 0 30px;width:30px;height:30px;padding:0;border:1px solid #b8ccc4;border-radius:8px;background:white;color:#315f53;font-weight:800}.icon[aria-pressed=true]{background:#dceee7}.close{font-size:18px;line-height:1}
-        .result{min-height:64px;margin:10px 0;padding:10px;border-radius:10px;background:white;white-space:pre-wrap;overflow:auto}
-        .actions{flex:0 0 auto}.actions button{border:1px solid #b8ccc4;border-radius:8px;background:white;padding:6px 9px}
+        .result-wrap{position:relative;min-height:64px;margin:10px 0}.result{min-height:64px;height:100%;padding:10px 78px 10px 10px;border-radius:10px;background:white;white-space:pre-wrap;overflow:auto}
+        .result-actions{position:absolute;top:6px;right:6px;display:flex;gap:5px}.result-action{width:30px;height:30px;padding:0;border:1px solid #b8ccc4;border-radius:8px;background:white;color:#315f53;font-weight:800}
       </style>
       <button class="trigger" aria-label="${this.t('selectionTranslate')}">V</button>
       <section class="panel" role="dialog" aria-label="${this.t('selectionDialog')}">
@@ -76,8 +79,7 @@ export class SelectionView implements SelectionViewHandle {
           <button class="icon" name="include-context" aria-pressed="true" title="${this.t('limitedContextHelp')}">◎</button>
           <button class="icon close" data-action="close" aria-label="${this.t('actionClose')}">×</button>
         </div>
-        <div class="result" data-result>${this.t('preparing')}</div>
-        <div class="actions"><button data-action="copy">${this.t('actionCopy')}</button><button data-action="retry">${this.t('actionRetry')}</button></div>
+        <div class="result-wrap"><div class="result" data-result>${this.t('preparing')}</div><div class="result-actions"><button class="result-action" data-action="copy" aria-label="${this.t('actionCopy')}" title="${this.t('actionCopy')}">⧉</button><button class="result-action" data-action="retry" aria-label="${this.t('actionRetry')}" title="${this.t('actionRetry')}">↻</button></div></div>
       </section>`;
     this.bind();
   }
@@ -92,7 +94,7 @@ export class SelectionView implements SelectionViewHandle {
     this.panelOpen = true;
     this.shadow.querySelector('.trigger')?.setAttribute('hidden', '');
     this.shadow.querySelector('.panel')?.classList.add('open');
-    this.reclamp();
+    this.positionFromAnchor();
   }
 
   setTargetLanguage(targetLanguage: string): void {
@@ -160,6 +162,7 @@ export class SelectionView implements SelectionViewHandle {
   private readonly onPointerDown = (event: PointerEvent) => {
     if (event.button !== 0) return;
     this.dragging = true;
+    this.manualPosition = true;
     this.dragOffsetX = event.clientX - this.expectedLeft;
     this.dragOffsetY = event.clientY - this.expectedTop;
     const view = this.host.ownerDocument.defaultView;
@@ -197,6 +200,21 @@ export class SelectionView implements SelectionViewHandle {
       this.expectedHeight = hostRect.height;
       this.setPosition(this.clamp(this.expectedLeft, this.expectedTop, hostRect.width, hostRect.height));
     }
+  }
+
+  private positionFromAnchor(): void {
+    const size = this.currentSize();
+    this.expectedWidth = size.width;
+    this.expectedHeight = size.height;
+    if (this.manualPosition) return this.reclamp();
+    const viewHeight = this.host.ownerDocument.defaultView?.innerHeight ?? size.height + VIEWPORT_MARGIN * 2;
+    const belowTop = this.anchor.bottom + VIEWPORT_MARGIN;
+    const spaceBelow = viewHeight - belowTop - VIEWPORT_MARGIN;
+    const spaceAbove = this.anchor.top - VIEWPORT_MARGIN;
+    const top = spaceBelow < size.height && spaceAbove >= size.height + VIEWPORT_MARGIN
+      ? this.anchor.top - size.height - VIEWPORT_MARGIN
+      : belowTop;
+    this.setPosition(this.clamp(this.anchor.right, top, size.width, size.height));
   }
 
   private clamp(left: number, top: number, width: number, height: number): { left: number; top: number } {

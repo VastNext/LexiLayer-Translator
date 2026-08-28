@@ -22,6 +22,10 @@ export interface SelectionDependencies {
 
 interface StreamMessage { type?: string; requestId?: string; engineId?: string; chunk?: string; error?: string; canFallback?: boolean }
 
+function isContextInvalidated(error: unknown): boolean {
+  return error instanceof Error && /Extension context invalidated/i.test(error.message);
+}
+
 function selectedElement(selection: Selection): Element | null {
   const node = selection.getRangeAt(0).commonAncestorContainer;
   return node instanceof Element ? node : node.parentElement;
@@ -50,6 +54,7 @@ interface RememberedSelection {
 export function createSelectionController(dependencies: SelectionDependencies) {
   let view: SelectionViewHandle | undefined;
   let port: SelectionPort | undefined;
+  let portConnected = false;
   let text = '';
   let context: string | undefined;
   let targetLanguage = 'en';
@@ -84,7 +89,7 @@ export function createSelectionController(dependencies: SelectionDependencies) {
       if (!value.selectionPopupEnabled) close();
       else if (!view) showRemembered();
       else { view.setTargetLanguage(value.targetLanguage); view.setIncludeContext(value.selectionContext); view.setEngines(value.engines, value.activeEngineId); }
-    });
+    }).catch((error) => { if (isContextInvalidated(error)) close(); });
   };
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === 'Escape') return close();
@@ -98,16 +103,28 @@ export function createSelectionController(dependencies: SelectionDependencies) {
   };
 
   function close(): void {
-    if (activeRequestId) port?.postMessage({ type: 'cancel-selection', requestId: activeRequestId });
-    if (activeRequestId && activeRequestEngineId) void dependencies.cancelFallback(activeRequestId, activeRequestEngineId);
-    port?.disconnect();
+    if (activeRequestId) safePost({ type: 'cancel-selection', requestId: activeRequestId });
+    if (activeRequestId && activeRequestEngineId) void dependencies.cancelFallback(activeRequestId, activeRequestEngineId).catch(() => undefined);
+    safeDisconnect();
     fallbackController?.abort();
-    port = undefined;
     view?.remove();
     view = undefined;
     authorizationAvailable = false;
     activeRequestId = undefined;
     activeRequestEngineId = undefined;
+  }
+
+  function safePost(message: unknown): boolean {
+    if (!port || !portConnected) return false;
+    try { port.postMessage(message); return true; } catch { return false; }
+  }
+
+  function safeDisconnect(): void {
+    const current = port;
+    port = undefined;
+    portConnected = false;
+    if (!current) return;
+    try { current.disconnect(); } catch { /* Port 可能已由浏览器断开。 */ }
   }
 
   function rememberSelection(): void {
@@ -146,18 +163,34 @@ export function createSelectionController(dependencies: SelectionDependencies) {
     authorizationAvailable = false;
     const previousRequestId = activeRequestId;
     const previousEngineId = activeRequestEngineId;
-    if (previousRequestId) port?.postMessage({ type: 'cancel-selection', requestId: previousRequestId });
+    if (previousRequestId) safePost({ type: 'cancel-selection', requestId: previousRequestId });
     fallbackController?.abort();
-    if (previousRequestId && previousEngineId) void dependencies.cancelFallback(previousRequestId, previousEngineId);
-    port?.disconnect();
+    if (previousRequestId && previousEngineId) void dependencies.cancelFallback(previousRequestId, previousEngineId).catch(() => undefined);
+    safeDisconnect();
     targetLanguage = language;
     engineId = selectedEngineId;
     const requestId = `selection-${++requestGeneration}`;
     activeRequestId = requestId;
     activeRequestEngineId = selectedEngineId;
     fallbackController = undefined;
-    port = dependencies.connect();
-    port.onMessage.addListener((raw) => {
+    let currentPort: SelectionPort;
+    try { currentPort = dependencies.connect(); } catch (error) {
+      if (isContextInvalidated(error)) close();
+      else view?.setResult('翻译失败，请重试');
+      return;
+    }
+    port = currentPort;
+    portConnected = true;
+    currentPort.onDisconnect.addListener(() => {
+      if (port !== currentPort) return;
+      port = undefined;
+      portConnected = false;
+      activeRequestId = undefined;
+      activeRequestEngineId = undefined;
+      fallbackController?.abort();
+      fallbackController = undefined;
+    });
+    currentPort.onMessage.addListener((raw) => {
       const message = raw as StreamMessage;
       if (message.requestId !== requestId || requestId !== activeRequestId || message.engineId !== undefined && message.engineId !== engineId) return;
       if (message.type === 'selection-chunk' && typeof message.chunk === 'string') view?.appendResult(message.chunk);
@@ -171,7 +204,7 @@ export function createSelectionController(dependencies: SelectionDependencies) {
         view?.setResult(message.error || '翻译失败，请重试');
       }
     });
-    port.postMessage({
+    safePost({
       type: 'translate-selection', requestId, engineId, text, sourceLanguage: 'auto', targetLanguage,
       context: includeContext ? context : undefined,
     });
@@ -209,11 +242,11 @@ export function createSelectionController(dependencies: SelectionDependencies) {
     view = dependencies.createView?.(new DOMRect(16, 16, 0, 0), actions) ?? new SelectionView(document, new DOMRect(16, 16, 0, 0), actions);
     view.mount();
     view.open(targetLanguage);
-    void dependencies.getPublicConfig().then((config) => { targetLanguage = config.targetLanguage; engineId = config.activeEngineId; view?.setTargetLanguage(config.targetLanguage); view?.setIncludeContext(config.selectionContext); view?.setEngines(config.engines, config.activeEngineId); });
+    void dependencies.getPublicConfig().then((config) => { targetLanguage = config.targetLanguage; engineId = config.activeEngineId; view?.setTargetLanguage(config.targetLanguage); view?.setIncludeContext(config.selectionContext); view?.setEngines(config.engines, config.activeEngineId); }).catch((error) => { if (isContextInvalidated(error)) close(); });
   }
 
   function register(): void {
-    void dependencies.getPublicConfig().then((value) => { config = value; targetLanguage = value.targetLanguage; engineId = value.activeEngineId; });
+    void dependencies.getPublicConfig().then((value) => { config = value; targetLanguage = value.targetLanguage; engineId = value.activeEngineId; }).catch((error) => { if (isContextInvalidated(error)) close(); });
     events.addEventListener('mouseup', onMouseUp as EventListener);
     document.addEventListener('keydown', onKeyDown);
     document.addEventListener('mousedown', onMouseDown);
@@ -231,29 +264,37 @@ export function createSelectionController(dependencies: SelectionDependencies) {
 
 export function registerSelectionController() {
   const t = (key: string, substitutions?: string | string[]) => chrome.i18n.getMessage(key, substitutions) || key;
-  const controller = createSelectionController({
+  let controller: ReturnType<typeof createSelectionController>;
+  async function runtimeMessage<T>(message: unknown): Promise<T> {
+    try { return await chrome.runtime.sendMessage(message) as T; }
+    catch (error) {
+      if (isContextInvalidated(error)) controller?.close();
+      throw error;
+    }
+  }
+  controller = createSelectionController({
     getSelection: () => globalThis.getSelection(),
     connect: () => chrome.runtime.connect({ name: 'vast-selection-stream' }),
     async translateFallback(requestId, text, targetLanguage, context, engineId, signal) {
       if (signal.aborted) throw new Error('任务已取消');
-      const response = await chrome.runtime.sendMessage({
+      const response = await runtimeMessage<{ ok: boolean; data?: Array<{ text: string }>; error?: string }>({
         type: 'translate-selection-fallback', requestId, engineId, sourceLanguage: 'auto', targetLanguage, context, text,
-      }) as { ok: boolean; data?: Array<{ text: string }>; error?: string };
+      });
       if (signal.aborted) throw new Error('任务已取消');
       if (!response.ok) throw new Error(response.error);
       return response.data?.[0]?.text ?? '';
     },
     async cancelFallback(requestId, _engineId) {
-      await chrome.runtime.sendMessage({ type: 'cancel-selection-fallback', requestId });
+      await runtimeMessage({ type: 'cancel-selection-fallback', requestId });
     },
     copy: (text) => navigator.clipboard.writeText(text),
     async translateInline(text, context, engineId, targetLanguage) {
-      const response = await chrome.runtime.sendMessage({ type: 'translate-selection-inline', text, context, engineId, targetLanguage }) as { ok: boolean; data?: { text?: string }; error?: string };
+      const response = await runtimeMessage<{ ok: boolean; data?: { text?: string }; error?: string }>({ type: 'translate-selection-inline', text, context, engineId, targetLanguage });
       if (!response.ok) throw new Error(response.error);
       return response.data?.text ?? '';
     },
     async getPublicConfig() {
-      const response = await chrome.runtime.sendMessage({ type: 'get-public-config' }) as { data?: { preferences?: { targetLanguage?: string; selectionContext?: boolean; selectionPopupEnabled?: boolean; inlineSelectionModifier?: 'Control' | 'Alt' | 'Shift' | 'Meta' | 'Off' }; activeEngineId?: string; availableEngines?: Array<{ id: string; kind: string; name: string; ready: boolean; capabilities: { streaming: boolean } }> } };
+      const response = await runtimeMessage<{ data?: { preferences?: { targetLanguage?: string; selectionContext?: boolean; selectionPopupEnabled?: boolean; inlineSelectionModifier?: 'Control' | 'Alt' | 'Shift' | 'Meta' | 'Off' }; activeEngineId?: string; availableEngines?: Array<{ id: string; kind: string; name: string; ready: boolean; capabilities: { streaming: boolean } }> } }>({ type: 'get-public-config' });
       return { targetLanguage: response.data?.preferences?.targetLanguage ?? 'en', selectionContext: response.data?.preferences?.selectionContext ?? true, selectionPopupEnabled: response.data?.preferences?.selectionPopupEnabled ?? true, inlineSelectionModifier: response.data?.preferences?.inlineSelectionModifier ?? 'Control', activeEngineId: response.data?.activeEngineId ?? 'google', engines: response.data?.availableEngines ?? [{ id: 'google', kind: 'google', name: 'Google', ready: true, capabilities: { streaming: false } }, { id: 'bing', kind: 'bing', name: 'Bing', ready: true, capabilities: { streaming: false } }] };
     },
     createView: (rect, actions) => new SelectionView(document, rect, actions, t),

@@ -32,8 +32,8 @@ describe('manifest', () => {
     expect(manifest.commands?.translate_page?.suggested_key?.default).toBe('Alt+A');
   });
 
-  it('声明 0.2.0、本地化名称描述和全尺寸原创图标', () => {
-    expect(manifest.version).toBe('0.2.0');
+  it('声明 0.3.0、本地化名称描述和全尺寸原创图标', () => {
+    expect(manifest.version).toBe('0.3.0');
     expect(manifest.name).toBe('__MSG_extensionName__');
     expect(manifest.description).toBe('__MSG_extensionDescription__');
     expect(manifest.default_locale).toBe('zh_CN');

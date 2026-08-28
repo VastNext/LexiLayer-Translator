@@ -68,12 +68,13 @@ describe('Options v2 多引擎设置', () => {
     expect(document.documentElement).toHaveAttribute('data-theme', 'command-translator');
   });
 
-  it('使用左侧五项导航且不删除现有功能区', async () => {
+  it('使用左侧六项导航并提供独立划词翻译章节', async () => {
     render(<OptionsApp api={createApi()} />);
     const nav = await screen.findByRole('navigation', { name: '设置导航' });
-    for (const name of ['翻译引擎', '自定义 AI', '阅读偏好', '外观主题', '数据隐私']) {
+    for (const name of ['翻译引擎', '自定义 AI', '阅读偏好', '划词翻译', '外观主题', '数据隐私']) {
       expect(within(nav).getByRole('button', { name })).toBeInTheDocument();
     }
+    expect(screen.getByRole('region', { name: '划词翻译' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '新增自定义 AI' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '导出配置' })).toBeInTheDocument();
   });
@@ -120,6 +121,30 @@ describe('Options v2 多引擎设置', () => {
       inlineSelectionModifier: 'Alt',
     }));
     expect(screen.getByText(/发送选区所在段落的有限文本帮助消歧，不翻译上下文本身/)).toBeInTheDocument();
+  });
+
+  it('测试连接立即显示测试中，成功失败均更新固定 Toast，按钮使用小号动作类', async () => {
+    let resolveTest!: () => void;
+    const api = createApi();
+    vi.mocked(api.testEngine).mockReturnValue(new Promise<void>((resolve) => { resolveTest = resolve; }));
+    render(<OptionsApp api={api} />);
+    const builtins = await screen.findByRole('region', { name: '内置翻译引擎' });
+    const button = within(builtins).getAllByRole('button', { name: '测试连接' })[0];
+    expect(button).toHaveClass('compact-action');
+    await userEvent.click(button);
+    expect(screen.getByRole('status')).toHaveTextContent('正在测试连接');
+    resolveTest();
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('连接成功'));
+
+    vi.mocked(api.testEngine).mockRejectedValueOnce(new Error('连接失败'));
+    await userEvent.click(button);
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('连接失败'));
+    expect(screen.getByRole('status')).toHaveClass('status-toast');
+  });
+
+  it('显示 0.3.0 版本', async () => {
+    render(<OptionsApp api={createApi()} />);
+    expect(await screen.findAllByText('v0.3.0')).toHaveLength(2);
   });
 
   it('展示多个独立 custom 表单及逐实例 hasApiKey，并保存指定实例', async () => {

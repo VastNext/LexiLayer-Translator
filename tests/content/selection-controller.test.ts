@@ -26,6 +26,7 @@ function createPort() {
     onMessage: { addListener: (listener: (message: unknown) => void) => messageListeners.push(listener) },
     onDisconnect: { addListener: (listener: () => void) => disconnectListeners.push(listener) },
     emit: (message: unknown) => messageListeners.forEach((listener) => listener({ requestId, ...(message as object) })),
+    emitDisconnect: () => disconnectListeners.forEach((listener) => listener()),
   };
   return port;
 }
@@ -369,6 +370,32 @@ describe('划词翻译控制器', () => {
     expect(document.querySelector('[data-vast-selection-host]')).toBeNull();
   });
 
+  it('Port 已断开且操作抛错时 close 仍移除浮层', () => {
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
+    register(); trustedMouseUp();
+    (view().querySelector('[aria-label="翻译选中内容"]') as HTMLButtonElement).click();
+    dependencies.port.emitDisconnect();
+    vi.mocked(dependencies.port.postMessage).mockImplementation(() => { throw new Error('Attempting to use a disconnected port object'); });
+    vi.mocked(dependencies.port.disconnect).mockImplementation(() => { throw new Error('Attempting to use a disconnected port object'); });
+
+    expect(() => controller.close()).not.toThrow();
+    expect(document.querySelector('[data-vast-selection-host]')).toBeNull();
+  });
+
+  it('旧 Port 断开后重试不会因 disconnected port 抛错', () => {
+    const nextPort = createPort();
+    vi.mocked(dependencies.connect).mockReturnValueOnce(dependencies.port).mockReturnValueOnce(nextPort);
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
+    register(); trustedMouseUp();
+    (view().querySelector('[aria-label="翻译选中内容"]') as HTMLButtonElement).click();
+    dependencies.port.emitDisconnect();
+    vi.mocked(dependencies.port.postMessage).mockImplementation(() => { throw new Error('Attempting to use a disconnected port object'); });
+    trustedMouseUp(view());
+
+    expect(() => (view().querySelector('[data-action="retry"]') as HTMLButtonElement).click()).not.toThrow();
+    expect(nextPort.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'translate-selection' }));
+  });
+
   it('closed shadow 内部 mousedown 通过 composedPath 识别为面板交互，不关闭浮层', () => {
     dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
     register(); trustedMouseUp();
@@ -459,6 +486,22 @@ describe('划词翻译真实注册接线', () => {
     controller.dispose();
     vi.unstubAllGlobals();
   });
+
+  it('Extension context invalidated 时关闭视图且不产生未处理拒绝', async () => {
+    vi.stubGlobal('chrome', {
+      runtime: {
+        connect: vi.fn(),
+        sendMessage: vi.fn(async () => { throw new Error('Extension context invalidated.'); }),
+      },
+      i18n: { getMessage: vi.fn((key: string) => key) },
+    });
+    const controller = registerSelectionController();
+    controller.showText('Hello');
+
+    await vi.waitFor(() => expect(document.querySelector('[data-vast-selection-host]')).toBeNull());
+    expect(() => controller.dispose()).not.toThrow();
+    vi.unstubAllGlobals();
+  });
 });
 
 describe('划词翻译视图隔离', () => {
@@ -526,6 +569,39 @@ describe('划词翻译视图隔离', () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 340 });
     window.dispatchEvent(new Event('resize'));
     expect(parseFloat(view.host.style.left)).toBeLessThanOrEqual(12);
+    view.remove();
+  });
+
+  it('底部选区在上方空间足够时向上展开，并保持 viewport 底部留白', () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 800 });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 600 });
+    let root: ShadowRoot | undefined;
+    const original = Element.prototype.attachShadow;
+    vi.spyOn(HTMLElement.prototype, 'attachShadow').mockImplementation(function (this: HTMLElement, options) { root = original.call(this, options); return root; });
+    const anchor = new DOMRect(180, 540, 120, 24);
+    const view = new SelectionView(document, anchor, { translate: vi.fn(), copy: vi.fn(), close: vi.fn() });
+    vi.spyOn(root!.querySelector('.panel')!, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 320, 220));
+    view.mount();
+    view.open('zh-Hans');
+
+    expect(parseFloat(view.host.style.top)).toBe(anchor.top - 220 - 8);
+    expect(parseFloat(view.host.style.top) + 220).toBeLessThanOrEqual(window.innerHeight - 8);
+    view.remove();
+  });
+
+  it('结果区右上角仅提供复制和重试 icon 按钮', () => {
+    let root: ShadowRoot | undefined;
+    const original = Element.prototype.attachShadow;
+    vi.spyOn(HTMLElement.prototype, 'attachShadow').mockImplementation(function (this: HTMLElement, options) { root = original.call(this, options); return root; });
+    const view = new SelectionView(document, new DOMRect(10, 10, 20, 20), { translate: vi.fn(), copy: vi.fn(), close: vi.fn() });
+
+    const wrap = root!.querySelector('.result-wrap');
+    expect(wrap?.querySelector('[data-result]')).not.toBeNull();
+    expect(wrap?.querySelector('[data-action="copy"]')).toHaveAttribute('aria-label', '复制');
+    expect(wrap?.querySelector('[data-action="copy"]')).toHaveAttribute('title', '复制');
+    expect(wrap?.querySelector('[data-action="retry"]')).toHaveAttribute('aria-label', '重试');
+    expect(wrap?.querySelector('[data-action="retry"]')).toHaveAttribute('title', '重试');
+    expect(root!.querySelector('.actions')).toBeNull();
     view.remove();
   });
 

@@ -6,6 +6,7 @@ playwright-report/
 tests/evidence/*.txt
 tests/evidence/task13-*
 *.log
+error.log
 .env
 .env.*
 research/private-reference/

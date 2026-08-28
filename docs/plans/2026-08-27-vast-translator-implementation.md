@@ -2,13 +2,13 @@
 
 > **执行要求：** 使用 `superpowers:executing-plans` 按任务逐项实现。
 
-**目标：** 构建 Google 默认、Bing 备用并支持多个自定义 AI 的高性能 Chrome 双语网页与划词翻译插件，当前发布版本为 0.2.0。
+**目标：** 构建 Google 默认、Bing 备用并支持多个自定义 AI 的高性能 Chrome 双语网页与划词翻译插件，当前发布版本为 0.3.0。
 
 **架构：** Manifest V3 service worker 集中处理密钥、API、重试和缓存；原生 TypeScript content script 管理 DOM 翻译；React 仅用于 Popup 和设置页。站点规则采用原创、按域名懒加载的数据驱动结构。
 
 **技术栈：** TypeScript、Vite、React、Chrome Extension APIs、Vitest、jsdom、Playwright。
 
-**0.2.0 增量：** 设置模型迁移到 v2；Options 通过安全 CRUD 管理最多 20 个自定义 AI，并只接收逐实例 `hasApiKey`。导入导出无任何密钥，同 ID 同 Origin 才合并本地 secret。Google/Bing 使用非流式能力，自定义 AI 划词支持流式；Google 429 提示切换 Bing。候选连接测试只探测指定端点，不开放代理能力。
+**0.3.0 增量：** 设置模型保持 v2，并增加五套外观主题、可拖动且自动避让视口边缘的划词面板、可配置的选区内联翻译快捷键、划词悬浮按钮开关，以及导航/面包屑短文本覆盖。Options 通过安全 CRUD 管理最多 20 个自定义 AI，并只接收逐实例 `hasApiKey`。导入导出无任何密钥，同 ID 同 Origin 才合并本地 secret。Google/Bing 使用非流式能力，自定义 AI 划词支持流式；候选连接测试只探测指定端点，不开放代理能力。
 
 ---
 
