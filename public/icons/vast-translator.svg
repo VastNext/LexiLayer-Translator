@@ -1,11 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
-  <title id="title">Vast Translator V 标记</title>
-  <desc id="desc">暖白纸张上以酸绿色荧光线标注的墨黑 V，左右有中英双语校对符号</desc>
-  <rect x="5" y="5" width="118" height="118" rx="22" fill="#f7f2e8" stroke="#171713" stroke-width="10"/>
-  <path d="M22 39h31" stroke="#b8ff2c" stroke-width="13" stroke-linecap="square"/>
-  <path d="M76 89h30" stroke="#b8ff2c" stroke-width="13" stroke-linecap="square"/>
-  <path d="M31 29 62 99 97 29" fill="none" stroke="#171713" stroke-width="14" stroke-linecap="square" stroke-linejoin="miter"/>
-  <path d="M16 74h25M87 55h25" stroke="#171713" stroke-width="5"/>
-  <text x="17" y="69" fill="#171713" font-family="serif" font-size="17" font-weight="700">中</text>
-  <text x="87" y="50" fill="#171713" font-family="serif" font-size="14" font-weight="700">EN</text>
+  <title id="title">VastNext 路线地平线信标</title>
+  <desc id="desc">深色圆角底上的酸绿色翻译路线、暖白地平线和发光信标</desc>
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="#171713"/>
+  <path d="M14 94.7C40.7 105.3 78 105.3 115 90.7" fill="none" stroke="#f7f2e8" stroke-width="8" stroke-linecap="round"/>
+  <path d="M21.3 29.3 54.7 85.3 72 53.3 106.7 21.3V82.7" fill="none" stroke="#b8ff2c" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="106.7" cy="21.3" r="12" fill="#b8ff2c" opacity=".2"/>
+  <circle cx="106.7" cy="21.3" r="7" fill="#b8ff2c" stroke="#f7f2e8" stroke-width="3"/>
 </svg>

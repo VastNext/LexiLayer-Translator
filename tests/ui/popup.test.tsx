@@ -24,6 +24,7 @@ function createApi(overrides: Partial<PopupApi> = {}): PopupApi {
     setActiveEngine: vi.fn(async () => undefined),
     savePopupState: vi.fn(async () => undefined),
     sendToPage: vi.fn(async () => undefined),
+    setTranslationBadge: vi.fn(async () => undefined),
     openOptions: vi.fn(),
     getProgress: vi.fn(async () => undefined),
     subscribeProgress: vi.fn(() => () => undefined),
@@ -57,6 +58,40 @@ describe('精简 Popup', () => {
     await userEvent.selectOptions(screen.getByLabelText('目标语言'), 'ja');
     await userEvent.click(screen.getByRole('button', { name: '双语对照' }));
     expect(api.savePopupState).toHaveBeenLastCalledWith('bing', expect.objectContaining({ sourceLanguage: 'en', targetLanguage: 'ja', displayMode: 'translation', scanScope: 'whole-page' }));
+    expect(api.sendToPage).not.toHaveBeenCalled();
+  });
+
+  it('已翻译页面切换引擎后使用新引擎立即重译', async () => {
+    const api = createApi({ getProgress: vi.fn(async () => ({ status: 'complete', completed: 2, failed: 0, total: 2 })) });
+    render(<PopupApp api={api} />);
+    await screen.findByRole('button', { name: '显示原文 (Alt + A)' });
+
+    await userEvent.selectOptions(screen.getByLabelText('翻译引擎'), 'bing');
+
+    await waitFor(() => expect(api.sendToPage).toHaveBeenCalledWith({
+      type: 'translate-page', engineId: 'bing', scope: 'whole-page', sourceLanguage: 'auto', mode: 'bilingual', targetLanguage: 'zh-Hans',
+    }));
+    expect(api.savePopupState).toHaveBeenCalledWith('bing', expect.objectContaining({ displayMode: 'bilingual' }));
+    expect(screen.getByRole('button', { name: '显示原文 (Alt + A)' })).toBeInTheDocument();
+  });
+
+  it('translating 即使尚未扫描到段落也视为当前页面已翻译', async () => {
+    const api = createApi({ getProgress: vi.fn(async () => ({ status: 'translating', completed: 0, failed: 0, total: 0 })) });
+    render(<PopupApp api={api} />);
+
+    expect(await screen.findByRole('button', { name: '显示原文 (Alt + A)' })).toBeInTheDocument();
+  });
+
+  it('已翻译页面切换显示模式后立即重译并保持显示原文按钮', async () => {
+    const api = createApi({ getProgress: vi.fn(async () => ({ status: 'complete', completed: 2, failed: 0, total: 2 })) });
+    render(<PopupApp api={api} />);
+    await userEvent.click(await screen.findByRole('button', { name: '双语对照' }));
+
+    await waitFor(() => expect(api.sendToPage).toHaveBeenCalledWith({
+      type: 'translate-page', engineId: 'google', scope: 'whole-page', sourceLanguage: 'auto', mode: 'translation-only', targetLanguage: 'zh-Hans',
+    }));
+    expect(api.savePopupState).toHaveBeenCalledWith('google', expect.objectContaining({ displayMode: 'translation' }));
+    expect(screen.getByRole('button', { name: '显示原文 (Alt + A)' })).toBeInTheDocument();
   });
 
   it('翻译后主按钮切换为显示原文，再次点击恢复', async () => {
@@ -64,11 +99,13 @@ describe('精简 Popup', () => {
     const api = createApi({ subscribeProgress: vi.fn((listener) => { progressListener = listener; return () => undefined; }) });
     render(<PopupApp api={api} />);
     await userEvent.click(await screen.findByRole('button', { name: '翻译 (Alt + A)' }));
+    expect(api.setTranslationBadge).toHaveBeenCalledWith(true);
     expect(api.sendToPage).toHaveBeenCalledWith(expect.objectContaining({ type: 'translate-page', scope: 'whole-page', targetLanguage: 'zh-Hans' }));
     progressListener?.({ status: 'complete', completed: 1, failed: 0, total: 1 });
     await waitFor(() => expect(screen.getByRole('button', { name: '显示原文 (Alt + A)' })).toBeInTheDocument());
     await userEvent.click(await screen.findByRole('button', { name: '显示原文 (Alt + A)' }));
     expect(api.sendToPage).toHaveBeenLastCalledWith({ type: 'restore-page' });
+    expect(api.setTranslationBadge).toHaveBeenLastCalledWith(false);
   });
 
   it('重新打开时使用后台保存的偏好', async () => {
@@ -99,11 +136,31 @@ describe('Popup 消息恢复', () => {
       runtime: { id: 'extension-id', sendMessage: vi.fn(), openOptionsPage: vi.fn(), onMessage: { addListener: vi.fn(), removeListener: vi.fn() } },
       tabs: { getCurrent: vi.fn(async () => undefined), query: vi.fn(async () => [{ id: 7, active: true, url: 'https://example.com' }]), sendMessage },
       scripting: { executeScript },
+      action: { setBadgeText: vi.fn(async () => undefined), setBadgeBackgroundColor: vi.fn(async () => undefined) },
       i18n: { getMessage: vi.fn(() => '') },
     });
 
     await expect(api.sendToPage({ type: 'translate-page' })).resolves.toEqual({ ok: true });
     expect(executeScript).toHaveBeenCalledWith({ target: { tabId: 7 }, files: ['content.js'] });
     expect(sendMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it('按当前标签页设置绿色勾 Badge，并可清除', async () => {
+    const setBadgeText = vi.fn(async () => undefined);
+    const setBadgeBackgroundColor = vi.fn(async () => undefined);
+    const { createPopupApi } = await import('../../src/popup/api');
+    const api = createPopupApi({
+      runtime: { id: 'extension-id', sendMessage: vi.fn(), openOptionsPage: vi.fn(), onMessage: { addListener: vi.fn(), removeListener: vi.fn() } },
+      tabs: { getCurrent: vi.fn(async () => undefined), query: vi.fn(async () => [{ id: 7, active: true, url: 'https://example.com' }]), sendMessage: vi.fn() },
+      action: { setBadgeText, setBadgeBackgroundColor },
+      i18n: { getMessage: vi.fn(() => '') },
+    });
+
+    await api.setTranslationBadge(true);
+    expect(setBadgeBackgroundColor).toHaveBeenCalledWith({ tabId: 7, color: '#16a34a' });
+    expect(setBadgeText).toHaveBeenCalledWith({ tabId: 7, text: '✓' });
+
+    await api.setTranslationBadge(false);
+    expect(setBadgeText).toHaveBeenLastCalledWith({ tabId: 7, text: '' });
   });
 });
