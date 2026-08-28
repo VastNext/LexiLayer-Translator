@@ -520,6 +520,34 @@ describe('划词翻译视图隔离', () => {
     attachShadow.mockRestore();
   });
 
+  it('触发按钮使用晚霞 VastNext SVG，不再显示文字 V', () => {
+    let root: ShadowRoot | undefined;
+    const original = Element.prototype.attachShadow;
+    vi.spyOn(HTMLElement.prototype, 'attachShadow').mockImplementation(function (this: HTMLElement, options) { root = original.call(this, options); return root; });
+    const view = new SelectionView(document, new DOMRect(0, 0, 10, 10), { translate: vi.fn(), copy: vi.fn(), close: vi.fn() });
+    const trigger = root!.querySelector('.trigger') as HTMLButtonElement;
+    expect(trigger.querySelector('svg')).not.toBeNull();
+    expect(trigger.querySelector('.route')).not.toBeNull();
+    expect(trigger.querySelector('.horizon')).not.toBeNull();
+    expect(trigger.querySelector('.beacon')).not.toBeNull();
+    expect(trigger.textContent?.trim()).toBe('');
+    view.remove();
+  });
+
+  it('关闭按钮始终调用 close，即使面板已经停留一段时间', async () => {
+    vi.useFakeTimers();
+    let root: ShadowRoot | undefined;
+    const original = Element.prototype.attachShadow;
+    vi.spyOn(HTMLElement.prototype, 'attachShadow').mockImplementation(function (this: HTMLElement, options) { root = original.call(this, options); return root; });
+    const close = vi.fn();
+    const view = new SelectionView(document, new DOMRect(0, 0, 10, 10), { translate: vi.fn(), copy: vi.fn(), close });
+    await vi.advanceTimersByTimeAsync(60_000);
+    (root!.querySelector('[data-action="close"]') as HTMLButtonElement).click();
+    expect(close).toHaveBeenCalledOnce();
+    view.remove();
+    vi.useRealTimers();
+  });
+
   it('划词视图支持英文核心标签和完整语言列表', () => {
     let root: ShadowRoot | undefined;
     const original = Element.prototype.attachShadow;

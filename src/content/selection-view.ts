@@ -63,7 +63,8 @@ export class SelectionView implements SelectionViewHandle {
         :host{all:initial;font-family:Inter,ui-sans-serif,system-ui,sans-serif;color:#17201d}
         *{box-sizing:border-box}button,select{font:inherit}button{cursor:pointer;transition:background-color .15s ease,transform .1s ease}
         button:focus-visible,select:focus-visible{outline:3px solid #3568ff;outline-offset:2px}
-        .trigger{width:32px;height:32px;border:0;border-radius:11px;background:#176b52;color:white;font-weight:800}.trigger:hover{background:#115b45}.trigger:active{transform:scale(.92)}
+        .trigger{width:32px;height:32px;padding:0;border:0;border-radius:9px;background:linear-gradient(135deg,#3568ff 0%,#776be7 48%,#f06f92 100%);color:white;display:grid;place-items:center;box-shadow:0 5px 14px #3459be45}.trigger:hover{filter:brightness(1.08)}.trigger:active{transform:scale(.92)}
+        .trigger svg{width:26px;height:26px;overflow:visible}.trigger .route,.trigger .horizon{fill:none;stroke:white;stroke-linecap:round;stroke-linejoin:round}.trigger .route{stroke-width:3.7}.trigger .horizon{stroke-width:2.7}.trigger .beacon{fill:white}
         .panel{position:relative;display:none;width:var(--vast-panel-width,min(320px,calc(100vw - 16px)));height:var(--vast-panel-height,auto);min-width:280px;min-height:170px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);padding:12px;border:1px solid #c8d8d1;border-radius:16px;background:#f8fbf9;box-shadow:0 18px 50px #10251d35;overflow:auto;resize:both}
         .panel.open{display:flex;flex-direction:column}.top,.actions{display:flex;gap:7px;align-items:center}.top{min-width:0;flex-wrap:nowrap}
         .drag{flex:0 0 auto;width:20px;height:30px;display:grid;place-items:center;color:#688078;cursor:grab;touch-action:none;user-select:none}.drag:active{cursor:grabbing}
@@ -73,7 +74,7 @@ export class SelectionView implements SelectionViewHandle {
         .result-actions{display:flex;justify-content:flex-end;gap:5px}.result-action{width:30px;height:30px;display:grid;place-items:center;padding:0;border:1px solid #b8ccc4;border-radius:8px;background:white;color:#315f53;font-size:17px;font-weight:700}.result-action:hover{background:#e8f1ed}.result-action:active{transform:scale(.92)}
         .copy-toast{position:absolute;right:12px;top:48px;padding:6px 9px;border-radius:7px;background:#111;color:#fff;font-size:12px;box-shadow:0 7px 20px #0003}.copy-toast[hidden]{display:none}
       </style>
-      <button class="trigger" aria-label="${this.t('selectionTranslate')}">V</button>
+      <button class="trigger" aria-label="${this.t('selectionTranslate')}"><svg viewBox="0 0 48 48" aria-hidden="true"><path class="horizon" d="M5 35.5C15 39.5 29 39.5 43 34"/><path class="route" d="M8 11L20.5 32L27 20L40 8V31"/><circle class="beacon" cx="40" cy="8" r="3"/></svg></button>
       <section class="panel" role="dialog" aria-label="${this.t('selectionDialog')}">
         <div class="top">
           <span class="drag" data-drag-handle aria-hidden="true">⋮⋮</span>
@@ -244,6 +245,7 @@ export class SelectionView implements SelectionViewHandle {
       : belowTop;
     this.setPosition(this.clamp(this.anchor.right, top, size.width, size.height));
   }
+
 
   private clamp(left: number, top: number, width: number, height: number): { left: number; top: number } {
     const view = this.host.ownerDocument.defaultView;
