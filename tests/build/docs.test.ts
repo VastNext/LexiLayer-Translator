@@ -63,4 +63,25 @@ describe('文档发布契约', () => {
     expect(all).toMatch(/迁移/);
     expect(all).toMatch(/流式.*自定义 AI|自定义 AI.*流式/s);
   });
+
+  it('Chrome Web Store 上架资料覆盖权限、隐私、审核、素材和发布门禁', async () => {
+    const files = await Promise.all([
+      'README.md', 'store-listing.md', 'privacy-and-review.md', 'release-checklist.md',
+    ].map((file) => readFile(resolve('docs/chrome-web-store', file), 'utf8')));
+    const all = files.join('\n');
+
+    expect(all).toContain('<all_urls>');
+    expect(all).toContain('`scripting`');
+    expect(all).toContain('Limited Use');
+    expect(all).toMatch(/Remote Code.{0,20}(?:No|否)/s);
+    expect(all).toContain('Authentication information');
+    expect(all).toContain('Website content');
+    expect(all).toContain('Trader / Non-Trader');
+    expect(all).toContain('1280×800');
+    expect(all).toContain('440×280');
+    expect(all).toContain('PUBLIC_REVIEW_FIXTURE_URL');
+    expect(all).toMatch(/Google\/Bing.*许可|Google\/Bing.*服务条款/s);
+    expect(all).toMatch(/ZIP.*manifest\.json/s);
+    expect(all).not.toMatch(/[A-Za-z]:\\/);
+  });
 });
