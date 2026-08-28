@@ -456,6 +456,10 @@ test('整个页面翻译 Angular 管理菜单的标题、说明与链接文字�
   const popup = await openPopupForFixture(openExtensionPage, page);
   await clickPopupButton(popup, page, '翻译 (Alt + A)');
 
+  await expect(page.locator('#reports-label + [data-vast-translator]')).toContainText('中文译文：Reports snapshot');
+  await expect(page.locator('#leads-label + [data-vast-translator]')).toContainText('中文译文：Generate leads');
+  await expect(page.locator('#reports-label + [data-vast-translator]')).toHaveJSProperty('tagName', 'SPAN');
+  await expect(page.locator('#reports-button')).toHaveAttribute('id', 'reports-button');
   await expect(page.locator('#property-title + [data-vast-translator]')).toContainText('中文译文：Property');
   await expect(page.locator('#property-description + [data-vast-translator]')).toContainText("中文译文：These settings affect your property What's a property?");
   for (let index = 0; index < 7; index += 1) {
@@ -463,7 +467,9 @@ test('整个页面翻译 Angular 管理菜单的标题、说明与链接文字�
     await expect(page.locator(`#admin-link-${index}`)).toHaveAttribute('role', 'link');
   }
   await expect(page.locator('xap-icon-trigger[role="button"]')).toHaveCount(7);
-  await expect(page.locator('mat-icon')).toHaveText(['help_outline','help_outline','help_outline','help_outline','help_outline','help_outline','help_outline']);
+  await expect(page.locator('mat-icon', { hasText: 'arrow_drop_down' })).toHaveCount(1);
+  await expect(page.locator('mat-icon', { hasText: 'help_outline' })).toHaveCount(7);
+  await expect(page.locator('mat-icon + [data-vast-translator]')).toHaveCount(0);
 });
 
 test('恶意页面篡改划词宿主视觉后真实点击被拒绝', async ({ context, server, openExtensionPage }) => {

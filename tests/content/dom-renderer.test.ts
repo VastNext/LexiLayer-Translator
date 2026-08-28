@@ -146,4 +146,16 @@ describe('ParagraphStore 与 DomRenderer', () => {
     renderer.restore(paragraph);
     expect(source.innerHTML).toBe('<p>Block content</p>');
   });
+
+  it('按钮内部文本叶使用 span 译文包装，保持按钮结构合法', () => {
+    document.body.innerHTML = '<button id="button"><span id="label">Reports snapshot</span></button>';
+    const label = document.querySelector('#label') as HTMLElement;
+    const paragraph = new ParagraphStore().getOrCreate(label);
+    const renderer = new DomRenderer();
+    const token = renderer.beginTask(paragraph);
+    renderer.renderTranslation(paragraph, '报告快照', { ...token, mode: 'bilingual', placement: 'after' });
+    const wrapper = document.querySelector('#label + [data-vast-translator]');
+    expect(wrapper?.tagName).toBe('SPAN');
+    expect(document.querySelector('#button')?.contains(wrapper)).toBe(true);
+  });
 });

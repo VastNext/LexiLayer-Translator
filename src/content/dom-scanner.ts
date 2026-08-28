@@ -59,7 +59,7 @@ function isTextLeafExcluded(element: Element, rule: SiteRule): boolean {
   const selectors = [...hardExclusions, ...(rule.excludeSelectors ?? [])];
   if (selectors.some((selector) => element.closest(selector))) return true;
   const interactive = element.closest('button,[role="button"]');
-  if (interactive && !element.closest('a,[role="link"]')) return true;
+  if (interactive === element) return true;
   const view = element.ownerDocument.defaultView;
   for (let current: Element | null = element; current; current = current.parentElement) {
     const style = view?.getComputedStyle(current);
@@ -84,6 +84,7 @@ function textLeafCandidates(root: Element, covered: Set<HTMLElement>, rule: Site
       const parent = node.parentElement;
       if (!parent || isTextLeafExcluded(parent, rule)) return NodeFilter.FILTER_REJECT;
       if (parent.closest('ga-help-tooltip,xap-icon-trigger,[aria-haspopup="dialog"][role="button"]')) return NodeFilter.FILTER_REJECT;
+      if (parent.matches('[class*="ripple" i],[class*="focus-indicator" i],[class*="touch-target" i]')) return NodeFilter.FILTER_REJECT;
       for (let current: Element | null = parent; current; current = current.parentElement) {
         if (covered.has(current as HTMLElement)) return NodeFilter.FILTER_REJECT;
       }

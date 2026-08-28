@@ -111,6 +111,18 @@ describe('scanParagraphElements', () => {
     expect(texts.some((text) => text?.includes('Tooltip for') || text === 'help_outline')).toBe(false);
   });
 
+  it.each(['whole-page', 'main-content'] as const)('识别 mat-tree 按钮内独立文本叶并排除图标与按钮直接文本：%s', (scope) => {
+    document.body.innerHTML = `<main><ga-secondary-nav role="navigation"><mat-tree role="tree">
+      <mat-tree-node role="treeitem"><button><span class="mdc-button__label"><div><span id="reports">Reports snapshot</span></div></span><span class="mat-focus-indicator"></span></button></mat-tree-node>
+      <mat-tree-node role="treeitem"><button><span class="mdc-button__label"><div><mat-icon aria-hidden="true">arrow_drop_down</mat-icon><span id="leads">Generate leads</span></div></span><span class="mat-ripple"></span></button></mat-tree-node>
+      <mat-tree-node role="treeitem"><button><span class="mdc-button__label"><div><span id="objectives">Business objectives</span><mat-icon aria-hidden="true">keyboard_arrow_up</mat-icon></div></span></button></mat-tree-node>
+      <button id="direct-button">Direct button text</button>
+    </mat-tree></ga-secondary-nav></main>`;
+    const elements = scanParagraphElements(document, rule, scope);
+    expect(elements.map((element) => element.id)).toEqual(['reports', 'leads', 'objectives']);
+    expect(elements.map((element) => element.textContent?.trim())).toEqual(['Reports snapshot', 'Generate leads', 'Business objectives']);
+  });
+
   it('多个扫描根和选择器命中同一元素时只返回一次', () => {
     const duplicateRule: SiteRule = {
       id: 'duplicate',
