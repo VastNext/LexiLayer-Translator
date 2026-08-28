@@ -4,29 +4,31 @@ export type ScanScope = 'main-content' | 'whole-page';
 export interface ScanMetrics { normalizedTexts: number; ancestorChecks: number }
 
 const paragraphSelector = 'h1, h2, h3, h4, h5, h6, p, li, blockquote, figcaption, td, th';
-const builtInExclusions = [
+const hardExclusions = [
   'script',
   'style',
   'noscript',
   'template',
   'pre',
   'code',
-  'nav',
-  'button',
   'form',
   'input',
   'textarea',
   'select',
-  '[role="navigation"]',
-  '[role="button"]',
+  'svg',
+  'canvas',
+  'mat-icon',
+  '[class*="material-icons" i]',
+  '[class*="icon-font" i]',
+  '[role="img"]',
+  '[role="tooltip"]',
   '[contenteditable="true"]',
   '[hidden]',
   '[aria-hidden="true"]',
   '[data-vast-translator]',
   '[data-vast-inline-selection-translation]',
 ];
-const breadcrumbContainerSelector = 'nav[aria-label*="breadcrumb" i], [role="navigation"][aria-label*="breadcrumb" i], ol[class*="breadcrumb" i], [class*="breadcrumb" i]';
-const breadcrumbLeafSelector = 'a span, button a span, span[aria-current="page"], a';
+const semanticContainerExclusions = ['nav', 'button', '[role="navigation"]', '[role="button"]'];
 
 function queryRoots(root: Document | Element, rule: SiteRule, scope: ScanScope): Element[] {
   const document = root instanceof Document ? root : root.ownerDocument;
@@ -42,9 +44,22 @@ function queryRoots(root: Document | Element, rule: SiteRule, scope: ScanScope):
 }
 
 function isExcluded(element: Element, rule: SiteRule): boolean {
-  const selectors = [...builtInExclusions, ...(rule.excludeSelectors ?? [])];
+  const selectors = [...hardExclusions, ...semanticContainerExclusions, ...(rule.excludeSelectors ?? [])];
   if (selectors.some((selector) => element.closest(selector))) return true;
 
+  const view = element.ownerDocument.defaultView;
+  for (let current: Element | null = element; current; current = current.parentElement) {
+    const style = view?.getComputedStyle(current);
+    if (style?.display === 'none' || style?.visibility === 'hidden') return true;
+  }
+  return false;
+}
+
+function isTextLeafExcluded(element: Element, rule: SiteRule): boolean {
+  const selectors = [...hardExclusions, ...(rule.excludeSelectors ?? [])];
+  if (selectors.some((selector) => element.closest(selector))) return true;
+  const interactive = element.closest('button,[role="button"]');
+  if (interactive && !element.closest('a,[role="link"]')) return true;
   const view = element.ownerDocument.defaultView;
   for (let current: Element | null = element; current; current = current.parentElement) {
     const style = view?.getComputedStyle(current);
@@ -57,22 +72,31 @@ function hasText(element: Element): element is HTMLElement {
   return element instanceof HTMLElement && Boolean(element.textContent?.trim());
 }
 
-function breadcrumbCandidates(root: Document | Element): HTMLElement[] {
-  const containers = [
-    ...(root instanceof Element && root.matches(breadcrumbContainerSelector) ? [root] : []),
-    ...root.querySelectorAll(breadcrumbContainerSelector),
-  ];
+function hasDirectText(element: Element): boolean {
+  return Array.from(element.childNodes).some((node) => node.nodeType === node.TEXT_NODE && Boolean(node.textContent?.trim()));
+}
+
+function textLeafCandidates(root: Element, covered: Set<HTMLElement>, rule: SiteRule): HTMLElement[] {
+  const document = root.ownerDocument;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (!node.textContent?.trim()) return NodeFilter.FILTER_REJECT;
+      const parent = node.parentElement;
+      if (!parent || isTextLeafExcluded(parent, rule)) return NodeFilter.FILTER_REJECT;
+      if (parent.closest('ga-help-tooltip,xap-icon-trigger,[aria-haspopup="dialog"][role="button"]')) return NodeFilter.FILTER_REJECT;
+      for (let current: Element | null = parent; current; current = current.parentElement) {
+        if (covered.has(current as HTMLElement)) return NodeFilter.FILTER_REJECT;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
   const candidates = new Set<HTMLElement>();
-  for (const container of containers) {
-    for (const element of container.querySelectorAll(breadcrumbLeafSelector)) {
-      if (!(element instanceof HTMLElement) || element.closest('[aria-hidden="true"], [hidden]')) continue;
-      const text = element.textContent?.replace(/\s+/g, ' ').trim() ?? '';
-      if (!text || !Array.from(element.childNodes).some((node) => node.nodeType === node.TEXT_NODE && Boolean(node.textContent?.trim()))) continue;
-      if (element.matches('a') && element.querySelector('span')) continue;
-      candidates.add(element);
-    }
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const parent = node.parentElement;
+    if (parent && hasDirectText(parent)) candidates.add(parent);
   }
-  return Array.from(candidates);
+  const grouped = [...candidates];
+  return grouped.filter((candidate) => !grouped.some((ancestor) => ancestor !== candidate && ancestor.contains(candidate) && hasDirectText(ancestor)));
 }
 
 export function scanParagraphElements(
@@ -92,9 +116,10 @@ export function scanParagraphElements(
       : Array.from(scanRoot.querySelectorAll(paragraphSelector));
 
     for (const candidate of candidates) {
+      if (candidate.matches('li') && !hasDirectText(candidate) && candidate.querySelector('a,button,[role="link"],[role="button"]')) continue;
       if (hasText(candidate) && !isExcluded(candidate, rule)) results.add(candidate);
     }
-    for (const candidate of breadcrumbCandidates(scanRoot)) results.add(candidate);
+    for (const candidate of textLeafCandidates(scanRoot, results, rule)) results.add(candidate);
   }
 
   for (const candidate of forced) {
