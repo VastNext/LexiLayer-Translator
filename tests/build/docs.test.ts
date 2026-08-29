@@ -38,7 +38,7 @@ describe('文档发布契约', () => {
     expect(Object.keys(en).sort()).toEqual(Object.keys(zh).sort());
   });
 
-  it('0.3.0 文档说明默认/备用/多 custom、端点、429、测试代理、迁移和能力差异', async () => {
+  it('当前版本文档说明默认/备用/多 custom、端点、429、测试代理、迁移和能力差异', async () => {
     const [pkg, readme, privacy, design, implementation] = await Promise.all([
       readFile(resolve('package.json'), 'utf8'),
       readFile(resolve('README.md'), 'utf8'),
@@ -48,9 +48,9 @@ describe('文档发布契约', () => {
     ]);
     const all = [readme, privacy, design, implementation].join('\n');
 
-    expect(JSON.parse(pkg)).toHaveProperty('version', '0.3.0');
-    expect(readme).toContain('0.3.0');
-    expect(privacy).toContain('0.3.0');
+    const version = JSON.parse(pkg).version as string;
+    expect(readme).toContain(`当前版本：\`${version}\``);
+    expect(privacy).toContain(`生效版本：${version}`);
     expect(all).toMatch(/Google.*默认/s);
     expect(all).toMatch(/Bing.*备用/s);
     expect(all).toMatch(/多个.*自定义 AI|多.*custom/i);
@@ -83,5 +83,23 @@ describe('文档发布契约', () => {
     expect(all).toMatch(/Google\/Bing.*许可|Google\/Bing.*服务条款/s);
     expect(all).toMatch(/ZIP.*manifest\.json/s);
     expect(all).not.toMatch(/[A-Za-z]:\\/);
+  });
+
+  it('仓库级 AGENTS 说明产品边界、版本来源和验证门禁', async () => {
+    const [agents, pkg, lock] = await Promise.all([
+      readFile(resolve('AGENTS.md'), 'utf8'),
+      readFile(resolve('package.json'), 'utf8').then(JSON.parse),
+      readFile(resolve('package-lock.json'), 'utf8').then(JSON.parse),
+    ]);
+
+    expect(agents).toContain('`package.json` 是版本唯一来源');
+    expect(agents).toMatch(/patch.*minor.*major/s);
+    expect(agents).toContain('research/private-reference/');
+    expect(agents).toContain('Google/Bing 不自动互相降级');
+    expect(agents).toContain('npm test');
+    expect(agents).toContain('npm run typecheck');
+    expect(agents).toContain('npm run build');
+    expect(lock.version).toBe(pkg.version);
+    expect(lock.packages[''].version).toBe(pkg.version);
   });
 });

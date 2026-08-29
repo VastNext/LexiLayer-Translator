@@ -1,6 +1,7 @@
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import packageJson from '../../package.json' with { type: 'json' };
 
 import { OptionsApp, type OptionsApi } from '../../src/options/OptionsApp';
 import { DEFAULT_SETTINGS, type OptionsSettings } from '../../src/shared/config';
@@ -152,9 +153,9 @@ describe('Options v2 多引擎设置', () => {
     expect(screen.getByRole('status')).toHaveClass('status-toast');
   });
 
-  it('显示 0.3.0 版本', async () => {
+  it('显示当前包版本', async () => {
     render(<OptionsApp api={createApi()} />);
-    expect(await screen.findAllByText('v0.3.0')).toHaveLength(2);
+    expect(await screen.findAllByText(`v${packageJson.version}`)).toHaveLength(2);
   });
 
   it('展示多个独立 custom 表单及逐实例 hasApiKey，并保存指定实例', async () => {
