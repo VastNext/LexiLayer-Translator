@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import packageJson from '../../package.json' with { type: 'json' };
 import { BrandMark } from '../BrandMark';
 import {
   DEFAULT_SETTINGS, MAX_CUSTOM_ENGINES, exportSafeSettings, validateEngine,
@@ -240,10 +241,10 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
         <button onClick={() => navigateTo('appearance-theme')}>{t('appearanceTheme')}</button>
         <button onClick={() => navigateTo('data-privacy')}>{t('dataPrivacy')}</button>
       </nav>
-      <small>v0.3.0</small>
+      <small>v{packageJson.version}</small>
     </aside>
     <div className="options-content" ref={contentRef}>
-    <header className="masthead"><div><p className="eyebrow">VAST TRANSLATOR</p><h1>{t('optionsTitle')}</h1><p className="kicker">{t('optionsKicker')}</p></div><span className="version">v0.3.0</span></header>
+    <header className="masthead"><div><p className="eyebrow">VAST TRANSLATOR</p><h1>{t('optionsTitle')}</h1><p className="kicker">{t('optionsKicker')}</p></div><span className="version">v{packageJson.version}</span></header>
 
     <section id="builtin-engines" className="section section--marked" aria-label={t('builtinEngines')}>
       <div className="section-header"><h2>{t('builtinEngines')}</h2><span className="section-index">01 / BUILTIN</span></div>

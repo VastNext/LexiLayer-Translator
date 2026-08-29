@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 
 import { expect, test } from './fixtures';
+import packageJson from '../../package.json' with { type: 'json' };
 
 const API_KEY = 'e2e-secret-key-not-for-dom';
 const evidence = (name: string) => resolve(import.meta.dirname, `../evidence/e2e-${name}.png`);
@@ -62,7 +63,7 @@ async function clickPopupButton(
 test('五套主题从 Options 即时保存并在重开 Popup 后持久应用', async ({ openExtensionPage }) => {
   const options = await openExtensionPage('options.html');
   await expect(options.locator('html')).toHaveAttribute('data-theme', 'pearl-reader');
-  await expect(options.getByText('v0.3.0').first()).toBeVisible();
+  await expect(options.getByText(`v${packageJson.version}`).first()).toBeVisible();
   const nav = options.locator('.options-nav');
   const navBefore = await nav.boundingBox();
   if (!navBefore) throw new Error('设置导航不可见');
