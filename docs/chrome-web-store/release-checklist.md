@@ -159,6 +159,8 @@ cd dist
 zip -r ../vast-translator-0.4.0.zip .
 ```
 
+正式 GitHub Release 使用 `.github/workflows/release.yml`：推送与 `package.json` 一致的 `vX.Y.Z` 标签后，Action 会从干净检出运行测试、类型检查和构建，生成 ZIP、SHA-256 和 GitHub Release。`workflow_dispatch` 只构建 Artifact，不创建 Release，可用于发布前验证。
+
 上传前检查 ZIP：
 
 - [ ] 根目录直接存在 `manifest.json`

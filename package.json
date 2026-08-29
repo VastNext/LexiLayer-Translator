@@ -8,6 +8,8 @@
     "e2e": "playwright test --grep-invert @network",
     "e2e:network": "playwright test tests/e2e/network.spec.ts",
     "e2e:switchyomega": "playwright test tests/e2e/network.spec.ts",
+    "release:package": "python scripts/package-release.py",
+    "release:validate": "node scripts/validate-release.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

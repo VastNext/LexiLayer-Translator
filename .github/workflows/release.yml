@@ -1,0 +1,77 @@
+name: Build GitHub Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Resolve release metadata
+        id: metadata
+        shell: bash
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          TAG="v${VERSION}"
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" != "${TAG}" ]]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match package version ${VERSION}" >&2
+            exit 1
+          fi
+          node scripts/validate-release.mjs "${TAG}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "package=vast-translator-${VERSION}-chrome-web-store.zip" >> "$GITHUB_OUTPUT"
+
+      - name: Create release package
+        run: python scripts/package-release.py
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vast-translator-${{ steps.metadata.outputs.version }}
+          path: release/*
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.metadata.outputs.tag }}" \
+            "release/${{ steps.metadata.outputs.package }}" \
+            "release/${{ steps.metadata.outputs.package }}.sha256" \
+            --verify-tag \
+            --title "Vast Translator ${{ steps.metadata.outputs.version }}" \
+            --generate-notes

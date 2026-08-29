@@ -102,4 +102,27 @@ describe('文档发布契约', () => {
     expect(lock.version).toBe(pkg.version);
     expect(lock.packages[''].version).toBe(pkg.version);
   });
+
+  it('GitHub Release 工作流按标签重建、校验并发布商店包', async () => {
+    const [workflow, validator, packager] = await Promise.all([
+      readFile(resolve('.github/workflows/release.yml'), 'utf8'),
+      readFile(resolve('scripts/validate-release.mjs'), 'utf8'),
+      readFile(resolve('scripts/package-release.py'), 'utf8'),
+    ]);
+
+    expect(workflow).toContain("'v[0-9]+.[0-9]+.[0-9]+'");
+    expect(workflow).toContain('npm ci');
+    expect(workflow).toContain('npm test');
+    expect(workflow).toContain('npm run typecheck');
+    expect(workflow).toContain('npm run build');
+    expect(workflow).toContain('actions/upload-artifact@v4');
+    expect(workflow).toContain('gh release create');
+    expect(workflow).toContain('actions/setup-python@v5');
+    expect(workflow).toContain('python scripts/package-release.py');
+    expect(validator).toContain('dist/ 根目录缺少 manifest.json');
+    expect(validator).toContain('Manifest 版本');
+    expect(validator).toContain('发行目录包含禁止文件');
+    expect(packager).toContain('hashlib.sha256');
+    expect(packager).toContain('ZIP 第一层必须且只能包含一个 manifest.json');
+  });
 });
