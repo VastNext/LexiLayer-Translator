@@ -115,9 +115,11 @@ describe('文档发布契约', () => {
     expect(workflow).toContain('npm test');
     expect(workflow).toContain('npm run typecheck');
     expect(workflow).toContain('npm run build');
-    expect(workflow).toContain('actions/upload-artifact@v4');
+    expect(workflow).toContain('actions/checkout@v7');
+    expect(workflow).toContain('actions/setup-node@v7');
+    expect(workflow).toContain('actions/setup-python@v7');
+    expect(workflow).toContain('actions/upload-artifact@v7');
     expect(workflow).toContain('gh release create');
-    expect(workflow).toContain('actions/setup-python@v5');
     expect(workflow).toContain('python scripts/package-release.py');
     expect(validator).toContain('dist/ 根目录缺少 manifest.json');
     expect(validator).toContain('Manifest 版本');
