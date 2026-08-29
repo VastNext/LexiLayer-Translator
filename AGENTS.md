@@ -64,6 +64,8 @@ npm version major --no-git-tag-version
 
 完成标准：`package.json`、`package-lock.json`、生成的 Manifest、Options 显示和当前版本文档一致。
 
+GitHub Release 由 `.github/workflows/release.yml` 负责。只有准备正式发布时才创建 `v<package.json version>` 标签；标签必须指向已通过门禁且包含该版本全部修改的提交。工作流从干净检出重新构建并生成 Chrome Web Store ZIP 和 SHA-256，禁止手工上传本地 `dist/` 产物替代该流程。
+
 ## 验证门禁
 
 常规代码或发布文档变更至少运行：
