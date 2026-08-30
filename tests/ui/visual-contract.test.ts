@@ -48,12 +48,13 @@ describe('界面视觉契约', () => {
     expect(css).toMatch(/\.options-action\s*\{[^}]*min-height:\s*32px[^}]*padding:\s*5px 8px[^}]*font-size:\s*13px/s);
   });
 
-  it('BrandMark 使用 VastNext 路线、地平线与珊瑚信标并保留 aria', () => {
+  it('BrandMark 使用白色三点 V 形星座并保留 aria', () => {
     const source = readFileSync(resolve(import.meta.dirname, '../../src/BrandMark.tsx'), 'utf8');
-    expect(source).toContain('logo-horizon');
-    expect(source).toContain('logo-route');
-    expect(source).toContain('logo-beacon');
+    expect(source).toContain('logo-constellation');
+    expect(source.match(/logo-node/g)).toHaveLength(3);
     expect(source).toContain('aria-label');
+    const css = readFileSync(resolve(import.meta.dirname, '../../src/ui.css'), 'utf8');
+    expect(css).toMatch(/\.brand-icon\s*\{[^}]*background:\s*var\(--brand-bg\)[^}]*color:\s*#fff/s);
   });
 
   it('扩展 SVG 图标使用蓝粉晚霞渐变和白色主标', () => {

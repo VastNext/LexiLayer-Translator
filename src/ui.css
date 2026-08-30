@@ -69,10 +69,10 @@ h1, h2, h3 { font-family: var(--font-title); color: var(--ink); }
 
 .shell { background: var(--panel); color: var(--ink); }
 .brand-lockup, .options-brand { display: flex; align-items: center; gap: 9px; }
-.brand-icon { display: grid; place-items: center; width: 31px; height: 31px; flex: 0 0 auto; border-radius: var(--radius-icon); background: var(--brand-bg); color: var(--brand-fg); }
+.brand-icon { display: grid; place-items: center; width: 31px; height: 31px; flex: 0 0 auto; border-radius: var(--radius-icon); background: var(--brand-bg); color: #fff; }
 .brand-mark { width: 25px; height: 25px; overflow: visible; }
-.logo-horizon, .logo-route { stroke: currentColor; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }
-.logo-beacon { fill: #f06f52; }
+.logo-constellation { stroke: currentColor; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+.logo-node { fill: currentColor; }
 .brand-lockup strong { font-family: var(--font-title); font-size: calc(var(--ui-control-size) + 2px); letter-spacing: -.015em; }
 
 .popup { width: 360px; min-height: 300px; padding: 17px; background: var(--panel); }
