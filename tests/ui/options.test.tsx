@@ -93,7 +93,7 @@ describe('Options v2 多引擎设置', () => {
       .mockResolvedValueOnce(structuredClone(loaded));
     render(<OptionsApp api={api} />);
 
-    expect(await screen.findByRole('status')).toHaveTextContent('设置加载失败');
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('设置加载失败'));
     expect(screen.getByRole('button', { name: '重试' })).toBeEnabled();
     await userEvent.click(screen.getByRole('button', { name: '重试' }));
 
