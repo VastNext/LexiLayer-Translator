@@ -63,5 +63,7 @@ describe('界面视觉契约', () => {
     expect(source).toContain('linearGradient');
     expect(source).toMatch(/stroke="#fff"/);
     expect(source).toMatch(/fill="#fff"/);
+    expect(source.match(/<circle/g)).toHaveLength(3);
+    expect(source).toContain('三点 V 形星座');
   });
 });

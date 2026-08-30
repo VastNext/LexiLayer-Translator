@@ -527,9 +527,8 @@ describe('划词翻译视图隔离', () => {
     const view = new SelectionView(document, new DOMRect(0, 0, 10, 10), { translate: vi.fn(), copy: vi.fn(), close: vi.fn() });
     const trigger = root!.querySelector('.trigger') as HTMLButtonElement;
     expect(trigger.querySelector('svg')).not.toBeNull();
-    expect(trigger.querySelector('.route')).not.toBeNull();
-    expect(trigger.querySelector('.horizon')).not.toBeNull();
-    expect(trigger.querySelector('.beacon')).not.toBeNull();
+    expect(trigger.querySelector('.constellation')).not.toBeNull();
+    expect(trigger.querySelectorAll('.node')).toHaveLength(3);
     expect(trigger.textContent?.trim()).toBe('');
     view.remove();
   });
