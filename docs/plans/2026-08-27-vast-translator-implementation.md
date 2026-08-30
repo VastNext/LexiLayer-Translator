@@ -2,7 +2,7 @@
 
 > **执行要求：** 使用 `superpowers:executing-plans` 按任务逐项实现。
 
-**目标：** 构建 Google 默认、Bing 备用并支持多个自定义 AI 的高性能 Chrome 双语网页与划词翻译插件，当前发布版本为 0.4.1。
+**目标：** 构建 Google 默认、Bing 备用并支持多个自定义 AI 的高性能 Chrome 双语网页与划词翻译插件，当前发布版本为 0.4.2。
 
 **架构：** Manifest V3 service worker 集中处理密钥、API、重试和缓存；原生 TypeScript content script 管理 DOM 翻译；React 仅用于 Popup 和设置页。站点规则采用原创、按域名懒加载的数据驱动结构。
 
