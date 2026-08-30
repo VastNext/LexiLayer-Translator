@@ -487,7 +487,11 @@ test('恶意页面篡改划词宿主视觉后真实点击被拒绝', async ({ co
 });
 
 test('网页按 8+2 批处理，动态范围正确且离屏滚动后才请求', async ({ context, server, openExtensionPage, serviceWorker }) => {
-  const options = await openExtensionPage('options.html'); await saveConfiguration(options, server.baseUrl); await options.close();
+  const options = await openExtensionPage('options.html');
+  await saveConfiguration(options, server.baseUrl);
+  await options.getByLabel('默认范围').selectOption('main-content');
+  await options.getByRole('button', { name: '保存阅读偏好' }).click();
+  await options.close();
   const page = await openFixture(context, server.batchFixtureUrl);
   const initialOffscreen = await page.locator('#offscreen').boundingBox();
   expect(initialOffscreen?.y ?? 0).toBeGreaterThan(1000);
