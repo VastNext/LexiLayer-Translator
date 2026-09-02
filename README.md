@@ -1,59 +1,105 @@
-# Vast Translator
+# 语层 LexiLayer Translator
 
-Vast Translator 是一款 Manifest V3 Chrome 扩展，通过内置翻译引擎或用户自行配置的 OpenAI 兼容 API 提供网页双语翻译和划词翻译。插件采用暖白纸张与酸绿色荧光标注的原创视觉，默认只在用户主动翻译后扫描页面。
+<p align="center">
+  <strong>让 AI 按语境、领域与风格理解网页。</strong><br>
+  A browser translator that turns configurable AI prompts into domain-aware translation.
+</p>
 
-当前版本：`0.4.2`。
+<p align="center">
+  <a href="https://github.com/VastNext/LexiLayer-Translator"><img src="https://img.shields.io/badge/status-MVP-orange.svg" alt="MVP status"></a>
+  <a href="https://github.com/VastNext/LexiLayer-Translator"><img src="https://img.shields.io/badge/Manifest-V3-4285F4.svg" alt="Manifest V3"></a>
+  <a href="https://github.com/VastNext/LexiLayer-Translator"><img src="https://img.shields.io/badge/TypeScript-React-3178C6.svg" alt="TypeScript and React"></a>
+  <a href="https://github.com/VastNext/LexiLayer-Translator"><img src="https://img.shields.io/badge/license-not%20released-lightgrey.svg" alt="License not released"></a>
+  <a href="https://vastnext.com"><img src="https://img.shields.io/badge/website-vastnext.com-111827.svg" alt="VastNext website"></a>
+</p>
 
-## 功能
+## 语层是什么？
 
-- 网页主要内容或整个页面翻译
-- 双语对照、仅译文两种显示模式
-- 译文可放在原文之前或之后
-- 划词 V 按钮与右键菜单翻译
-- Google 默认免费翻译、Bing 备用翻译，可启停并选择默认引擎
-- 最多添加 20 个自定义 AI 实例，独立管理名称、Base URL、模型、API Key、启停、连接测试与排序
-- 自定义 AI 支持 SSE 流式划词结果，失败时自动使用非流式回退；Google 和 Bing 返回单次结果
-- 可见内容优先调度、动态节点翻译和原文变化重译
-- OpenAI 兼容 API、模型与自定义翻译要求；自定义要求不作用于 Google/Bing
-- 30 天、最多 5000 条的 IndexedDB 本地翻译缓存
-- 简体中文和英文完整运行时界面本地化
-- `Shift+Alt+A` 快捷切换当前页面翻译
+**语层（LexiLayer）** 是一款面向网页阅读的 Chrome 翻译扩展。它支持使用 Google、Bing 翻译网页和选中文字；配置 OpenAI 兼容的 AI 服务后，还可以通过预设的领域专家提示词或用户自定义提示词，实现更符合语境、术语和写作风格的 AI 翻译。
 
-支持的目标语言与程序内支持集合一致：自动判断、简体中文、繁体中文、英语、日语、韩语、法语、意大利语、德语、西班牙语、葡萄牙语、俄语和阿拉伯语。`auto` 会先解析为 Chrome 界面语言，再避开与网页源语言相同的目标。
+LexiLayer does more than replace words. It adds a translation layer to the web: choose Google or Bing for built-in translation, or connect your own OpenAI-compatible AI service and shape its translation behavior with domain-expert or custom prompts.
 
-## 开发
+> 💡 **核心理念：** 翻译引擎负责“说另一种语言”，AI 专家提示词负责“理解这段内容应该怎样被翻译”。
+
+## ✨ 主要能力
+
+- 🌐 **网页翻译**：翻译网页主要内容或整个页面，并直接在当前页面显示结果。
+- 📝 **双语阅读**：支持双语对照、仅译文，以及译文显示在原文之前或之后。
+- 🔎 **划词翻译**：选择网页文字后，通过 V 形入口打开隔离的翻译面板。
+- ⚡ **现代网页适配**：优先处理可见文本，支持 React、Vue、Angular、Web Component 和动态新增节点。
+- 🧠 **AI 专家翻译**：配置 AI 后，可使用领域专家提示词或用户自定义提示词控制术语、语气、受众和格式。
+- 🔌 **多引擎支持**：Google 默认翻译、Bing 备用翻译，并可添加最多 20 个 OpenAI 兼容 AI 实例。
+- 🌊 **流式划词结果**：自定义 AI 划词翻译优先使用 SSE 流式响应，不支持时回退到非流式响应。
+- 💾 **本地缓存**：使用 IndexedDB 保存成功译文，默认保留 30 天，最多 5000 条。
+- 🌍 **多语言界面**：提供简体中文和英文运行时界面。
+- ⌨️ **快捷操作**：使用 `Shift+Alt+A` 切换当前页面翻译状态。
+
+## 🧑‍🏫 AI 专家翻译
+
+AI 翻译服务配置完成后，用户可以为不同阅读场景选择不同的翻译方式。例如：
+
+- 💻 **技术文档专家**：保留 API、代码符号和工程术语，使用清晰准确的中文。
+- 📚 **学术论文专家**：保持论证结构、限定语气和专业术语的一致性。
+- ⚖️ **法律文本专家**：尽量保留条款结构、义务关系和法律表达的严谨性。
+- 📰 **新闻编辑专家**：翻译成自然、简洁、适合中文读者阅读的新闻语言。
+- 🎮 **本地化专家**：根据角色、界面长度和目标受众调整表达风格。
+- ✍️ **自定义提示词**：由用户指定术语偏好、语气、受众、格式和特殊约束。
+
+当前版本已支持自定义 AI 实例和自定义翻译要求；预设领域专家提示词体系将作为后续产品能力持续完善。
+
+## 🔧 翻译引擎
+
+| 引擎 | 用途 | 特点 |
+| --- | --- | --- |
+| Google | 默认引擎 | 免费、无需 API Key、非流式响应 |
+| Bing | 备用引擎 | 无需 API Key、非流式响应 |
+| Custom AI | 专家级 AI 翻译 | OpenAI 兼容 API、模型和提示词可配置 |
+
+Google 和 Bing 不会自动互相降级。用户可以在 Popup 或设置页中选择实际使用的引擎。自定义 AI 服务的质量、费用、可用性和数据处理规则取决于用户选择的服务商。
+
+## 🔐 隐私与安全
+
+- 🛡️ 不创建用户账号，不投放广告，不进行跨站追踪。
+- 👆 只有用户主动发起页面翻译后，扩展才会扫描正文。
+- ✂️ 划词翻译只处理用户主动选择的文字。
+- 🔑 API Key 仅保存在 `chrome.storage.local`，不会发送给网页或 content script。
+- 📦 配置导出不包含 API Key，翻译缓存也不保存 API Key。
+- 🚫 不运营接收翻译内容的自营服务器，也不提供网页可调用的通用网络代理。
+- 🔒 远程自定义 API 必须使用 HTTPS；HTTP 仅允许本机回环地址。
+
+翻译文本会发送到当前选择的 Google、Bing 或用户配置的 AI 服务。第三方服务可能按照自己的隐私政策、数据保留和费用规则处理请求。请勿翻译密码、访问令牌、支付信息、医疗记录、身份证件或其他敏感内容。
+
+详细说明请阅读 [PRIVACY.md](./PRIVACY.md)。
+
+## 🚀 开始使用
+
+### 安装依赖
 
 要求 Node.js 20 或更高版本。
 
 ```bash
 npm install
+```
+
+### 运行检查
+
+```bash
 npm test
 npm run typecheck
 npm run build
-npm run e2e
 ```
 
-项目使用 TypeScript、Vite、React 和 Vitest。Popup 与 Options 使用 React；content script 保持原生 TypeScript，以降低普通网页中的运行成本。
+### 在 Chrome 中加载
 
-## 构建与加载
+1. 运行 `npm run build`。
+2. 打开 `chrome://extensions`。
+3. 开启右上角的“开发者模式”。
+4. 点击“加载已解压的扩展程序”。
+5. 选择项目生成的 `dist/` 目录。
 
-运行：
+### 配置 AI 翻译
 
-```bash
-npm run build
-```
-
-构建结果位于 `dist/`。在 Chrome 中打开 `chrome://extensions`，开启“开发者模式”，选择“加载已解压的扩展程序”，然后选择 `dist/` 目录。
-
-修改代码后重新运行构建，并在扩展管理页点击刷新。
-
-## 引擎与 API 配置
-
-Google 是首次安装的默认引擎，Bing 是备用引擎，两者都不需要用户提供 API Key。遇到 Google `429` 限流时，请稍后重试或切换到 Bing。内置服务能力依赖其公开接口，可能因服务策略变化而不可用。
-
-Options 可保存多个自定义 AI。每个实例的 API Key 独立存储；编辑时 API Key 留空会保留同一实例、同一 Origin 的现有密钥。Base URL 的 Origin 变化会清除旧密钥，必须重新输入。连接测试只测试选定实例的固定翻译端点，不向网页提供通用网络代理。
-
-OpenAI 官方兼容配置：
+在扩展设置页添加一个 OpenAI 兼容的 AI 实例：
 
 ```text
 Base URL: https://api.openai.com/v1
@@ -69,89 +115,70 @@ Model: your-model
 API Key: 服务要求的值
 ```
 
-远程服务必须使用 HTTPS。HTTP 仅允许 `localhost`、`127.0.0.1` 或 `::1` 本机回环地址。
+## 🏗️ 技术架构
 
-## 架构
+- `src/background/`：Manifest V3 service worker，负责消息白名单、API Key、请求、重试、批处理、SSE、取消和缓存。
+- `src/content/`：原生 TypeScript content script，负责 DOM 扫描、段落状态、可见优先调度、动态页面、DOM 渲染和划词交互。
+- `src/rules/`：通用规则与原创站点规则，按域名按需加载。
+- `src/popup/`：当前页面翻译控制、语言选择、显示模式和进度。
+- `src/options/`：AI 实例、翻译偏好、连接测试、缓存和配置数据管理。
+- `src/shared/`：配置、语言、URL、消息协议和本地化工具。
 
-- `src/background/`：Manifest V3 service worker，负责消息白名单、API Key、请求、重试、批处理、流式协议、取消和缓存。
-- `src/content/`：网页扫描、段落状态、可见优先调度、动态页面观察、DOM 渲染和划词浮层。
-- `src/rules/`：原创站点规则目录与按需加载规则。
-- `src/popup/`：当前页面翻译控制与进度。
-- `src/options/`：API 连接、阅读偏好和本地数据管理。
-- `src/shared/`：配置、语言、URL 和消息协议。
+项目使用 TypeScript、Vite、React、Chrome Extension APIs、Vitest、jsdom 和 Playwright。Popup 与 Options 使用 React；content script 保持原生 TypeScript，以降低普通网页中的运行成本。
 
-content script 初始只注册轻量消息与划词监听；站点规则详情、DOM 扫描和 MutationObserver 仅在首次页面翻译后启用。
-
-## 0.3.0 迁移
-
-首次读取旧版单一 OpenAI 配置时，扩展会迁移为一个 `迁移的自定义 AI` 实例，同时保留阅读偏好；默认引擎改为 Google。v2 配置导入导出支持内置项和多个自定义实例，但绝不导出 API Key。导入时只有 ID 和 Origin 都相同的本地实例会沿用本机密钥；重复 ID、保留 ID 伪装和含密钥文件会被拒绝。
-
-## 0.4.0 更新
-
-- 页面扫描改为通用可见文本叶与语义段落组合算法，提升 Angular、React、Vue 和 Web Component 页面覆盖。
-- 支持按钮内部独立文本叶，覆盖现代 SPA 树形导航，同时继续排除图标、Ripple、焦点和触控辅助节点。
-- 加强扩展重新加载后的 Content Script 生命周期处理，避免过期进度上报产生未处理错误。
-- 增加 Chrome Web Store 上架资料、隐私披露模板、审核步骤和发布检查清单。
-- 统一由 `package.json` 提供 Manifest 与 Options UI 版本号。
-
-## 0.4.1 更新
-
-- 扩展图标改为参考 VastNext 08 方案的白色三点 V 形星座，保留原蓝粉晚霞渐变底色。
-- 划词悬浮按钮同步使用三点星座标记，保持扩展图标与页面交互入口一致。
-
-## 0.4.2 更新
-
-- Popup 与设置页的主题图标同步采用白色三点 V 形星座，底色继续随当前主题变化。
-
-## 能力差异
-
-- Google：默认、免费、无需配置；页面和划词翻译均为非流式，可能返回 `429`。
-- Bing：备用、无需配置；页面和划词翻译均为非流式。
-- 自定义 AI：支持多个实例、模型与自定义翻译要求；划词优先流式，连接质量、费用和数据处理规则由所选服务决定。
-
-## 权限理由
-
-- `storage`：在浏览器本地保存 API 配置和用户偏好。API Key 不返回给 content script 或网页。
-- `contextMenus`：提供“翻译页面”“恢复原文”和“翻译选中内容”菜单。
-- `<all_urls>`：在用户访问的网页中运行 content script，并向 Google、Bing 或用户配置的 OpenAI 兼容 API 发起请求。插件不会提供通用网络代理接口；Options 的连接测试也只探测候选翻译实例。
-
-## 隐私
-
-翻译时，用户主动选择的网页文本、目标语言以及可选有限上下文会发送到当前引擎的数据端点；自定义翻译要求只发送给自定义 AI。API Key 保存在 `chrome.storage.local`；页面进度保存在 `chrome.storage.session`；翻译缓存保存在扩展的 IndexedDB 中。配置导出不包含 API Key。具体端点见 [PRIVACY.md](./PRIVACY.md)。
-
-详细说明见 [PRIVACY.md](./PRIVACY.md)。
-
-## 安全限制
-
-- 不要翻译密码、访问令牌、身份证件或其他敏感信息。
-- 第三方 API 服务可能记录请求，使用前应阅读该服务的隐私政策。
-- 扩展校验消息来源与 payload，但无法保证第三方模型输出正确。
-- 网页结构变化可能导致少量内容漏译或布局不兼容，可使用“恢复原文”。
-- API Key 使用权限和费用由用户自行管理。
-
-## MVP 范围
-
-0.4.2 聚焦多引擎网页与划词翻译、安全的多实例配置、现代 SPA 文本覆盖、统一品牌图标和 Chrome Web Store 上架准备。当前不包含账号同步、云端配置、PDF 翻译、字幕翻译、术语库管理和自动整站翻译。
-
-仓库中的闭源规则研究资料目录不纳入产品构建，也不应提交到版本库；发行版中的站点规则均为本项目原创实现。
-
-## 测试
+## 🧪 测试
 
 ```bash
-# 全量测试
+# 全量单元与集成测试
 npm test
 
-# 类型检查
+# TypeScript 类型检查
 npm run typecheck
 
 # 生产构建
 npm run build
 
-# 真实 Chromium 扩展端到端测试
+# Chromium 扩展端到端测试
 npm run e2e
 
-# 独立外网验证；代理参数仅用于测试，不进入插件设置
+# 独立外网验证，代理参数仅用于测试
 VAST_E2E_PROXY=http://127.0.0.1:7890 npm run e2e:network
 ```
 
-测试覆盖 Manifest、构建资源、配置安全、消息白名单、API 客户端、SSE、缓存、调度器、动态页面、DOM 恢复、划词控制器、Popup 和 Options。
+测试覆盖配置安全、语言映射、URL、消息白名单、批处理、API 客户端、SSE、缓存、DOM 扫描与恢复、动态页面、站点规则、Popup、Options 和真实 Chromium 扩展流程。
+
+## 🗺️ 当前状态与路线
+
+当前版本：`0.4.3` · MVP
+
+- ✅ Google / Bing 网页与划词翻译
+- ✅ 多个 OpenAI 兼容 AI 实例
+- ✅ 自定义翻译要求与流式划词翻译
+- ✅ 现代 SPA 可见文本和动态节点翻译
+- ✅ 本地缓存、配置安全和中英文界面
+- ✅ Chrome Web Store 上架资料与发布检查清单
+- 🚧 预设领域 AI 专家提示词库
+- 🚧 翻译角色、术语偏好和风格配置的产品化
+- 🚧 更多阅读场景与专家配置能力
+
+当前不包含账号同步、云端配置、PDF 翻译、字幕翻译、术语库管理和自动整站翻译。
+
+## 📖 项目文档
+
+- [产品与架构设计](./docs/plans/2026-08-27-vast-translator-design.md)
+- [实现计划](./docs/plans/2026-08-27-vast-translator-implementation.md)
+- [隐私说明](./PRIVACY.md)
+- [Chrome Web Store 上架文档](./docs/chrome-web-store/README.md)
+
+## 🌐 官方地址
+
+- Website: https://vastnext.com
+- Repository: https://github.com/VastNext/LexiLayer-Translator
+
+## 📄 许可证
+
+当前仓库暂未添加开源许可证。未经明确授权，请不要将本项目代码作为开源软件再分发。
+
+<p align="center">
+  <sub>Built for a more readable web by VastNext.</sub>
+</p>
