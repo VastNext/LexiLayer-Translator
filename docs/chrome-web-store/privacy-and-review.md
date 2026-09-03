@@ -2,7 +2,7 @@
 
 ## Privacy Practices 填写原则
 
-不要声明“完全不处理用户数据”。Vast Translator 不把数据上传到开发者自营服务器，但会在本地处理配置、API Key、网页文本和翻译缓存，并在用户主动翻译时向第三方翻译服务传输必要文本。
+不要声明“完全不处理用户数据”。语层翻译不把数据上传到开发者自营服务器，但会在本地处理配置、API Key、网页文本和翻译缓存，并在用户主动翻译时向第三方翻译服务传输必要文本。
 
 最终勾选项应以 Developer Dashboard 当时显示的字段为准。建议按以下事实填写。
 
@@ -38,7 +38,7 @@
 - 内容：用户主动要求翻译的网页文本、选区文本和可选有限邻近上下文
 - 用途：提供页面翻译和划词翻译
 - 传输对象：当前选择的 Google、Bing 或自定义 AI 服务
-- 开发者是否接收：否，当前没有 Vast Translator 自营翻译服务器
+- 开发者是否接收：否，当前没有语层翻译自营翻译服务器
 - 是否出售或用于广告：否
 
 ### User activity / Web activity
@@ -87,17 +87,17 @@ URL 不会被汇总为访问历史，也不会用于分析或画像。但因为 
 ### 中文建议
 
 ```text
-Vast Translator 对从 Chrome API 和 Google API 获得的信息的使用遵守 Chrome Web Store User Data Policy，包括 Limited Use 要求。
+语层翻译对从 Chrome API 和 Google API 获得的信息的使用遵守 Chrome Web Store User Data Policy，包括 Limited Use 要求。
 
-相关数据仅用于提供和改进用户主动使用的网页翻译与划词翻译功能。Vast Translator 不会将这些数据用于个性化广告、信用评估、数据转售或其他无关用途，也不会允许人工读取用户翻译内容，除非用户明确授权、适用法律要求或安全调查确有必要。
+相关数据仅用于提供和改进用户主动使用的网页翻译与划词翻译功能。语层翻译不会将这些数据用于个性化广告、信用评估、数据转售或其他无关用途，也不会允许人工读取用户翻译内容，除非用户明确授权、适用法律要求或安全调查确有必要。
 ```
 
 ### 英文建议
 
 ```text
-Vast Translator's use of information received from Chrome APIs and Google APIs will adhere to the Chrome Web Store User Data Policy, including the Limited Use requirements.
+LexiLayer Translator's use of information received from Chrome APIs and Google APIs will adhere to the Chrome Web Store User Data Policy, including the Limited Use requirements.
 
-The information is used only to provide or improve user-initiated webpage and selection translation features. Vast Translator does not use this information for personalized advertising, credit assessment, resale, or unrelated purposes, and does not allow humans to read translated content unless explicitly authorized by the user, required by applicable law, or necessary for a security investigation.
+The information is used only to provide or improve user-initiated webpage and selection translation features. LexiLayer Translator does not use this information for personalized advertising, credit assessment, resale, or unrelated purposes, and does not allow humans to read translated content unless explicitly authorized by the user, required by applicable law, or necessary for a security investigation.
 ```
 
 ## 第三方服务披露
@@ -119,13 +119,13 @@ The information is used only to provide or improve user-initiated webpage and se
 ```text
 No account or test credentials are required to review the built-in translation flow.
 
-1. Open the public Vast Translator review fixture: <PUBLIC_REVIEW_FIXTURE_URL>.
-2. Click the Vast Translator toolbar icon.
+1. Open the public LexiLayer Translator review fixture: <PUBLIC_REVIEW_FIXTURE_URL>.
+2. Click the LexiLayer Translator toolbar icon.
 3. Keep Google selected as the translation engine.
 4. Choose Main content or Whole page.
 5. Click Translate page. The translated text should appear directly on the webpage.
 6. Use Restore in the popup to remove the inserted translations.
-7. Select text on the page. Click the floating Vast Translator button to test selection translation.
+7. Select text on the page. Click the floating LexiLayer Translator button to test selection translation.
 8. Right-click selected text to test the Translate selection context-menu action.
 9. Open the extension options page to inspect Bing and the optional custom OpenAI-compatible service configuration.
 
@@ -147,12 +147,12 @@ If the default third-party translation endpoint is temporarily unavailable or ra
 审核内置翻译流程不需要账号或测试凭据。
 
 1. 打开发布者提供的公开审核测试页：<PUBLIC_REVIEW_FIXTURE_URL>。
-2. 点击 Vast Translator 工具栏图标。
+2. 点击语层翻译工具栏图标。
 3. 保持 Google 为当前翻译引擎。
 4. 选择“主要内容”或“整个页面”。
 5. 点击“翻译当前页面”，译文应直接显示在网页中。
 6. 在 Popup 中点击“恢复原文”，移除插入的译文。
-7. 在页面中选择文字，点击悬浮的 Vast Translator 按钮测试划词翻译。
+7. 在页面中选择文字，点击悬浮的语层翻译按钮测试划词翻译。
 8. 右键点击选中文字，测试“翻译选中内容”菜单。
 9. 打开扩展设置页，查看 Bing 和可选的 OpenAI 兼容自定义服务配置。
 
@@ -188,7 +188,7 @@ If the default third-party translation endpoint is temporarily unavailable or ra
 ### 为什么需要访问所有网站？
 
 ```text
-The extension's single purpose is translating webpages and selected text. Users expect this feature to work on the normal websites they visit. Access is used only to identify visible text after a user initiates page translation, detect explicitly selected text, and render the translation on the same page. Vast Translator does not collect browsing history or use page access for advertising, analytics, or profiling.
+The extension's single purpose is translating webpages and selected text. Users expect this feature to work on the normal websites they visit. Access is used only to identify visible text after a user initiates page translation, detect explicitly selected text, and render the translation on the same page. LexiLayer Translator does not collect browsing history or use page access for advertising, analytics, or profiling.
 ```
 
 ### 为什么需要向任意 HTTPS 地址发送请求？
@@ -206,5 +206,5 @@ No. All executable extension logic is included in the submitted package. Remote 
 ### 开发者是否能读取翻译内容或 API Key？
 
 ```text
-No. Vast Translator currently has no developer-owned backend. Translation content is sent directly from the extension service worker to the selected third-party service. Custom API keys remain in chrome.storage.local and are sent only to the corresponding configured origin for authorization.
+No. LexiLayer Translator currently has no developer-owned backend. Translation content is sent directly from the extension service worker to the selected third-party service. Custom API keys remain in chrome.storage.local and are sent only to the corresponding configured origin for authorization.
 ```

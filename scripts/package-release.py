@@ -10,7 +10,7 @@ package = json.loads((root / "package.json").read_text(encoding="utf-8"))
 version = package["version"]
 dist = root / "dist"
 release = root / "release"
-archive = release / f"vast-translator-{version}-chrome-web-store.zip"
+archive = release / f"lexilayer-translator-{version}-chrome-web-store.zip"
 checksum = archive.with_suffix(archive.suffix + ".sha256")
 
 if not (dist / "manifest.json").is_file():

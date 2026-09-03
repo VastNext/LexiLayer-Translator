@@ -4,6 +4,8 @@ import { resolve } from 'node:path';
 import { build } from 'vite';
 import { describe, expect, it } from 'vitest';
 
+import packageJson from '../../package.json' with { type: 'json' };
+
 interface BuiltManifest {
   action?: { default_popup?: string };
   options_page?: string;
@@ -15,6 +17,13 @@ interface BuiltManifest {
 }
 
 describe('生产构建', () => {
+  it('使用 LexiLayer 包名并保持不低于 0.7.1 的补丁版本', () => {
+    expect(packageJson.name).toBe('lexilayer-translator-chrome-plugin');
+    const [, minor, patch] = packageJson.version.split('.').map(Number);
+    expect(packageJson.version).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(minor * 1000 + patch).toBeGreaterThanOrEqual(7 * 1000 + 1);
+  });
+
   it('popup 与 options 文档声明简体中文语言', () => {
     const root = resolve(import.meta.dirname, '../..');
     for (const entry of ['popup.html', 'options.html']) {
@@ -86,7 +95,7 @@ describe('生产构建', () => {
       expect(icon).toBe(`icons/icon-${size}.png`);
       expect(existsSync(resolve(outputDirectory, icon!))).toBe(true);
     }
-    expect(existsSync(resolve(outputDirectory, 'icons/vast-translator.svg'))).toBe(true);
+    expect(existsSync(resolve(outputDirectory, 'icons/lexilayer-translator.svg'))).toBe(true);
     for (const locale of ['zh_CN', 'en']) {
       const path = resolve(outputDirectory, `_locales/${locale}/messages.json`);
       expect(existsSync(path)).toBe(true);
@@ -94,6 +103,7 @@ describe('生产构建', () => {
       expect(messages.extensionName?.message).toBeTruthy();
       expect(messages.extensionDescription?.message).toBeTruthy();
       expect(messages.commandTranslatePage?.message).toBeTruthy();
+      expect(messages.extensionName.message).toBe(locale === 'zh_CN' ? '语层翻译' : 'LexiLayer Translator');
     }
   });
 });

@@ -12,7 +12,7 @@ const requiredLocaleKeys = [
 
 describe('文档发布契约', () => {
   it('设计文档不包含绝对本机路径', async () => {
-    const design = await readFile(resolve('docs/plans/2026-08-27-vast-translator-design.md'), 'utf8');
+    const design = await readFile(resolve('docs/plans/2026-08-27-lexilayer-translator-design.md'), 'utf8');
 
     expect(design).not.toMatch(/[A-Za-z]:\\/);
   });
@@ -43,8 +43,8 @@ describe('文档发布契约', () => {
       readFile(resolve('package.json'), 'utf8'),
       readFile(resolve('README.md'), 'utf8'),
       readFile(resolve('PRIVACY.md'), 'utf8'),
-      readFile(resolve('docs/plans/2026-08-27-vast-translator-design.md'), 'utf8'),
-      readFile(resolve('docs/plans/2026-08-27-vast-translator-implementation.md'), 'utf8'),
+      readFile(resolve('docs/plans/2026-08-27-lexilayer-translator-design.md'), 'utf8'),
+      readFile(resolve('docs/plans/2026-08-27-lexilayer-translator-implementation.md'), 'utf8'),
     ]);
     const all = [readme, privacy, design, implementation].join('\n');
 

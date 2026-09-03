@@ -1,6 +1,6 @@
-# Vast Translator Chrome Web Store 上架准备
+# 语层翻译（LexiLayer Translator）Chrome Web Store 上架准备
 
-本文档包用于准备 Vast Translator 首次提交 Chrome Web Store。内容基于项目 `0.4.2`、Manifest V3、当前数据流和 2026-08-29 可查的 Chrome Web Store 官方要求整理。
+本文档包用于准备语层翻译（LexiLayer Translator）首次提交 Chrome Web Store。内容基于项目 `0.7.1`、Manifest V3、当前数据流和 2026-08-29 可查的 Chrome Web Store 官方要求整理。
 
 > 重要：本文档是发布工作底稿，不构成法律意见。Trader/Non-Trader 身份、第三方接口许可和隐私合规应由发布者根据实际经营方式与适用法律确认。
 
@@ -49,7 +49,7 @@
 - 页面正文只在用户主动发起页面翻译后扫描；
 - 划词翻译只处理用户主动选择的文本；
 - 不保存浏览历史、不建立用户画像、不进行跨站追踪；
-- 不向 Vast Translator 自营服务器上传数据，因为当前没有此类服务器。
+- 不向语层翻译（LexiLayer Translator）自营服务器上传数据，因为当前没有此类服务器。
 
 ### 2. `scripting`
 
@@ -73,14 +73,14 @@
 - 是否存在调用量、品牌或归属声明要求；
 - 是否需要改为具备明确许可的正式 API。
 
-商店文案不得暗示 Vast Translator 得到 Google 或 Microsoft 的赞助、认证或背书。
+商店文案不得暗示语层翻译（LexiLayer Translator）得到 Google 或 Microsoft 的赞助、认证或背书。
 
 ## 推荐发布顺序
 
 1. 完成权限、数据流和第三方服务条款审计。
 2. 更新并公开隐私政策，加入 Limited Use 声明。
 3. 建立产品主页、隐私政策页和支持页。
-4. 使用当前 `0.4.2` 上架准备版本，并在后续改动时按 SemVer 主动提升版本。
+4. 使用当前 `0.7.1` 上架准备版本，并在后续改动时按 SemVer 主动提升版本。
 5. 准备中英文商店文案和图片素材。
 6. 运行完整发布门禁并生成 ZIP。
 7. 注册开发者账号，完成邮箱与 Trader/Non-Trader 声明。

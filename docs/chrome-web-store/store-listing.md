@@ -7,13 +7,13 @@
 ### 中文名称
 
 ```text
-Vast Translator 双语翻译
+语层翻译
 ```
 
 ### 英文名称
 
 ```text
-Vast Translator
+LexiLayer Translator
 ```
 
 不要在名称中堆叠 `Google Translate`、`Bing`、`ChatGPT`、`DeepL` 等第三方品牌关键词。
@@ -33,7 +33,7 @@ Translate webpages and selected text with bilingual display, Google, Bing, or yo
 ## 中文长描述
 
 ```text
-Vast Translator 是一款专注于网页阅读的双语翻译扩展。它可以翻译网页主要内容、整个页面或用户主动选择的文本，并将译文直接显示在当前网页中。
+语层翻译是一款专注于网页阅读的双语翻译扩展。它可以翻译网页主要内容、整个页面或用户主动选择的文本，并将译文直接显示在当前网页中。
 
 主要功能
 • 翻译网页主要内容或整个页面
@@ -46,17 +46,17 @@ Vast Translator 是一款专注于网页阅读的双语翻译扩展。它可以�
 • 本地翻译缓存与简体中文、英文界面
 
 隐私与数据处理
-Vast Translator 不创建用户账号，不投放广告，不进行跨站追踪，也不运营接收翻译内容的自营服务器。页面正文只在用户主动发起页面翻译后处理；划词翻译只处理用户主动选择的文本。
+语层翻译不创建用户账号，不投放广告，不进行跨站追踪，也不运营接收翻译内容的自营服务器。页面正文只在用户主动发起页面翻译后处理；划词翻译只处理用户主动选择的文本。
 
 待翻译文本会发送到用户当前选择的 Google、Bing 或自定义 AI 服务。自定义 AI 的 API Key 保存在浏览器本地，只用于对应服务的请求授权。第三方服务可能按照自己的隐私政策、数据保留规则和费用规则处理请求。
 
-Vast Translator 是独立产品，与 Google 或 Microsoft 不存在隶属、赞助、认证或背书关系。
+语层翻译是独立产品，与 Google 或 Microsoft 不存在隶属、赞助、认证或背书关系。
 ```
 
 ## 英文长描述
 
 ```text
-Vast Translator is a bilingual translation extension designed for reading the web. It translates the main content of a webpage, the whole page, or text explicitly selected by the user, and displays translations directly on the current page.
+LexiLayer Translator is a bilingual translation extension designed for reading the web. It translates the main content of a webpage, the whole page, or text explicitly selected by the user, and displays translations directly on the current page.
 
 Key features
 • Translate main webpage content or the whole page
@@ -69,11 +69,11 @@ Key features
 • Local translation cache and Chinese/English user interfaces
 
 Privacy and data handling
-Vast Translator does not create user accounts, serve advertisements, perform cross-site tracking, or operate a developer-owned server that receives translation content. Page text is processed only after the user initiates webpage translation. Selection translation processes only text explicitly selected by the user.
+LexiLayer Translator does not create user accounts, serve advertisements, perform cross-site tracking, or operate a developer-owned server that receives translation content. Page text is processed only after the user initiates webpage translation. Selection translation processes only text explicitly selected by the user.
 
 Text to be translated is sent to the currently selected Google, Bing, or custom AI service. Custom AI API keys are stored locally in the browser and are used only to authorize requests to the corresponding service. Third-party services may process requests according to their own privacy, retention, and billing policies.
 
-Vast Translator is an independent product and is not affiliated with, sponsored by, certified by, or endorsed by Google or Microsoft.
+LexiLayer Translator is an independent product and is not affiliated with, sponsored by, certified by, or endorsed by Google or Microsoft.
 ```
 
 ## 分类和语言
@@ -146,13 +146,13 @@ Used to inject the packaged content.js on demand when the user requests translat
 中文：
 
 ```text
-Vast Translator 是通用网页翻译工具，需要读取用户主动要求翻译的当前网页可见文本，并在原网页中显示译文。该权限还允许 Service Worker 向内置翻译端点或用户明确配置的 OpenAI 兼容服务发送翻译请求。扩展不保存浏览历史、不建立用户画像、不进行跨站追踪，也不会在用户未发起翻译时上传页面正文。
+语层翻译是通用网页翻译工具，需要读取用户主动要求翻译的当前网页可见文本，并在原网页中显示译文。该权限还允许 Service Worker 向内置翻译端点或用户明确配置的 OpenAI 兼容服务发送翻译请求。扩展不保存浏览历史、不建立用户画像、不进行跨站追踪，也不会在用户未发起翻译时上传页面正文。
 ```
 
 英文：
 
 ```text
-Vast Translator is a general-purpose webpage translator. It needs access to visible text on the current webpage when the user requests translation and must display the translation on that same page. This permission also allows the service worker to send translation requests to built-in translation endpoints or an OpenAI-compatible service explicitly configured by the user. The extension does not retain browsing history, build user profiles, perform cross-site tracking, or upload page content before the user initiates translation.
+LexiLayer Translator is a general-purpose webpage translator. It needs access to visible text on the current webpage when the user requests translation and must display the translation on that same page. This permission also allows the service worker to send translation requests to built-in translation endpoints or an OpenAI-compatible service explicitly configured by the user. The extension does not retain browsing history, build user profiles, perform cross-site tracking, or upload page content before the user initiates translation.
 ```
 
 ## 首页与支持信息占位
@@ -160,9 +160,9 @@ Vast Translator is a general-purpose webpage translator. It needs access to visi
 提交前替换：
 
 ```text
-Homepage URL: https://<正式域名>/vast-translator
-Privacy Policy URL: https://<正式域名>/vast-translator/privacy
-Support URL: https://<正式域名>/vast-translator/support
+Homepage URL: https://<正式域名>/lexilayer-translator
+Privacy Policy URL: https://<正式域名>/lexilayer-translator/privacy
+Support URL: https://<正式域名>/lexilayer-translator/support
 Support email: <长期维护的支持邮箱>
 ```
 

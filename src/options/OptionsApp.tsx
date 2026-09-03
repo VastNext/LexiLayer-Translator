@@ -301,7 +301,7 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
 
   return <main className="shell options" data-theme={settings.theme}>
     <aside className="options-nav">
-      <div className="options-brand"><span className="brand-icon"><BrandMark /></span><strong>Vast</strong></div>
+      <div className="options-brand"><span className="brand-icon"><BrandMark label={t('extensionName')} /></span><strong>{t('extensionName')}</strong></div>
       <nav aria-label={t('settingsNavigation')}>
         <button onClick={() => navigateTo('builtin-engines')}>{t('translationEngine')}</button>
         <button onClick={() => navigateTo('custom-engines')}>{t('customAiEngines')}</button>
@@ -314,7 +314,7 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
       <small>v{packageJson.version}</small>
     </aside>
     <div className="options-content" ref={contentRef}>
-    <header className="masthead"><div><p className="eyebrow">VAST TRANSLATOR</p><h1>{t('optionsTitle')}</h1><p className="kicker">{t('optionsKicker')}</p></div><span className="version">v{packageJson.version}</span></header>
+    <header className="masthead"><div><p className="eyebrow">{t('extensionName')}</p><h1>{t('optionsTitle')}</h1><p className="kicker">{t('optionsKicker')}</p></div><span className="version">v{packageJson.version}</span></header>
 
     <section id="builtin-engines" className="section section--marked" aria-label={t('builtinEngines')}>
       <div className="section-header"><h2>{t('builtinEngines')}</h2><span className="section-index">01 / BUILTIN</span></div>

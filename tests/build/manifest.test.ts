@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { manifest } from '../../src/manifest';
 import packageJson from '../../package.json' with { type: 'json' };
+import enMessages from '../../public/_locales/en/messages.json' with { type: 'json' };
+import zhMessages from '../../public/_locales/zh_CN/messages.json' with { type: 'json' };
 
 describe('manifest', () => {
   it('声明完整的 Manifest V3 入口、权限与快捷键', () => {
@@ -38,6 +40,8 @@ describe('manifest', () => {
     expect(manifest.name).toBe('__MSG_extensionName__');
     expect(manifest.description).toBe('__MSG_extensionDescription__');
     expect(manifest.default_locale).toBe('zh_CN');
+    expect(zhMessages.extensionName.message).toBe('语层翻译');
+    expect(enMessages.extensionName.message).toBe('LexiLayer Translator');
      expect(manifest.icons).toEqual({
        16: 'icons/icon-16.png', 32: 'icons/icon-32.png',
        48: 'icons/icon-48.png', 128: 'icons/icon-128.png',

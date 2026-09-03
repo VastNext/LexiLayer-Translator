@@ -14,7 +14,7 @@ import { rule as substackRule } from './src/rules/sites/substack.ts';
 
 function emitManifest(): Plugin {
   return {
-    name: 'emit-extension-manifest',
+    name: 'emit-lexilayer-extension-manifest',
     generateBundle() {
       this.emitFile({
         type: 'asset',
@@ -30,7 +30,7 @@ function emitManifest(): Plugin {
 
 function buildClassicContentScript(): Plugin {
   return {
-    name: 'build-classic-content-script',
+    name: 'build-classic-lexilayer-content-script',
     async closeBundle() {
       await build({
         configFile: false,
@@ -39,7 +39,7 @@ function buildClassicContentScript(): Plugin {
           lib: {
             entry: resolve(import.meta.dirname, 'src/content/index.ts'),
             formats: ['iife'],
-            name: 'VastTranslatorContent',
+            name: 'LexiLayerContent',
             fileName: () => 'content.js',
           },
           outDir: resolve(import.meta.dirname, 'dist'),

@@ -1,5 +1,6 @@
 {
-  "extensionName": { "message": "Vast Translator 双语翻译" },
+  "extensionName": { "message": "语层翻译" },
+  "brandShort": { "message": "语层" },
   "extensionDescription": { "message": "使用 Google、Bing 或多个自定义 AI 进行网页双语与划词翻译。" },
   "commandTranslatePage": { "message": "切换当前页面翻译" },
   "popupCurrentPage": { "message": "当前页面" },
@@ -117,6 +118,7 @@
   "modeToggleHelp": { "message": "切换双语对照与仅译文" },
   "settingsNavigation": { "message": "设置导航" },
   "optionsTitle": { "message": "翻译设置" },
+  "optionsDocumentTitle": { "message": "语层翻译设置" },
   "appearanceTheme": { "message": "外观主题" },
   "dataPrivacy": { "message": "数据隐私" },
   "themeDescription": { "message": "五套主题共享相同功能结构，点击后立即保存。" },
