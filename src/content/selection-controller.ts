@@ -14,7 +14,7 @@ export interface SelectionDependencies {
   cancelFallback(requestId: string, engineId: string): Promise<void>;
   copy(text: string): Promise<void>;
   translateInline(text: string, context: string | undefined, engineId: string, targetLanguage: string): Promise<string>;
-  getPublicConfig(): Promise<{ targetLanguage: string; selectionContext: boolean; selectionPopupEnabled: boolean; inlineSelectionModifier: 'Control' | 'Alt' | 'Shift' | 'Meta' | 'Off'; activeEngineId: string; engines: Array<{ id: string; kind: string; name: string; ready: boolean; capabilities: { streaming: boolean } }> }>;
+  getPublicConfig(): Promise<{ targetLanguage: string; selectionContext: boolean; selectionPopupEnabled: boolean; inlineSelectionModifier: 'Control' | 'Alt' | 'Shift' | 'Meta' | 'Off'; activeEngineId: string; activeExpertByEngine?: Record<string, string>; engines: Array<{ id: string; kind: string; name: string; ready: boolean; capabilities: { streaming: boolean } }> }>;
   createView?(rect: DOMRect, actions: SelectionViewActions): SelectionViewHandle;
   events?: Pick<Document, 'addEventListener' | 'removeEventListener'>;
   now?: () => number;
@@ -66,7 +66,7 @@ export function createSelectionController(dependencies: SelectionDependencies) {
   let activeRequestId: string | undefined;
   let activeRequestEngineId: string | undefined;
   let remembered: RememberedSelection | undefined;
-  let config: Awaited<ReturnType<SelectionDependencies['getPublicConfig']>> = { targetLanguage: 'en', selectionContext: true, selectionPopupEnabled: true, inlineSelectionModifier: 'Control', activeEngineId: 'google', engines: [] };
+  let config: Awaited<ReturnType<SelectionDependencies['getPublicConfig']>> = { targetLanguage: 'en', selectionContext: true, selectionPopupEnabled: true, inlineSelectionModifier: 'Control', activeEngineId: 'google', activeExpertByEngine: {}, engines: [] };
   let selectionGeneration = 0;
   const events = dependencies.events ?? document;
   const now = dependencies.now ?? Date.now;
@@ -205,7 +205,7 @@ export function createSelectionController(dependencies: SelectionDependencies) {
       }
     });
     safePost({
-      type: 'translate-selection', requestId, engineId, text, sourceLanguage: 'auto', targetLanguage,
+      type: 'translate-selection', requestId, engineId, expertId: config.activeExpertByEngine?.[engineId], text, sourceLanguage: 'auto', targetLanguage,
       context: includeContext ? context : undefined,
     });
   }
@@ -294,8 +294,8 @@ export function registerSelectionController() {
       return response.data?.text ?? '';
     },
     async getPublicConfig() {
-      const response = await runtimeMessage<{ data?: { preferences?: { targetLanguage?: string; selectionContext?: boolean; selectionPopupEnabled?: boolean; inlineSelectionModifier?: 'Control' | 'Alt' | 'Shift' | 'Meta' | 'Off' }; activeEngineId?: string; availableEngines?: Array<{ id: string; kind: string; name: string; ready: boolean; capabilities: { streaming: boolean } }> } }>({ type: 'get-public-config' });
-      return { targetLanguage: response.data?.preferences?.targetLanguage ?? 'en', selectionContext: response.data?.preferences?.selectionContext ?? true, selectionPopupEnabled: response.data?.preferences?.selectionPopupEnabled ?? true, inlineSelectionModifier: response.data?.preferences?.inlineSelectionModifier ?? 'Control', activeEngineId: response.data?.activeEngineId ?? 'google', engines: response.data?.availableEngines ?? [{ id: 'google', kind: 'google', name: 'Google', ready: true, capabilities: { streaming: false } }, { id: 'bing', kind: 'bing', name: 'Bing', ready: true, capabilities: { streaming: false } }] };
+      const response = await runtimeMessage<{ data?: { preferences?: { targetLanguage?: string; selectionContext?: boolean; selectionPopupEnabled?: boolean; inlineSelectionModifier?: 'Control' | 'Alt' | 'Shift' | 'Meta' | 'Off' }; activeEngineId?: string; activeExpertByEngine?: Record<string, string>; availableEngines?: Array<{ id: string; kind: string; name: string; ready: boolean; capabilities: { streaming: boolean } }> } }>({ type: 'get-public-config' });
+      return { targetLanguage: response.data?.preferences?.targetLanguage ?? 'en', selectionContext: response.data?.preferences?.selectionContext ?? true, selectionPopupEnabled: response.data?.preferences?.selectionPopupEnabled ?? true, inlineSelectionModifier: response.data?.preferences?.inlineSelectionModifier ?? 'Control', activeEngineId: response.data?.activeEngineId ?? 'google', activeExpertByEngine: response.data?.activeExpertByEngine ?? {}, engines: response.data?.availableEngines ?? [{ id: 'google', kind: 'google', name: 'Google', ready: true, capabilities: { streaming: false } }, { id: 'bing', kind: 'bing', name: 'Bing', ready: true, capabilities: { streaming: false } }] };
     },
     createView: (rect, actions) => new SelectionView(document, rect, actions, t),
   });

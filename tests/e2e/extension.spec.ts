@@ -117,8 +117,15 @@ test('MV3、Popup 与 Options 无错误加载，自定义实例可测试并在�
   const popup = await openExtensionPage('popup.html');
   await expect(popup.getByText('Vast Translator', { exact: true })).toBeVisible();
   await popup.getByLabel('翻译引擎').selectOption('bing');
+  await expect.poll(() => popup.evaluate(async () => ((await chrome.storage.local.get('translatorSettings')).translatorSettings as { activeEngineId?: string } | undefined)?.activeEngineId)).toBe('bing');
   await popup.getByLabel('目标语言').selectOption('ja');
+  await expect.poll(() => popup.evaluate(async () => ((await chrome.storage.local.get('translatorSettings')).translatorSettings as { readingPreferences?: { targetLanguage?: string } } | undefined)?.readingPreferences?.targetLanguage)).toBe('ja');
   await popup.getByRole('button', { name: '双语对照' }).click();
+  await expect.poll(() => popup.evaluate(async () => {
+    const value = await chrome.storage.local.get('translatorSettings');
+    const settings = value.translatorSettings as { activeEngineId?: string; readingPreferences?: { targetLanguage?: string; displayMode?: string } } | undefined;
+    return [settings?.activeEngineId, settings?.readingPreferences?.targetLanguage, settings?.readingPreferences?.displayMode];
+  })).toEqual(['bing', 'ja', 'translation']);
   await popup.close();
   const reopenedPopup = await openExtensionPage('popup.html');
   await expect(reopenedPopup.getByLabel('翻译引擎')).toHaveValue('bing');
@@ -164,6 +171,7 @@ test('MV3、Popup 与 Options 无错误加载，自定义实例可测试并在�
   expect(await reopened.evaluate(() => JSON.stringify(localStorage))).not.toContain(API_KEY);
   const downloadPromise = reopened.waitForEvent('download');
   await reopened.getByRole('button', { name: '导出配置' }).click();
+  await reopened.getByRole('button', { name: '不含 API Key' }).click();
   const download = await downloadPromise;
   const exportPath = await download.path();
   if (!exportPath) throw new Error('导出配置下载失败');
@@ -207,6 +215,7 @@ test('新安装默认 Google 且有 Bing，多实例排序、默认、密钥、�
 
   const downloadPromise = options.waitForEvent('download');
   await options.getByRole('button', { name: '导出配置' }).click();
+  await options.getByRole('button', { name: '不含 API Key' }).click();
   const exportPath = await (await downloadPromise).path();
   if (!exportPath) throw new Error('导出配置下载失败');
   const exported = await import('node:fs/promises').then(({ readFile }) => readFile(exportPath, 'utf8'));
@@ -446,9 +455,76 @@ test('整个页面翻译 findryai 面包屑四个文本叶', async ({ context, s
   const page = await openFixture(context, server.selectionFixtureUrl);
   const popup = await openPopupForFixture(openExtensionPage, page);
   await clickPopupButton(popup, page, '翻译 (Alt + A)');
+  const breadcrumb = page.getByRole('navigation', { name: 'Breadcrumb' });
   for (const text of ['Home', 'Category', 'Image Generation', 'trainengine ai']) {
-    await expect(page.getByText(text, { exact: true }).locator('+ [data-vast-translator]')).toHaveCount(1);
+    await expect(breadcrumb.getByText(text, { exact: true }).locator('+ [data-vast-translator]')).toHaveCount(1);
   }
+});
+
+test('findryai 仅译文模式保留直接文本链接与按钮交互，不显示 sr-only 译文', async ({ context, server, openExtensionPage }) => {
+  test.slow();
+  const options = await openExtensionPage('options.html'); await saveConfiguration(options, server.baseUrl); await options.close();
+  const page = await openFixture(context, server.selectionFixtureUrl);
+  await page.evaluate(() => {
+    (window as unknown as { clicked: string[] }).clicked = [];
+    for (const id of ['direct-home', 'direct-category', 'theme-button', 'signin-button']) {
+      document.getElementById(id)?.addEventListener('click', (event) => { event.preventDefault(); (window as unknown as { clicked: string[] }).clicked.push(id); });
+    }
+  });
+  const popup = await openPopupForFixture(openExtensionPage, page);
+  await popup.getByRole('button', { name: '双语对照' }).click();
+  await expect.poll(() => popup.evaluate(async () => {
+    const value = await chrome.storage.local.get('translatorSettings');
+    return (value.translatorSettings as { readingPreferences?: { displayMode?: string } } | undefined)?.readingPreferences?.displayMode;
+  })).toBe('translation');
+  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+
+  for (const [id, href] of [['direct-home', '/'], ['direct-category', '/category']] as const) {
+    const link = page.locator(`#${id}`);
+    await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute('href', href);
+    await expect(link.locator(':scope > [data-vast-source]')).toBeHidden();
+    await expect(link.locator(':scope > [data-vast-translator]')).toHaveCount(1);
+    await link.click();
+  }
+  await expect(page.locator('#theme-button')).toBeVisible();
+  await expect(page.locator('#theme-icon')).toHaveCount(1);
+  await expect(page.locator('#theme-button [data-vast-translator]')).toHaveCount(0);
+  await page.locator('#theme-button').click();
+  await expect(page.locator('#signin-button')).toBeVisible();
+  await expect(page.locator('#signin-icon')).toHaveCount(1);
+  await expect(page.locator('#signin-text')).toBeHidden();
+  await page.locator('#signin-button').click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { clicked: string[] }).clicked)).toEqual(['direct-home', 'direct-category', 'theme-button', 'signin-button']);
+  await popup.close();
+  await page.close();
+});
+
+test('启用并选择内置 AI 专家后使用对应提示词翻译', async ({ context, server, openExtensionPage }) => {
+  test.slow();
+  const options = await openExtensionPage('options.html');
+  await saveConfiguration(options, server.baseUrl);
+  await options.getByRole('checkbox', { name: '科技类翻译大师 启用' }).click();
+  await expect(options.getByRole('status')).toHaveText('专家状态已更新');
+  await expect.poll(() => options.evaluate(async () => {
+    const value = await chrome.storage.local.get('translatorSettings');
+    return (value.translatorSettings as { experts?: Array<{ id: string; enabled: boolean }> } | undefined)?.experts?.find((expert) => expert.id === 'technology')?.enabled;
+  })).toBe(true);
+  await options.close();
+
+  const page = await openFixture(context, server.fixtureUrl);
+  const popup = await openPopupForFixture(openExtensionPage, page);
+  const selectedEngineId = await popup.getByLabel('翻译引擎').inputValue();
+  await popup.getByLabel('AI 专家').selectOption('technology');
+  await expect.poll(() => popup.evaluate(async (engineId) => {
+    const value = await chrome.storage.local.get('translatorSettings');
+    return (value.translatorSettings as { activeExpertByEngine?: Record<string, string> } | undefined)?.activeExpertByEngine?.[engineId];
+  }, selectedEngineId)).toBe('technology');
+  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+  await expect(page.locator('[data-vast-state="translated"]')).toHaveCount(5);
+  await expect.poll(() => server.requests.some((request) => JSON.stringify(request.body).includes('For software terminology'))).toBe(true);
+  await popup.close();
+  await page.close();
 });
 
 test('整个页面翻译 Angular 管理菜单的标题、说明与链接文字叶', async ({ context, server, openExtensionPage }) => {
@@ -474,14 +550,16 @@ test('整个页面翻译 Angular 管理菜单的标题、说明与链接文字�
 });
 
 test('恶意页面篡改划词宿主视觉后真实点击被拒绝', async ({ context, server, openExtensionPage }) => {
+  test.slow();
   const options = await openExtensionPage('options.html'); await saveConfiguration(options, server.baseUrl); await options.close();
   const page = await openFixture(context, server.fixtureUrl);
   const paragraph = page.locator('#selection'); const box = await paragraph.boundingBox(); if (!box) throw new Error('段落不可见');
   await page.mouse.move(box.x + 8, box.y + box.height / 2); await page.mouse.down(); await page.mouse.move(box.x + box.width - 8, box.y + box.height / 2, { steps: 10 }); await page.mouse.up();
   const host = page.locator('[data-vast-selection-host]'); await expect(host).toBeVisible();
   await host.evaluate((element) => { (element as HTMLElement).style.setProperty('transform', 'translate(300px, 0)', 'important'); });
+  await page.waitForTimeout(50);
   const moved = await host.boundingBox(); if (!moved) throw new Error('宿主不可见');
-  await page.mouse.click(moved.x + 16, moved.y + 16);
+  await page.mouse.click(moved.x + moved.width / 2, moved.y + moved.height / 2);
   await expect(host).toHaveCount(0);
   expect(server.requests.filter((request) => request.body.stream === true)).toHaveLength(0);
 });

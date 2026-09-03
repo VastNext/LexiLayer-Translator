@@ -134,6 +134,22 @@ describe('scanParagraphElements', () => {
     expect(elements.filter((element) => element.id === 'body')).toHaveLength(1);
   });
 
+  it('页脚列表中的直接文本链接作为链接元素候选返回', () => {
+    document.body.innerHTML = '<footer><ul><li><a id="home" href="/">Home</a></li><li><a id="category" href="/category">Category</a></li></ul></footer>';
+    const elements = scanParagraphElements(document, rule, 'whole-page');
+
+    expect(elements.map((element) => element.id)).toEqual(['home', 'category']);
+    expect(elements.every((element) => element.tagName === 'A')).toBe(true);
+  });
+
+  it('排除 sr-only 与 visually-hidden 辅助文本，避免隐藏文案变为可见译文', () => {
+    document.body.innerHTML = '<main><button><svg></svg><span class="sr-only">Toggle theme</span></button><a href="/"><span class="visually-hidden">Home accessibility label</span><span id="visible">Home</span></a></main>';
+    const elements = scanParagraphElements(document, rule, 'whole-page');
+
+    expect(elements.map((element) => element.textContent?.trim())).toEqual(['Home']);
+    expect(elements[0].id).toBe('visible');
+  });
+
   it.each([
     ['<li id="outer"><p id="inner">列表段落</p></li>', 'inner'],
     ['<blockquote id="outer"><p id="inner">引用段落</p></blockquote>', 'inner'],

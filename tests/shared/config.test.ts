@@ -49,6 +49,8 @@ describe('v2 settings', () => {
         selectionPopupEnabled: true,
         inlineSelectionModifier: 'Control',
       },
+      experts: expect.arrayContaining([expect.objectContaining({ id: 'technology', kind: 'builtin', enabled: false })]),
+      activeExpertByEngine: {},
     });
     expect(resolveEngine(DEFAULT_SETTINGS)).toMatchObject({ id: 'google', kind: 'google' });
   });
@@ -117,6 +119,7 @@ describe('migration and normalization', () => {
     expect(migrateSettings(legacy)).toEqual({
       schemaVersion: 2,
       mvpDefaultsVersion: 1,
+      expertDefaultsVersion: 6,
       theme: 'pearl-reader',
       readingPreferences: {
         targetLanguage: 'zh-Hans', displayMode: 'translation', userInstruction: '保留术语',
@@ -147,6 +150,47 @@ describe('migration and normalization', () => {
     expect(normalizeSettings(legacyV2).readingPreferences).toMatchObject({
       selectionPopupEnabled: true,
       inlineSelectionModifier: 'Control',
+    });
+  });
+
+  it('旧专家默认版本迁移到 VastNext ID，并保留启用状态与底座映射', () => {
+    const legacy = structuredClone(settings) as Omit<Settings, 'expertDefaultsVersion'> & { expertDefaultsVersion?: number };
+    legacy.expertDefaultsVersion = 1;
+    legacy.experts = legacy.experts?.map((expert) => ({ ...expert, enabled: true }));
+    legacy.activeExpertByEngine = { 'custom-work': 'tech' };
+
+    const normalized = normalizeSettings(legacy);
+
+    expect(normalized.expertDefaultsVersion).toBe(6);
+    expect(normalized.experts).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'technology', enabled: true })]));
+    expect(normalized.activeExpertByEngine).toEqual({ 'custom-work': 'technology' });
+  });
+
+  it('导入旧专家 ID 时迁移到 VastNext 目录且保留选择', () => {
+    const legacy = structuredClone(settings);
+    legacy.expertDefaultsVersion = 2 as never;
+    legacy.experts = [{ id: 'tech', kind: 'builtin', name: '科技类翻译大师', description: '旧技术专家', prompt: '', enabled: true, order: 0 }];
+    legacy.activeExpertByEngine = { 'custom-work': 'tech' };
+
+    const imported = importSettings(legacy, settings, true);
+
+    expect(imported.expertDefaultsVersion).toBe(6);
+    expect(imported.experts).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'technology', enabled: true })]));
+    expect(imported.activeExpertByEngine).toEqual({ 'custom-work': 'technology' });
+  });
+
+  it('旧专家目录损坏时安全回退，不因非法 ID 映射抛异常', () => {
+    const legacy = structuredClone(settings) as unknown as Record<string, unknown>;
+    legacy.expertDefaultsVersion = 2;
+    legacy.experts = [null, { id: 42, kind: 'builtin' }, { id: 'tech', kind: 'builtin', enabled: true }];
+    legacy.activeExpertByEngine = { 'custom-work': 42 };
+
+    expect(() => normalizeSettings(legacy)).not.toThrow();
+    expect(normalizeSettings(legacy)).toMatchObject({
+      activeEngineId: 'custom-work',
+      expertDefaultsVersion: 6,
+      activeExpertByEngine: {},
+      experts: expect.arrayContaining([expect.objectContaining({ id: 'technology', enabled: true })]),
     });
   });
 
