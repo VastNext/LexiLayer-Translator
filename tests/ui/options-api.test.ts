@@ -60,4 +60,15 @@ describe('Options v2 API', () => {
 
     expect(api).not.toHaveProperty('saveSettings');
   });
+
+  it('导入 API Key 只有显式允许时才附带 allowApiKeys', async () => {
+    const sendMessage = vi.fn(async () => ({ ok: true }));
+    const api = createOptionsApi({ runtime: { sendMessage } });
+
+    await api.importSettings({ schemaVersion: 2 });
+    await api.importSettings({ schemaVersion: 2 }, true);
+
+    expect(sendMessage).toHaveBeenNthCalledWith(1, { type: 'import-settings', settings: { schemaVersion: 2 } });
+    expect(sendMessage).toHaveBeenNthCalledWith(2, { type: 'import-settings', settings: { schemaVersion: 2 }, allowApiKeys: true });
+  });
 });

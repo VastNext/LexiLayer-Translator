@@ -45,6 +45,9 @@ function batchFixtureHtml(): string {
 
 function selectionFixtureHtml(): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Selection Fixture</title></head><body><main>
+    <header><a id="brand-link" href="/brand"><img alt="Logo"><span id="brand-text">Findry AI</span></a><nav><ul>
+      <li><a id="direct-home" href="/">Home</a></li><li><a id="direct-category" href="/category">Category</a></li>
+    </ul></nav><button id="theme-button"><svg id="theme-icon"><circle cx="12" cy="12" r="4"></circle></svg><span class="sr-only">Toggle theme</span></button><button id="signin-button"><span id="signin-text">Sign In</span><svg id="signin-icon"><path d="M5 12h14"></path></svg></button></header>
     <nav aria-label="Breadcrumb"><ol>
       <li><a href="/"><span>Home</span></a></li>
       <li aria-hidden="true"><svg><path /></svg></li>

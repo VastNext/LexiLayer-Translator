@@ -158,4 +158,27 @@ describe('ParagraphStore 与 DomRenderer', () => {
     expect(wrapper?.tagName).toBe('SPAN');
     expect(document.querySelector('#button')?.contains(wrapper)).toBe(true);
   });
+
+  it('直接文本链接在仅译文模式下保留链接本体、href 和点击能力', () => {
+    document.body.innerHTML = '<ul><li><a id="source" href="/category">Category</a></li></ul>';
+    source = document.querySelector('#source') as unknown as HTMLParagraphElement;
+    const originalHtml = source.innerHTML;
+    const paragraph = store.getOrCreate(source);
+    const token = renderer.beginTask(paragraph);
+    let clicked = 0;
+    source.addEventListener('click', (event) => { event.preventDefault(); clicked += 1; });
+
+    renderer.renderTranslation(paragraph, '分类', { ...token, mode: 'translation-only', placement: 'after' });
+
+    expect(source.hidden).toBe(false);
+    expect(source.getAttribute('href')).toBe('/category');
+    expect(source.querySelector(':scope > [data-vast-source]')).toHaveProperty('hidden', true);
+    expect(source.querySelector(':scope > [data-vast-translator]')?.textContent).toBe('分类');
+    source.click();
+    expect(clicked).toBe(1);
+
+    renderer.restore(paragraph);
+    expect(source.innerHTML).toBe(originalHtml);
+    expect(source.getAttribute('href')).toBe('/category');
+  });
 });

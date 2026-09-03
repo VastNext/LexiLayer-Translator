@@ -7,7 +7,7 @@ import { createOptionsApi } from './api';
 const v2Api = createOptionsApi(chrome);
 const api = {
   ...v2Api,
-  exportSettings(config: import('../shared/config').SafeSettings) {
+  exportSettings(config: import('../shared/config').SafeSettings | import('../shared/config').Settings) {
     const url = URL.createObjectURL(new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' }));
     const anchor = document.createElement('a');
     anchor.href = url;

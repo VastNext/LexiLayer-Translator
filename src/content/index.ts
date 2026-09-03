@@ -123,7 +123,7 @@ export function createContentController(dependencies: ContentControllerDependenc
       const tokens = new Map(paragraphs.map((paragraph) => [paragraph.id, dependencies.beginRender(paragraph)]));
       const results = await dependencies.translate({
         taskId, engineId: lastCommand.engineId!, sourceLanguage: lastCommand.sourceLanguage ?? 'auto',
-        targetLanguage: lastCommand.targetLanguage!, segments: paragraphs.map((paragraph) => ({ id: paragraph.id, text: paragraph.sourceText })),
+      targetLanguage: lastCommand.targetLanguage!, segments: paragraphs.map((paragraph) => ({ id: paragraph.id, text: paragraph.sourceText })),
       });
       if (currentGeneration !== generation) return;
       const byId = new Map(results.map((result) => [result.id, result.text]));

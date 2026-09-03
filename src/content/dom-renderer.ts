@@ -85,7 +85,8 @@ export class DomRenderer {
   }
 
   private requiresInternalWrapper(element: HTMLElement): boolean {
-    return ['TD', 'TH', 'LI'].includes(element.tagName);
+    return ['TD', 'TH', 'LI'].includes(element.tagName)
+      || element.matches('a,button,[role="link"],[role="button"]');
   }
 
   private requiresInlineWrapper(element: HTMLElement): boolean {
@@ -94,7 +95,8 @@ export class DomRenderer {
 
   private ensureSourceWrapper(paragraph: ParagraphRecord): HTMLElement {
     if (paragraph.sourceWrapper) return paragraph.sourceWrapper;
-    const wrapper = paragraph.element.ownerDocument.createElement('div');
+    const interactive = paragraph.element.matches('a,button,[role="link"],[role="button"]');
+    const wrapper = paragraph.element.ownerDocument.createElement(interactive ? 'span' : 'div');
     wrapper.dataset.vastSource = '';
     wrapper.append(...paragraph.element.childNodes);
     paragraph.element.append(wrapper);

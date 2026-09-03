@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Vast Translator · AI 专家设置优化稿</title>
+  <link rel="stylesheet" href="expert-settings-refinement.css">
+</head>
+<body>
+  <header class="preview-bar">
+    <a href="index.html">← 返回总览</a>
+    <div><strong>AI 专家设置 · 优化稿</strong><span>针对章节顺序、折叠、密度和密钥导入状态</span></div>
+    <button id="toggle-all">全部展开</button>
+  </header>
+
+  <main class="stage">
+    <section class="options-frame" aria-label="设置页原型">
+      <aside class="side-nav">
+        <div class="brand"><span class="brand-icon"><svg viewBox="0 0 48 48"><path d="M11.5 14 24 36 37.5 10.5"/><circle cx="11.5" cy="14" r="3.5"/><circle cx="24" cy="36" r="3.5"/><circle cx="37.5" cy="10.5" r="3.5"/></svg></span><strong>Vast</strong></div>
+        <nav>
+          <button data-target="builtin">翻译引擎</button>
+          <button data-target="custom-ai">自定义 AI</button>
+          <button class="active" data-target="experts">AI 专家</button>
+          <button>阅读偏好</button>
+          <button>划词翻译</button>
+          <button>外观主题</button>
+          <button>数据隐私</button>
+        </nav>
+        <small>v0.5.0</small>
+      </aside>
+
+      <div class="content">
+        <header class="masthead"><div><p>VAST TRANSLATOR</p><h1>翻译设置</h1><span>连接、专家与阅读偏好</span></div><b>v0.5.0</b></header>
+
+        <section id="builtin" class="section compact-section">
+          <header><div><h2>内置翻译引擎</h2><p>无需 API Key，可直接使用。</p></div><span>01 / BUILTIN</span></header>
+          <div class="builtin-grid"><article><strong>Google</strong><small>当前默认</small></article><article><strong>Bing</strong><small>已启用</small></article></div>
+        </section>
+
+        <section id="custom-ai" class="section">
+          <header><div><h2>自定义 AI</h2><p>每个实例独立保存 Base URL、模型和 API Key。点击实例标题展开设置。</p></div><span>02 / AI · 3</span></header>
+          <div class="import-warning"><span>!</span><div><strong>已导入 3 个 AI 实例，但 API Key 不会随配置文件导入</strong><p>这是安全设计。请为标记为“需要 API Key”的实例补充密钥，Popup 才能使用。</p></div><button data-open="agnes">补充 Agnes 密钥</button></div>
+
+          <div class="ai-list">
+            <article class="ai-item" data-ai="openrouter">
+              <button class="ai-summary" aria-expanded="false"><span class="chevron">›</span><span class="ai-dot ready">O</span><span><strong>OpenRouter</strong><small>claude-3.7-sonnet · 已配置</small></span><em>可用</em></button>
+              <div class="ai-details"><div class="field-grid"><label>名称<input value="OpenRouter"></label><label>模型<input value="claude-3.7-sonnet"></label><label class="wide">Base URL<input value="https://openrouter.ai/api/v1"></label><label class="wide">API Key<input type="password" value="sk-or-••••••••"></label></div><div class="actions"><button class="primary">保存实例</button><button>测试连接</button></div></div>
+            </article>
+
+            <article class="ai-item needs-key" data-ai="agnes">
+              <button class="ai-summary" aria-expanded="false"><span class="chevron">›</span><span class="ai-dot warning">A</span><span><strong>Agnes</strong><small>agnes-translation · 配置已导入</small></span><em>需要 API Key</em></button>
+              <div class="ai-details"><div class="key-callout"><strong>为什么 Popup 显示“Agnes 未设置”？</strong><p>配置导入只恢复名称、Base URL 和模型，不导入 API Key。填写并保存密钥后即可使用。</p></div><div class="field-grid"><label>名称<input value="Agnes"></label><label>模型<input value="agnes-translation"></label><label class="wide">Base URL<input value="https://agnes.example.com/v1"></label><label class="wide">API Key<input type="password" placeholder="粘贴 Agnes API Key"></label></div><div class="actions"><button class="primary">保存并启用</button><button>测试连接</button></div></div>
+            </article>
+
+            <article class="ai-item" data-ai="local">
+              <button class="ai-summary" aria-expanded="false"><span class="chevron">›</span><span class="ai-dot ready">L</span><span><strong>Local Qwen</strong><small>qwen3:8b · 本机服务</small></span><em>可用</em></button>
+              <div class="ai-details"><div class="field-grid"><label>名称<input value="Local Qwen"></label><label>模型<input value="qwen3:8b"></label><label class="wide">Base URL<input value="http://127.0.0.1:11434/v1"></label><label class="wide">API Key<input type="password" value="local"></label></div></div>
+            </article>
+          </div>
+          <button class="add compact-action">＋ 新增自定义 AI</button>
+        </section>
+
+        <section id="experts" class="section experts-section">
+          <header><div><h2>AI 专家</h2><p>启用后会出现在 Popup 的 AI 专家选择器中。专家提示词只发送给自定义 AI。</p></div><span>03 / EXPERTS · 25</span></header>
+          <div class="expert-toolbar"><label><span>搜索</span><input id="expert-search" placeholder="搜索科技、医学、论文…"></label><div class="chips"><button class="selected">全部</button><button>专业</button><button>内容</button><button>社区</button></div><button class="chip-action">＋ 自定义专家</button></div>
+          <div class="expert-grid" id="expert-grid">
+            <label class="expert enabled" data-name="科技类翻译大师 Technology"><span class="expert-symbol blue">T</span><span><strong>科技类翻译大师</strong><small>Technology Expert</small></span><input type="checkbox" checked></label>
+            <label class="expert enabled" data-name="医学翻译大师 Medical"><span class="expert-symbol green">M</span><span><strong>医学翻译大师</strong><small>Medical Expert</small></span><input type="checkbox" checked></label>
+            <label class="expert enabled" data-name="论文翻译专家 Paper"><span class="expert-symbol violet">P</span><span><strong>论文翻译专家</strong><small>Academic Paper</small></span><input type="checkbox" checked></label>
+            <label class="expert" data-name="法律翻译专家 Legal"><span class="expert-symbol amber">L</span><span><strong>法律翻译专家</strong><small>Legal Expert</small></span><input type="checkbox"></label>
+            <label class="expert enabled" data-name="设计师 Designer"><span class="expert-symbol rose">D</span><span><strong>设计师</strong><small>Art & Design</small></span><input type="checkbox" checked></label>
+            <label class="expert enabled" data-name="金融翻译专家 Financial"><span class="expert-symbol cyan">F</span><span><strong>金融翻译专家</strong><small>Financial Expert</small></span><input type="checkbox" checked></label>
+            <label class="expert" data-name="新闻翻译专家 News"><span class="expert-symbol red">N</span><span><strong>新闻翻译专家</strong><small>News Expert</small></span><input type="checkbox"></label>
+            <label class="expert enabled" data-name="小说翻译专家 Fiction"><span class="expert-symbol plum">F</span><span><strong>小说翻译专家</strong><small>Fiction Expert</small></span><input type="checkbox" checked></label>
+            <label class="expert enabled" data-name="GitHub 专家"><span class="expert-symbol dark">GH</span><span><strong>GitHub 专家</strong><small>Code & Issues</small></span><input type="checkbox" checked></label>
+            <label class="expert" data-name="Reddit 专家"><span class="expert-symbol orange">R</span><span><strong>Reddit 专家</strong><small>Community Tone</small></span><input type="checkbox"></label>
+            <label class="expert enabled" data-name="通俗英语 Plain English"><span class="expert-symbol sky">PE</span><span><strong>通俗英语专家</strong><small>Plain English</small></span><input type="checkbox" checked></label>
+            <label class="expert enabled" data-name="Web3 翻译专家"><span class="expert-symbol indigo">W3</span><span><strong>Web3 翻译专家</strong><small>Web3 Expert</small></span><input type="checkbox" checked></label>
+          </div>
+          <p class="expert-count"><strong id="enabled-count">9</strong> 个专家已启用 · Popup 只展示已启用专家</p>
+        </section>
+      </div>
+    </section>
+
+    <aside class="popup-column">
+      <p class="column-label">POPUP · 两种状态</p>
+      <article class="popup-card">
+        <header><div class="brand mini"><span class="brand-icon"><svg viewBox="0 0 48 48"><path d="M11.5 14 24 36 37.5 10.5"/><circle cx="11.5" cy="14" r="3.5"/><circle cx="24" cy="36" r="3.5"/><circle cx="37.5" cy="10.5" r="3.5"/></svg></span><strong>Vast Translator</strong></div><button>⚙</button></header>
+        <div class="languages"><label>源语言<select><option>自动检测</option></select></label><i>→</i><label>目标语言<select><option>简体中文</option></select></label></div>
+        <label class="popup-field">翻译引擎<select id="popup-engine"><option value="openrouter">OpenRouter</option><option value="agnes">Agnes · 未设置</option><option value="google">Google</option></select></label>
+        <label class="popup-field" id="popup-expert">AI 专家<select><option>科技类翻译大师</option><option>医学翻译大师</option><option>论文翻译专家</option><option>设计师</option></select></label>
+        <div class="popup-warning" id="popup-warning"><strong>Agnes 缺少 API Key</strong><span>打开设置补充密钥后即可选择专家翻译。</span><button data-open="agnes">去设置</button></div>
+        <div class="translate-row"><button>◫</button><button class="primary">翻译 (Alt + A)</button></div>
+      </article>
+      <div class="notes"><strong>这个状态要解决的问题</strong><ol><li>不把“配置已导入”误认为“密钥已导入”。</li><li>直接说明未设置的原因。</li><li>给出一键跳转到对应 AI 实例的修复入口。</li></ol></div>
+    </aside>
+  </main>
+  <script src="expert-settings-refinement.js"></script>
+</body>
+</html>

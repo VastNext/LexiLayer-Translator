@@ -14,7 +14,7 @@ Vast Translator 是 Manifest V3 Chrome 网页与划词翻译扩展：Google 默�
 
 - 只在用户主动发起页面翻译后扫描正文；划词只处理用户主动选择的文本。
 - 不运营接收翻译内容的自营服务器，不投放广告，不进行跨站追踪。
-- API Key 只保存在 `chrome.storage.local`，不返回网页、不写入导出文件或错误消息。
+- API Key 默认只保存在 `chrome.storage.local`，不返回网页、不写入错误消息；只有用户在导出时明确确认，才写入配置文件。
 - Google/Bing 不自动互相降级；用户选择哪个引擎就使用哪个引擎。
 - DOM 扫描优先识别可见 Text Node 和语义段落。站点规则只做排除、范围和特殊例外，不按网站持续堆叠 class 白名单。
 - `research/private-reference/` 是被 Git 忽略的闭源研究资料。不得复制、提交或据此复刻专有规则。
