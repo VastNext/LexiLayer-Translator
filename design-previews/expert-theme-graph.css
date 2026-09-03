@@ -1,0 +1,10 @@
+@import url('./expert-shared.css');
+:root { --canvas:#f1f5f9; --topbar:#0f172a; --surface:#ffffff; --input:#f8fafc; --soft:#e2e8f0; --hover:#f1f5f9; --ink:#0f172a; --muted:#64748b; --line:#dbe3ee; --line-strong:#b7c4d6; --accent:#0f766e; --accent-soft:#dff7f2; --focus:#0f766e; --primary:#0f766e; --primary-hover:#115e59; --on-primary:#ffffff; --brand-bg:#14b8a6; --brand-fg:#042f2e; --beacon:#f59e0b; --success:#15803d; --success-soft:#e2f5e8; --code-bg:#0f172a; --code:#b6f2ea; --radius-sm:7px; --radius-lg:10px; --avatar-radius:7px; --shadow:0 16px 38px rgb(15 23 42 / 10%); --button-shadow:none; }
+.topbar { color: #f8fafc; }
+.topbar .brand, .topbar .top-actions span { color: #f8fafc; }
+.top-actions button, .top-actions a { color: #cbd5e1; }
+.top-actions button { border-color: #475569; }
+.page { max-width: 1420px; }
+.workspace { grid-template-columns: 315px minmax(0, 1fr); }
+.detail-grid { grid-template-columns: .9fr 1.1fr; }
+.binding { border-left: 3px solid var(--accent); }

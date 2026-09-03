@@ -1,4 +1,5 @@
 import { assertSafeBaseUrl } from './url';
+import { canonicalExpertId, defaultExperts, MAX_EXPERTS, MAX_EXPERT_PROMPT_LENGTH, type Expert } from './experts';
 
 export type DisplayMode = 'bilingual' | 'translation';
 export type InlineSelectionModifier = 'Control' | 'Alt' | 'Shift' | 'Meta' | 'Off';
@@ -47,10 +48,13 @@ export type Engine = GoogleEngine | BingEngine | CustomAiEngine;
 export interface Settings {
   schemaVersion: 2;
   mvpDefaultsVersion?: 1;
+  expertDefaultsVersion?: 6;
   theme: Theme;
   readingPreferences: ReadingPreferences;
   engines: Engine[];
   activeEngineId: string;
+  experts?: Expert[];
+  activeExpertByEngine?: Record<string, string>;
 }
 
 export type PublicEngineSummary = Pick<Engine, 'id' | 'kind' | 'name' | 'enabled' | 'order'>;
@@ -64,6 +68,7 @@ export const MAX_CUSTOM_ENGINES = 20;
 export const DEFAULT_SETTINGS: Settings = {
   schemaVersion: 2,
   mvpDefaultsVersion: 1,
+  expertDefaultsVersion: 6,
   theme: 'pearl-reader',
   readingPreferences: {
     sourceLanguage: 'auto',
@@ -81,6 +86,8 @@ export const DEFAULT_SETTINGS: Settings = {
     { id: 'bing', kind: 'bing', name: 'Bing', enabled: true, order: 1 },
   ],
   activeEngineId: 'google',
+  experts: defaultExperts(),
+  activeExpertByEngine: {},
 };
 
 const DANGEROUS_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
@@ -129,7 +136,7 @@ export function validateEngine(engine: unknown): string[] {
     } else {
       try { assertSafeBaseUrl(engine.baseUrl); } catch (error) { errors.push(error instanceof Error ? error.message : 'Base URL 无效'); }
     }
-    if (typeof engine.model !== 'string' || !engine.model.trim()) errors.push('模型不能为空');
+      if (typeof engine.model !== 'string' || !engine.model.trim()) errors.push('模型不能为空');
     if (typeof engine.apiKey !== 'string') errors.push('API Key 必须是字符串');
   } else {
     errors.push('翻译引擎类型无效');
@@ -143,6 +150,17 @@ export function validateSettings(settings: unknown): string[] {
   if (settings.schemaVersion !== 2) errors.push('设置版本无效');
   if (!THEMES.includes(settings.theme as Theme)) errors.push('外观主题无效');
   errors.push(...validatePreferences(settings.readingPreferences));
+  if (settings.experts !== undefined && (!Array.isArray(settings.experts) || settings.experts.length > MAX_EXPERTS)) errors.push('AI 专家列表无效');
+  else if (Array.isArray(settings.experts)) {
+    const expertIds = settings.experts.map((expert) => isRecord(expert) ? expert.id : undefined);
+    if (expertIds.some((id) => typeof id !== 'string') || new Set(expertIds).size !== expertIds.length) errors.push('AI 专家 ID 不能重复');
+    for (const expert of settings.experts) {
+      if (!isRecord(expert) || !['builtin', 'custom'].includes(String(expert.kind)) || typeof expert.id !== 'string' || typeof expert.name !== 'string' || !expert.name.trim() || typeof expert.description !== 'string' || (expert.kind === 'custom' && (typeof expert.prompt !== 'string' || !expert.prompt.trim())) || (expert.prompt !== undefined && typeof expert.prompt !== 'string') || (typeof expert.prompt === 'string' && expert.prompt.length > MAX_EXPERT_PROMPT_LENGTH) || typeof expert.enabled !== 'boolean' || !Number.isInteger(expert.order)) errors.push('AI 专家配置无效');
+      if (isRecord(expert) && expert.kind === 'builtin' && !defaultExperts().some((item) => item.id === expert.id)) errors.push('内置 AI 专家来源无效');
+      if (isRecord(expert) && expert.kind === 'custom' && defaultExperts().some((item) => item.id === expert.id)) errors.push('自定义 AI 专家不能使用内置 ID');
+    }
+  }
+  if (settings.activeExpertByEngine !== undefined && !isRecord(settings.activeExpertByEngine)) errors.push('AI 专家选择无效');
   if (!Array.isArray(settings.engines)) {
     errors.push('翻译引擎列表无效');
   } else {
@@ -176,25 +194,43 @@ export function getPublicEngineSummaries(settings: Settings): PublicEngineSummar
   return settings.engines.map(({ id, kind, name, enabled, order }) => ({ id, kind, name, enabled, order }));
 }
 
-export function engineDisplayName(engine: Pick<Engine, 'id' | 'kind' | 'name'> & { ready?: boolean }): string {
-  const name = engine.kind === 'google' ? 'Google' : engine.kind === 'bing' ? 'Bing' : engine.name;
-  return `${name}${engine.ready === false ? ' · 未配置' : ''}`;
-}
-
 function cloneDefaults(): Settings {
   return structuredClone(DEFAULT_SETTINGS);
+}
+
+function migrateExpertDefaults(value: Record<string, unknown>): void {
+  if (!Array.isArray(value.experts)) value.experts = defaultExperts();
+  if (!isRecord(value.activeExpertByEngine)) value.activeExpertByEngine = {};
+  if (value.expertDefaultsVersion === 6) return;
+  const legacyExperts = (value.experts as unknown[]).filter((expert): expert is Expert => isRecord(expert)
+    && typeof expert.id === 'string'
+    && (expert.kind === 'builtin' || expert.kind === 'custom'));
+  const existing = new Map(legacyExperts.map((expert) => [canonicalExpertId(expert.id), expert]));
+  const builtins = defaultExperts().map((expert) => {
+    const previous = existing.get(expert.id);
+    return previous?.kind === 'builtin' ? { ...expert, enabled: previous.enabled } : expert;
+  });
+  const custom = legacyExperts.filter((expert) => expert.kind === 'custom');
+  value.expertDefaultsVersion = 6;
+  value.experts = [...builtins, ...custom].map((expert, order) => ({ ...expert, order }));
+  value.activeExpertByEngine = Object.fromEntries(Object.entries(value.activeExpertByEngine as Record<string, string>)
+    .filter(([, expertId]) => typeof expertId === 'string')
+    .map(([engineId, expertId]) => [engineId, canonicalExpertId(expertId)])
+    .filter(([, expertId]) => (value.experts as Expert[]).some((expert) => expert.id === expertId && expert.enabled)));
 }
 
 export function normalizeSettings(value: unknown): Settings {
   if (!isRecord(value) || value.schemaVersion !== 2) return cloneDefaults();
   const normalizedValue = structuredClone(value) as Record<string, unknown>;
   if (normalizedValue.theme === undefined) normalizedValue.theme = DEFAULT_SETTINGS.theme;
+  migrateExpertDefaults(normalizedValue);
   if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.sourceLanguage === undefined) normalizedValue.readingPreferences.sourceLanguage = 'auto';
   if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.selectionPopupEnabled === undefined) normalizedValue.readingPreferences.selectionPopupEnabled = true;
   if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.inlineSelectionModifier === undefined) normalizedValue.readingPreferences.inlineSelectionModifier = 'Control';
   const errors = validateSettings(normalizedValue).filter((error) => error !== '至少保留一个可用的翻译引擎' && error !== '当前翻译引擎必须可用');
   if (errors.length) return cloneDefaults();
   const settings = normalizedValue as unknown as Settings;
+  settings.experts = settings.experts?.length ? settings.experts : defaultExperts();
   const ready = settings.engines.filter(engineReady);
   if (!ready.length) return cloneDefaults();
   if (!ready.some((engine) => engine.id === settings.activeEngineId)) settings.activeEngineId = ready[0].id;
@@ -220,17 +256,28 @@ export function exportSafeSettings(settings: Settings): SafeSettings {
   return removeApiKeys(settings) as SafeSettings;
 }
 
+export function stripApiKeys(value: unknown): unknown {
+  return removeApiKeys(value);
+}
+
+export function exportSettingsWithApiKeys(settings: Settings, includeApiKeys: boolean): Settings | SafeSettings {
+  return includeApiKeys ? structuredClone(settings) : exportSafeSettings(settings);
+}
+
 function endpointOrigin(baseUrl: string): string | undefined {
   try { return new URL(baseUrl).origin; } catch { return undefined; }
 }
 
-export function importSettings(value: unknown, current: Settings = DEFAULT_SETTINGS): Settings {
-  if (containsForbiddenKey(value, (key) => key.toLowerCase() === 'apikey')) throw new Error('导入配置不能包含 API Key');
+export function importSettings(value: unknown, current: Settings = DEFAULT_SETTINGS, allowApiKeys = false): Settings {
+  if (!allowApiKeys && containsForbiddenKey(value, (key) => key.toLowerCase() === 'apikey')) throw new Error('导入配置不能包含 API Key');
   if (containsForbiddenKey(value, (key) => DANGEROUS_KEYS.has(key))) throw new Error('配置包含危险字段');
   if (!isRecord(value) || value.schemaVersion !== 2 || !Array.isArray(value.engines)) throw new Error('导入设置格式无效');
 
   const input = structuredClone(value) as Record<string, unknown> & { engines: Array<Record<string, unknown>> };
   if (input.theme === undefined) input.theme = DEFAULT_SETTINGS.theme;
+  if (input.experts === undefined) input.experts = defaultExperts();
+  if (input.activeExpertByEngine === undefined) input.activeExpertByEngine = {};
+  migrateExpertDefaults(input);
   if (isRecord(input.readingPreferences) && input.readingPreferences.selectionPopupEnabled === undefined) input.readingPreferences.selectionPopupEnabled = true;
   if (isRecord(input.readingPreferences) && input.readingPreferences.inlineSelectionModifier === undefined) input.readingPreferences.inlineSelectionModifier = 'Control';
   const inputIds = input.engines.map((engine) => engine.id);
@@ -248,7 +295,8 @@ export function importSettings(value: unknown, current: Settings = DEFAULT_SETTI
       if (engine.kind === 'bing') return { ...engine, id: 'bing', kind: 'bing', name: 'Bing' };
       const customInput = engine as Record<string, unknown>;
       const local = current.engines.find((candidate): candidate is CustomAiEngine => candidate.kind === 'custom-ai' && candidate.id === engine.id);
-      const apiKey = local && typeof customInput.baseUrl === 'string' && endpointOrigin(local.baseUrl) === endpointOrigin(customInput.baseUrl) ? local.apiKey : '';
+      const importedApiKey = allowApiKeys && typeof customInput.apiKey === 'string' ? customInput.apiKey : '';
+      const apiKey = importedApiKey || (local && typeof customInput.baseUrl === 'string' && endpointOrigin(local.baseUrl) === endpointOrigin(customInput.baseUrl) ? local.apiKey : '');
       return { ...engine, apiKey };
     }),
   } as unknown as Settings;
@@ -264,6 +312,14 @@ export function importSettings(value: unknown, current: Settings = DEFAULT_SETTI
   const errors = validateSettings(imported);
   if (errors.length) throw new Error(errors.join('；'));
   return imported as unknown as Settings;
+}
+
+export function createGeneratedExpertId(existingIds: string[] = []): string {
+  const seed = `custom-expert-${Date.now().toString(36)}`;
+  if (!existingIds.includes(seed)) return seed;
+  let suffix = 2;
+  while (existingIds.includes(`${seed}-${suffix}`)) suffix += 1;
+  return `${seed}-${suffix}`;
 }
 
 export function migrateSettings(value: unknown): Settings {
@@ -288,5 +344,7 @@ export function migrateSettings(value: unknown): Settings {
     apiKey: typeof value.apiKey === 'string' ? value.apiKey : '',
   };
   if (validateEngine(candidate).length === 0 && candidate.apiKey.trim()) migrated.engines.push(candidate);
+  delete migrated.experts;
+  delete migrated.activeExpertByEngine;
   return migrated;
 }

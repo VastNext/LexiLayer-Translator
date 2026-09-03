@@ -1,0 +1,7 @@
+@import url('./expert-shared.css');
+:root { --canvas:#eaf3f1; --topbar:#ffffff; --surface:#ffffff; --input:#ffffff; --soft:#e6f0ee; --hover:#f0f7f5; --ink:#16302c; --muted:#5c746f; --line:#d4e3df; --line-strong:#b6d0ca; --accent:#0f766e; --accent-soft:#def4ef; --focus:#0f766e; --primary:#0f766e; --primary-hover:#115e59; --on-primary:#ffffff; --brand-bg:#123c37; --brand-fg:#b8f5e9; --beacon:#f59e0b; --success:#16803c; --success-soft:#e1f4e8; --code-bg:#eff8f6; --code:#175b54; --radius-sm:14px; --radius-lg:22px; --avatar-radius:50%; --shadow:0 20px 46px rgb(20 70 63 / 12%); --button-shadow:0 4px 0 #0b463f; }
+.page { max-width: 1280px; }
+.intro { align-items: center; }
+.workspace { grid-template-columns: 330px minmax(0, 1fr); }
+.panel-head, .detail-head { padding-top: 24px; padding-bottom: 18px; }
+.expert-row { padding: 13px 11px; }

@@ -44,7 +44,7 @@ export const manifest = {
         'rules/reddit.json',
         'rules/x.json',
         'rules/stackoverflow.json',
-        'rules/substack.json',
+        'rules/substack.json', 'experts.json',
       ],
       matches: ['<all_urls>'],
     },

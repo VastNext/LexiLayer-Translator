@@ -60,7 +60,7 @@ describe('生产构建', () => {
       'reddit', 'x', 'stackoverflow', 'substack',
     ];
 
-    expect(resources).toHaveLength(siteIds.length);
+    expect(resources).toHaveLength(siteIds.length + 1);
     for (const siteId of siteIds) {
       const pattern = `rules/${siteId}.json`;
       expect(resources).toContain(pattern);
@@ -69,6 +69,9 @@ describe('生产构建', () => {
     expect(contentBundle).toContain('rules/');
     expect(contentBundle).not.toContain('import.meta');
     expect(contentBundle).not.toMatch(/^\s*import\b/m);
+    expect(resources).toContain('experts.json');
+    expect(existsSync(resolve(outputDirectory, 'experts.json'))).toBe(true);
+    expect(existsSync(resolve(outputDirectory, 'EXPERTS-NOTICE.txt'))).toBe(true);
   });
 
   it('复制图标、SVG 源图和中英本地化资源', async () => {

@@ -1,0 +1,6 @@
+@import url('./expert-shared.css');
+:root { --canvas:#07080a; --topbar:#0d0e11; --surface:#101114; --input:#18191d; --soft:#191a1f; --hover:#202126; --ink:#f5f5f7; --muted:#a0a1a8; --line:#292b33; --line-strong:#3a3d47; --accent:#8c91ff; --accent-soft:#242649; --focus:#b7baff; --primary:#f5f5f7; --primary-hover:#dedfe2; --on-primary:#0b0c0f; --brand-bg:#8c91ff; --brand-fg:#090a0d; --beacon:#ff6161; --success:#5ad49a; --success-soft:#173d31; --code-bg:#0b0c0f; --code:#c9ccff; --radius-sm:8px; --radius-lg:12px; --avatar-radius:8px; --shadow:0 22px 70px rgb(0 0 0 / 38%); --button-shadow:none; }
+.page { max-width: 1180px; }
+.topbar { border-color: #24262d; }
+.combo-step { background: #0d0e11; }
+.popup { max-width: 360px; }

@@ -15,10 +15,10 @@
 - Manifest V3 service worker：持有配置和 API Key，调用 OpenAI 兼容接口，执行重试、流解析、缓存与浏览器命令。
 - 原生 TypeScript content script：按需扫描 DOM、调度可见段落、插入译文、监听动态内容，并用 Shadow DOM 实现划词浮层。
 - React Popup：控制当前页面翻译状态、语言、显示模式、翻译范围和失败重试。
-- React 设置页：启停并选择固定 Google/Bing，管理多个自定义 AI 的连接、密钥、默认项和排序，以及阅读偏好、缓存和 v2 无密钥配置导入导出。
+- React 设置页：启停并选择固定 Google/Bing，管理多个自定义 AI 的连接、密钥、默认项和排序，以及阅读偏好、缓存和带确认的配置导入导出。
 - IndexedDB：缓存成功译文；API Key 不进入缓存。
 
-API Key 按自定义实例只保存在 `chrome.storage.local`，Options 仅获得 `hasApiKey`，密钥不发送给 content script、不记录日志、不包含在导出配置中。后台不暴露任意 URL fetch；连接测试只接受内置项或完整候选实例，不构成通用代理。
+API Key 按自定义实例保存在 `chrome.storage.local`，Options 仅通过专用受信消息读取，密钥不发送给 content script、不记录日志。导出时由用户明确选择是否包含密钥；导入可信的含密钥文件会直接恢复本地密钥。后台不暴露任意 URL fetch；连接测试只接受内置项或完整候选实例，不构成通用代理。
 
 ## 权限
 

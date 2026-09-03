@@ -1,4 +1,5 @@
 import { DEFAULT_SETTINGS, type CustomAiEngine, type Engine, type OptionsSettings, type ReadingPreferences, type Theme } from '../shared/config';
+import type { Expert } from '../shared/experts';
 
 interface OptionsChromeApi { runtime: { sendMessage(message: unknown): Promise<unknown> } }
 
@@ -25,7 +26,10 @@ export function createOptionsApi(chromeApi: OptionsChromeApi) {
     reorderEngines: (engineIds: string[]) => request({ type: 'reorder-engines', engineIds }),
     testEngine: (engineId: string, candidate?: CustomAiEngine) => request({ type: 'test-engine', engineId, ...(candidate ? { candidate } : {}) }),
     clearEngineApiKey: (engineId: string) => request({ type: 'clear-engine-api-key', engineId }),
-    importSettings: (settings: unknown) => request({ type: 'import-settings', settings }),
+    setExpertEnabled: (expertId: string, enabled: boolean) => request({ type: 'set-expert-enabled', expertId, enabled }),
+    upsertExpert: (expert: Expert) => request({ type: 'upsert-expert', expert }),
+    deleteExpert: (expertId: string) => request({ type: 'delete-expert', expertId }),
+    importSettings: (settings: unknown, allowApiKeys?: boolean) => request({ type: 'import-settings', settings, ...(allowApiKeys !== undefined ? { allowApiKeys } : {}) }),
     clearCache: () => request({ type: 'clear-cache' }),
   };
 }

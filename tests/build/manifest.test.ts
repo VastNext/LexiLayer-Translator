@@ -26,7 +26,7 @@ describe('manifest', () => {
         'rules/reddit.json',
         'rules/x.json',
         'rules/stackoverflow.json',
-        'rules/substack.json',
+         'rules/substack.json', 'experts.json',
       ],
       matches: ['<all_urls>'],
     }]);
@@ -38,10 +38,10 @@ describe('manifest', () => {
     expect(manifest.name).toBe('__MSG_extensionName__');
     expect(manifest.description).toBe('__MSG_extensionDescription__');
     expect(manifest.default_locale).toBe('zh_CN');
-    expect(manifest.icons).toEqual({
-      16: 'icons/icon-16.png', 32: 'icons/icon-32.png',
-      48: 'icons/icon-48.png', 128: 'icons/icon-128.png',
-    });
+     expect(manifest.icons).toEqual({
+       16: 'icons/icon-16.png', 32: 'icons/icon-32.png',
+       48: 'icons/icon-48.png', 128: 'icons/icon-128.png',
+     });
     expect(manifest.action.default_icon).toEqual(manifest.icons);
     expect(manifest.commands.translate_page.description).toBe('__MSG_commandTranslatePage__');
   });

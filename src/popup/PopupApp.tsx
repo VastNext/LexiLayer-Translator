@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { BrandMark } from '../BrandMark';
-import { engineDisplayName, type Theme } from '../shared/config';
+import { type Theme } from '../shared/config';
+import { engineDisplayName } from '../shared/engine-display';
 import { createTranslator, type Translator } from '../shared/i18n';
 import { languageOptions } from '../shared/languages';
 import type { PopupConfigResponse } from './api';
+import { isAiEngine } from '../shared/experts';
 
 interface Progress { status: string; completed: number; failed: number; total: number }
 
@@ -11,7 +13,7 @@ export interface PopupApi {
   getConfig(): Promise<PopupConfigResponse>;
   savePreferences?(preferences: NonNullable<PopupConfigResponse['preferences']>): Promise<void>;
   setActiveEngine?(engineId: string): Promise<void>;
-  savePopupState?(engineId: string, preferences: NonNullable<PopupConfigResponse['preferences']>): Promise<void>;
+  savePopupState?(engineId: string, preferences: NonNullable<PopupConfigResponse['preferences']>, expertId?: string | null): Promise<void>;
   sendToPage(message: unknown): Promise<unknown>;
   setTranslationBadge(active: boolean): Promise<void>;
   openOptions(): void;
@@ -36,6 +38,8 @@ export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: T
   const [busy, setBusy] = useState(false);
   const [pageActive, setPageActive] = useState(false);
   const [theme, setTheme] = useState<Theme>('pearl-reader');
+  const [experts, setExperts] = useState<NonNullable<PopupConfigResponse['experts']>>([]);
+  const [activeExpertByEngine, setActiveExpertByEngine] = useState<Record<string, string>>({});
 
   useEffect(() => {
     let disposed = false;
@@ -48,6 +52,8 @@ export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: T
       document.documentElement.dataset.theme = nextTheme;
       setEngineId(config.activeEngineId ?? 'google');
       if (config.availableEngines?.length) setEngines(config.availableEngines);
+      setExperts(config.experts?.filter((expert) => expert.enabled) ?? []);
+      setActiveExpertByEngine(config.activeExpertByEngine ?? {});
     }).catch((error) => setStatus(error instanceof Error ? error.message : t('statusFailed')));
     void api.getProgress().then((progress) => { if (!disposed && progress) applyProgress(progress); }).catch(() => undefined);
     void Promise.resolve(api.subscribeProgress((progress) => applyProgress(progress)))
@@ -69,19 +75,24 @@ export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: T
     setPageActive(progress.status !== 'idle');
   }
 
-  function translationCommand(nextEngineId = engineId, nextPreferences = preferences) {
+  function translationCommand(nextEngineId = engineId, nextPreferences = preferences, nextExpertId = activeExpertByEngine[nextEngineId]) {
     return {
       type: 'translate-page', engineId: nextEngineId, scope: nextPreferences.scanScope,
       sourceLanguage: nextPreferences.sourceLanguage ?? 'auto',
       mode: nextPreferences.displayMode === 'translation' ? 'translation-only' : 'bilingual',
       targetLanguage: nextPreferences.targetLanguage,
+      ...(isAiEngine(nextEngineId, engines.find((engine) => engine.id === nextEngineId)?.kind) && nextExpertId ? { expertId: nextExpertId } : {}),
     };
+  }
+
+  function selectedExpertId(nextEngineId: string): string | undefined {
+    return activeExpertByEngine[nextEngineId];
   }
 
   async function savePreferences(next: typeof preferences, retranslate = false): Promise<void> {
     setPreferences(next);
     try {
-      await (api.savePopupState ? api.savePopupState(engineId, next) : api.savePreferences?.(next));
+      await (api.savePopupState ? (selectedExpertId(engineId) !== undefined ? api.savePopupState(engineId, next, selectedExpertId(engineId)) : api.savePopupState(engineId, next)) : api.savePreferences?.(next));
       if (retranslate && pageActive) await api.sendToPage(translationCommand(engineId, next));
     }
     catch (error) { setStatus(error instanceof Error ? error.message : t('statusFailed')); }
@@ -90,8 +101,17 @@ export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: T
   async function changeEngine(nextEngineId: string): Promise<void> {
     setEngineId(nextEngineId);
     try {
-      await (api.savePopupState ? api.savePopupState(nextEngineId, preferences) : api.setActiveEngine?.(nextEngineId) ?? Promise.resolve());
-      if (pageActive) await api.sendToPage(translationCommand(nextEngineId));
+      await (api.savePopupState ? (selectedExpertId(nextEngineId) !== undefined ? api.savePopupState(nextEngineId, preferences, selectedExpertId(nextEngineId)) : api.savePopupState(nextEngineId, preferences)) : api.setActiveEngine?.(nextEngineId) ?? Promise.resolve());
+      if (pageActive) await api.sendToPage(translationCommand(nextEngineId, preferences, activeExpertByEngine[nextEngineId]));
+    } catch (error) { setStatus(error instanceof Error ? error.message : t('statusFailed')); }
+  }
+
+  async function changeExpert(nextExpertId: string): Promise<void> {
+    const nextMap = { ...activeExpertByEngine, [engineId]: nextExpertId };
+    setActiveExpertByEngine(nextMap);
+    try {
+      await api.savePopupState?.(engineId, preferences, nextExpertId || null);
+      if (pageActive) await api.sendToPage(translationCommand(engineId, preferences, nextExpertId));
     } catch (error) { setStatus(error instanceof Error ? error.message : t('statusFailed')); }
   }
 
@@ -119,17 +139,18 @@ export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: T
       <button className="icon-button" aria-label={t('actionSettings')} title={t('actionSettings')} onClick={api.openOptions}><span aria-hidden="true">⚙</span></button>
     </header>
     <div className="popup-controls">
-      <div className="language-control">
+       <div className="language-control">
       <label><span>{t('sourceLanguage')}</span><select aria-label={t('sourceLanguage')} value={preferences.sourceLanguage ?? 'auto'} onChange={(event) => void savePreferences({ ...preferences, sourceLanguage: event.target.value })}>
         {languageOptions.map((language) => <option key={language.value} value={language.value}>{language.label}</option>)}
       </select></label><span className="language-arrow" aria-hidden="true">→</span>
       <label><span>{t('targetLanguage')}</span><select aria-label={t('targetLanguage')} value={preferences.targetLanguage} onChange={(event) => void savePreferences({ ...preferences, targetLanguage: event.target.value })}>
         {languageOptions.map((language) => <option key={language.value} value={language.value}>{language.label}</option>)}
       </select></label>
-      </div>
-      <label className="engine-control"><span className="engine-label">{t('translationEngine')}</span><select aria-label={t('translationEngine')} value={engineId} onChange={(event) => {
-        void changeEngine(event.target.value);
-      }}>{engines.map((engine) => <option key={engine.id} value={engine.id} disabled={!engine.ready}>{engineDisplayName(engine as Parameters<typeof engineDisplayName>[0])}</option>)}</select></label>
+       </div>
+       <label className="engine-control"><span className="engine-label">{t('translationEngine')}</span><select aria-label={t('translationEngine')} value={engineId} onChange={(event) => {
+         void changeEngine(event.target.value);
+       }}>{engines.map((engine) => <option key={engine.id} value={engine.id} disabled={!engine.ready}>{engineDisplayName(engine as Parameters<typeof engineDisplayName>[0])}</option>)}</select></label>
+       {isAiEngine(engineId, engines.find((engine) => engine.id === engineId)?.kind) && experts.length > 0 && <label className="engine-control expert-control"><span className="engine-label">AI 专家</span><select aria-label="AI 专家" value={activeExpertByEngine[engineId] ?? ''} onChange={(event) => void changeExpert(event.target.value)}><option value="">不使用专家</option>{experts.map((expert) => <option key={expert.id} value={expert.id}>{expert.name}</option>)}</select></label>}
     </div>
     <p className="status translation-status" role="status"><span className="status-dot" aria-hidden="true" />{status}</p>
     <div className="primary-actions">

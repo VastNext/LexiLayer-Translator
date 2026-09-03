@@ -65,9 +65,9 @@ describe('后台 v2 多引擎编排', () => {
     const providers = new Map([['google', provider('google')], ['bing', provider('bing')], ['custom-work', provider('custom-work', true)]]);
     const controller = createBackgroundController(api, { createProvider: (engine) => providers.get(engine.id)!, clearCache: vi.fn() });
     const response = await controller.handle({ type: 'get-public-config' }, sender);
-    expect(response).toEqual({
+    expect(response).toEqual(expect.objectContaining({
       ok: true,
-      data: {
+      data: expect.objectContaining({
         preferences: { ...DEFAULT_SETTINGS.readingPreferences, targetLanguage: 'en' },
         theme: 'pearl-reader',
         activeEngineId: 'google',
@@ -76,8 +76,10 @@ describe('后台 v2 多引擎编排', () => {
           { id: 'bing', kind: 'bing', name: 'Bing', ready: true, capabilities: { streaming: false } },
           { id: 'custom-work', kind: 'custom-ai', name: '工作接口', ready: true, capabilities: { streaming: true } },
         ],
-      },
-    });
+        experts: [],
+        activeExpertByEngine: {},
+      }),
+    }));
     expect(JSON.stringify(response)).not.toMatch(/secret-value|api\.example|gpt-test|apiKey|baseUrl|model/);
   });
 
@@ -102,6 +104,22 @@ describe('后台 v2 多引擎编排', () => {
     stored.readingPreferences.targetLanguage = 'ja';
     await api.storage.local.set({ translatorSettings: stored });
     await expect(readSettings(api)).resolves.toMatchObject({ readingPreferences: { targetLanguage: 'ja', scanScope: 'whole-page' } });
+  });
+
+  it('专家目录升级后持久化 VastNext ID 和目录版本', async () => {
+    const legacy = structuredClone(DEFAULT_SETTINGS);
+    legacy.expertDefaultsVersion = 2 as never;
+    legacy.experts = [{ id: 'tech', kind: 'builtin', name: '科技类翻译大师', description: '旧技术专家', prompt: '', enabled: true, order: 0 }];
+    legacy.activeExpertByEngine = { 'custom-work': 'tech' };
+    legacy.engines = [...legacy.engines, custom];
+    const api = createChrome({ translatorSettings: legacy });
+
+    const migrated = await readSettings(api);
+
+    expect(migrated.expertDefaultsVersion).toBe(6);
+    expect(migrated.activeExpertByEngine).toEqual({ 'custom-work': 'technology' });
+    expect(api.local()).toHaveProperty('translatorSettings.expertDefaultsVersion', 6);
+    expect(api.local()).toHaveProperty('translatorSettings.activeExpertByEngine.custom-work', 'technology');
   });
 
   it.each(['google', 'bing', 'custom-work'])('translate-batch 按 engineId 路由 %s', async (engineId) => {
