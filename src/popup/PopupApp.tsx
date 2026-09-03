@@ -135,7 +135,7 @@ export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: T
 
   return <main className="shell popup" data-theme={theme}>
     <header className="popup-toolbar">
-      <div className="brand-lockup"><span className="brand-icon"><BrandMark /></span><strong>Vast Translator</strong></div>
+      <div className="brand-lockup"><span className="brand-icon"><BrandMark label={t('extensionName')} /></span><strong>{t('extensionName')}</strong></div>
       <button className="icon-button" aria-label={t('actionSettings')} title={t('actionSettings')} onClick={api.openOptions}><span aria-hidden="true">⚙</span></button>
     </header>
     <div className="popup-controls">

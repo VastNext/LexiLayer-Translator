@@ -1,4 +1,4 @@
-# Vast Translator Chrome Plugin 设计
+# LexiLayer Translator Chrome Plugin 设计
 
 ## 目标
 

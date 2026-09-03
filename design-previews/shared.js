@@ -8,7 +8,7 @@ const themes = {
 
 const theme = document.body.dataset.theme;
 const meta = themes[theme];
-const logo = `<svg class="vastnext-logo" viewBox="0 0 48 48" fill="none" aria-hidden="true"><path class="logo-horizon" d="M5 35.5C15 39.5 29 39.5 43 34"/><path class="logo-route" d="M8 11L20.5 32L27 20L40 8V31"/><circle class="logo-beacon" cx="40" cy="8" r="3"/></svg>`;
+const logo = `<svg class="brand-logo" viewBox="0 0 48 48" fill="none" aria-hidden="true"><path class="logo-constellation" d="M11.5 14 24 36 37.5 10.5"/><circle class="logo-node" cx="11.5" cy="14" r="3.5"/><circle class="logo-node" cx="24" cy="36" r="3.5"/><circle class="logo-node" cx="37.5" cy="10.5" r="3.5"/></svg>`;
 
 document.querySelector('#app').innerHTML = `
   <header class="preview-header">
@@ -22,7 +22,7 @@ document.querySelector('#app').innerHTML = `
       <p class="stage-label">CHROME POPUP · 360px</p>
       <article class="translator-popup">
         <header class="popup-head">
-          <div class="brand"><span class="brand-icon">${logo}</span><span class="brand-name">Vast Translator</span></div>
+          <div class="brand"><span class="brand-icon">${logo}</span><span class="brand-name">语层翻译</span></div>
           <button class="icon-button" aria-label="设置">⚙</button>
         </header>
 
@@ -44,7 +44,7 @@ document.querySelector('#app').innerHTML = `
       <p class="stage-label">OPTIONS · DESKTOP</p>
       <article class="options-shell">
         <aside class="options-nav">
-          <div class="options-brand"><span class="brand-icon">${logo}</span><strong>Vast</strong></div>
+          <div class="options-brand"><span class="brand-icon">${logo}</span><strong>语层</strong></div>
           <nav><button class="active">翻译引擎</button><button>自定义 AI</button><button>阅读偏好</button><button>外观主题</button><button>数据与隐私</button></nav>
           <small>v0.2.0</small>
         </aside>

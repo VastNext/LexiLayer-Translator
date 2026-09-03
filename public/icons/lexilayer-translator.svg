@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
-  <title id="title">Vast Translator 三点星座</title>
+  <title id="title">语层翻译 三点星座</title>
   <desc id="desc">蓝色到粉色晚霞渐变底上的白色三点 V 形星座</desc>
   <defs><linearGradient id="sunset" x1="18" y1="16" x2="112" y2="116" gradientUnits="userSpaceOnUse"><stop stop-color="#3568ff"/><stop offset="1" stop-color="#f06f92"/></linearGradient></defs>
   <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#sunset)"/>

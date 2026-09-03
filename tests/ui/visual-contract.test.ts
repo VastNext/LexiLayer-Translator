@@ -9,6 +9,8 @@ describe('界面视觉契约', () => {
   it('多引擎控件具备中英本地化标签', () => {
     expect(zhMessages.translationEngine.message).toBe('翻译引擎');
     expect(enMessages.translationEngine.message).toBe('Translation engine');
+    expect(zhMessages.extensionName.message).toBe('语层翻译');
+    expect(enMessages.extensionName.message).toBe('LexiLayer Translator');
   });
 
   it('使用共享语义 token 驱动五套明显不同主题', () => {
@@ -58,7 +60,7 @@ describe('界面视觉契约', () => {
   });
 
   it('扩展 SVG 图标使用蓝粉晚霞渐变和白色主标', () => {
-    const source = readFileSync(resolve(import.meta.dirname, '../../public/icons/vast-translator.svg'), 'utf8');
+    const source = readFileSync(resolve(import.meta.dirname, '../../public/icons/lexilayer-translator.svg'), 'utf8');
     expect(source).toContain('#3568ff');
     expect(source).toContain('#f06f92');
     expect(source).toContain('linearGradient');

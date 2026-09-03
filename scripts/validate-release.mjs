@@ -36,4 +36,4 @@ for (const file of walk(dist)) {
   if (forbidden.some((pattern) => pattern.test(file))) throw new Error(`发行目录包含禁止文件：${file}`);
 }
 
-console.log(JSON.stringify({ version: packageJson.version, tag: expectedTag, packageName: `vast-translator-${packageJson.version}-chrome-web-store.zip` }));
+console.log(JSON.stringify({ version: packageJson.version, tag: expectedTag, packageName: `lexilayer-translator-${packageJson.version}-chrome-web-store.zip` }));

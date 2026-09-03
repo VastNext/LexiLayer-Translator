@@ -52,7 +52,7 @@ jobs:
           node scripts/validate-release.mjs "${TAG}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "package=vast-translator-${VERSION}-chrome-web-store.zip" >> "$GITHUB_OUTPUT"
+          echo "package=lexilayer-translator-${VERSION}-chrome-web-store.zip" >> "$GITHUB_OUTPUT"
 
       - name: Create release package
         run: python scripts/package-release.py
@@ -60,7 +60,7 @@ jobs:
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v7
         with:
-          name: vast-translator-${{ steps.metadata.outputs.version }}
+          name: lexilayer-translator-${{ steps.metadata.outputs.version }}
           path: release/*
           if-no-files-found: error
 
@@ -73,5 +73,5 @@ jobs:
             "release/${{ steps.metadata.outputs.package }}" \
             "release/${{ steps.metadata.outputs.package }}.sha256" \
             --verify-tag \
-            --title "Vast Translator ${{ steps.metadata.outputs.version }}" \
+            --title "LexiLayer Translator ${{ steps.metadata.outputs.version }}" \
             --generate-notes

@@ -1,5 +1,5 @@
-export function BrandMark() {
-  return <svg className="brand-mark" viewBox="0 0 48 48" fill="none" role="img" aria-label="Vast Translator">
+export function BrandMark({ label = '语层翻译' }: { label?: string }) {
+  return <svg className="brand-mark" viewBox="0 0 48 48" fill="none" role="img" aria-label={label}>
     <path className="logo-constellation" d="M11.5 14 24 36 37.5 10.5" />
     <circle className="logo-node" cx="11.5" cy="14" r="3.5" />
     <circle className="logo-node" cx="24" cy="36" r="3.5" />

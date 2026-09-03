@@ -115,7 +115,7 @@ test('MV3、Popup 与 Options 无错误加载，自定义实例可测试并在�
   })).toMatchObject({ accessible: false });
   await fixture.close();
   const popup = await openExtensionPage('popup.html');
-  await expect(popup.getByText('Vast Translator', { exact: true })).toBeVisible();
+  await expect(popup.getByText('语层翻译', { exact: true })).toBeVisible();
   await popup.getByLabel('翻译引擎').selectOption('bing');
   await expect.poll(() => popup.evaluate(async () => ((await chrome.storage.local.get('translatorSettings')).translatorSettings as { activeEngineId?: string } | undefined)?.activeEngineId)).toBe('bing');
   await popup.getByLabel('目标语言').selectOption('ja');
@@ -173,6 +173,7 @@ test('MV3、Popup 与 Options 无错误加载，自定义实例可测试并在�
   await reopened.getByRole('button', { name: '导出配置' }).click();
   await reopened.getByRole('button', { name: '不含 API Key' }).click();
   const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe('lexilayer-translator-config.json');
   const exportPath = await download.path();
   if (!exportPath) throw new Error('导出配置下载失败');
   const exported = await import('node:fs/promises').then(({ readFile }) => readFile(exportPath, 'utf8'));

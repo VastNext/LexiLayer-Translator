@@ -1,4 +1,4 @@
-# Vast Translator Chrome 插件实现计划
+# LexiLayer Translator Chrome 插件实现计划
 
 > **执行要求：** 使用 `superpowers:executing-plans` 按任务逐项实现。
 

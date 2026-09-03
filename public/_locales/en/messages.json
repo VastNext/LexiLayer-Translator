@@ -1,5 +1,6 @@
 {
-  "extensionName": { "message": "Vast Translator" },
+  "extensionName": { "message": "LexiLayer Translator" },
+  "brandShort": { "message": "LexiLayer" },
   "extensionDescription": { "message": "Bilingual page and selection translation with Google, Bing, or multiple custom AI services." },
   "commandTranslatePage": { "message": "Toggle translation for the current page" },
   "popupCurrentPage": { "message": "Current page" },
@@ -117,6 +118,7 @@
   "modeToggleHelp": { "message": "Toggle bilingual and translation-only modes" },
   "settingsNavigation": { "message": "Settings navigation" },
   "optionsTitle": { "message": "Translation settings" },
+  "optionsDocumentTitle": { "message": "LexiLayer Translator Settings" },
   "appearanceTheme": { "message": "Appearance theme" },
   "dataPrivacy": { "message": "Data and privacy" },
   "themeDescription": { "message": "Five themes share the same features and save immediately." },

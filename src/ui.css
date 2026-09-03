@@ -119,7 +119,7 @@ h1, h2, h3 { font-family: var(--font-title); color: var(--ink); }
 .options-content > .status-toast { order: 8; }
 .masthead { display: flex; justify-content: space-between; gap: 24px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
 .masthead h1 { margin-bottom: 5px; font-size: 26px; letter-spacing: -.03em; }
-.eyebrow { margin-bottom: 7px; color: var(--accent); font-size: 10px; font-weight: 800; letter-spacing: .12em; }
+.eyebrow { margin-bottom: 7px; color: var(--accent); font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
 .kicker, .version, .section-copy, .engine-meta, .help, .field small { color: var(--muted); font-size: 13px; line-height: 1.5; }
 .version { font-family: var(--font-mono); }
 .section { scroll-margin-top: 20px; margin-top: 22px; padding-top: 21px; border-top: 1px solid var(--line); }

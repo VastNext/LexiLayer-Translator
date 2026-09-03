@@ -1,11 +1,11 @@
-# 语层 LexiLayer Translator
+# 语层翻译 LexiLayer Translator
 
 <p align="center">
   <strong>让 AI 按语境、领域与风格理解网页。</strong><br>
   A browser translator that turns configurable AI prompts into domain-aware translation.
 </p>
 
-当前版本：`0.7.0`。
+当前版本：`0.7.1`。
 
 <p align="center">
   <a href="https://github.com/VastNext/LexiLayer-Translator"><img src="https://img.shields.io/badge/status-MVP-orange.svg" alt="MVP status"></a>
@@ -161,7 +161,7 @@ VAST_E2E_PROXY=http://127.0.0.1:7890 npm run e2e:network
 
 ## 🗺️ 当前状态与路线
 
-当前版本：`0.7.0` · MVP
+当前版本：`0.7.1` · MVP
 
 - ✅ Google / Bing 网页与划词翻译
 - ✅ 多个 OpenAI 兼容 AI 实例
@@ -175,6 +175,11 @@ VAST_E2E_PROXY=http://127.0.0.1:7890 npm run e2e:network
 
 当前不包含账号同步、云端配置、PDF 翻译、字幕翻译、术语库管理和自动整站翻译。
 
+## 0.7.1 更新
+
+- 产品品牌更名为语层翻译（LexiLayer Translator），简称语层 / LexiLayer；扩展、文档与商店资料统一使用新名称。
+- 更新隐私说明、Chrome Web Store 上架资料、设计预览与发布流程中的品牌名称和 Logo。
+
 ## 0.7.0 更新
 
 - 内置专家迁移到独立的 `VastNext/vast-expert-prompts` 仓库，并记录上游 commit SHA 和 CC BY 4.0 归属说明。
@@ -185,8 +190,8 @@ VAST_E2E_PROXY=http://127.0.0.1:7890 npm run e2e:network
 
 ## 📖 项目文档
 
-- [产品与架构设计](./docs/plans/2026-08-27-vast-translator-design.md)
-- [实现计划](./docs/plans/2026-08-27-vast-translator-implementation.md)
+- [产品与架构设计](./docs/plans/2026-08-27-lexilayer-translator-design.md)
+- [实现计划](./docs/plans/2026-08-27-lexilayer-translator-implementation.md)
 - [隐私说明](./PRIVACY.md)
 - [Chrome Web Store 上架文档](./docs/chrome-web-store/README.md)
 

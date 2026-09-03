@@ -11,10 +11,13 @@ const api = {
     const url = URL.createObjectURL(new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' }));
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = 'vast-translator-config.json';
+    anchor.download = 'lexilayer-translator-config.json';
     anchor.click();
     URL.revokeObjectURL(url);
   },
 };
 
-createRoot(document.getElementById('root')!).render(<OptionsApp api={api} t={createTranslator(chrome.i18n.getMessage)} />);
+const t = createTranslator(chrome.i18n.getMessage);
+
+document.title = t('optionsDocumentTitle');
+createRoot(document.getElementById('root')!).render(<OptionsApp api={api} t={t} />);

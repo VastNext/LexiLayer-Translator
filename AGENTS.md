@@ -1,16 +1,16 @@
-# Vast Translator — AI 开发指南
+# 语层翻译 LexiLayer Translator — AI 开发指南
 
 ## 开始工作
 
 先阅读本文件，再按任务读取相关资料：
 
-- 产品范围、架构或重大功能：读取 `docs/plans/2026-08-27-vast-translator-design.md` 和 `docs/plans/2026-08-27-vast-translator-implementation.md`。
+- 产品范围、架构或重大功能：读取 `docs/plans/2026-08-27-lexilayer-translator-design.md` 和 `docs/plans/2026-08-27-lexilayer-translator-implementation.md`。
 - Chrome Web Store、权限、隐私或发布：读取 `docs/chrome-web-store/README.md` 及其链接文档。
 - 数据处理、第三方服务或 API Key：读取 `PRIVACY.md`。
 
 ## 产品边界
 
-Vast Translator 是 Manifest V3 Chrome 网页与划词翻译扩展：Google 默认、Bing 备用，并支持多个用户配置的 OpenAI 兼容 AI 实例。
+语层翻译（LexiLayer Translator）是 Manifest V3 Chrome 网页与划词翻译扩展：Google 默认、Bing 备用，并支持多个用户配置的 OpenAI 兼容 AI 实例。
 
 - 只在用户主动发起页面翻译后扫描正文；划词只处理用户主动选择的文本。
 - 不运营接收翻译内容的自营服务器，不投放广告，不进行跨站追踪。
