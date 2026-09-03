@@ -1,4 +1,5 @@
 import type { Theme } from '../shared/config';
+import type { Expert } from '../shared/experts';
 import { createTranslator } from '../shared/i18n';
 
 interface PopupChromeApi {
@@ -36,6 +37,8 @@ export interface PopupConfigResponse {
   activeEngineId?: string;
   theme?: Theme;
   availableEngines?: Array<{ id: string; kind: string; name: string; ready: boolean; capabilities: { streaming: boolean } }>;
+  experts?: Array<Pick<Expert, 'id' | 'name' | 'description' | 'enabled'>>;
+  activeExpertByEngine?: Record<string, string>;
 }
 
 export function createPopupApi(api: PopupChromeApi) {
@@ -71,8 +74,8 @@ export function createPopupApi(api: PopupChromeApi) {
     async setActiveEngine(engineId: string) {
       await backgroundAction({ type: 'set-active-engine', engineId }, '翻译引擎保存失败');
     },
-    async savePopupState(engineId: string, readingPreferences: PopupConfigResponse['preferences']) {
-      await backgroundAction({ type: 'save-popup-preferences', engineId, readingPreferences }, '快捷设置保存失败');
+    async savePopupState(engineId: string, readingPreferences: PopupConfigResponse['preferences'], expertId?: string | null) {
+      await backgroundAction({ type: 'save-popup-preferences', engineId, readingPreferences, ...(expertId !== undefined ? { expertId } : {}) }, '快捷设置保存失败');
     },
     async sendToPage(message: unknown) {
       const tabId = await activeTabId();

@@ -1,6 +1,6 @@
 import { languageOptions } from '../shared/languages';
 import type { Translator } from '../shared/i18n';
-import { engineDisplayName } from '../shared/config';
+import { engineDisplayName } from '../shared/engine-display';
 
 const selectionMessages: Record<string, string> = {
   selectionTranslate: '翻译选中内容', selectionDialog: '划词翻译', translationEngine: '翻译引擎', targetLanguage: '目标语言',

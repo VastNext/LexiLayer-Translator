@@ -1,6 +1,6 @@
 {
   "name": "vast-translator-chrome-plugin",
-  "version": "0.4.3",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,6 +10,8 @@
     "e2e:switchyomega": "playwright test tests/e2e/network.spec.ts",
     "release:package": "python scripts/package-release.py",
     "release:validate": "node scripts/validate-release.mjs",
+    "experts:sync": "python scripts/sync-experts.py",
+    "experts:check": "python scripts/sync-experts.py --check",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

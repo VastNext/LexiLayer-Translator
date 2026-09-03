@@ -52,6 +52,8 @@ function buildClassicContentScript(): Plugin {
 export default defineConfig({
   plugins: [react(), emitManifest(), buildClassicContentScript()],
   build: {
+    target: 'esnext',
+    modulePreload: { polyfill: false },
     rollupOptions: {
       input: {
         background: resolve(import.meta.dirname, 'src/background/index.ts'),
@@ -62,6 +64,10 @@ export default defineConfig({
         entryFileNames: '[name].js',
         chunkFileNames: 'assets/[name]-[hash].js',
         assetFileNames: 'assets/[name]-[hash][extname]',
+        manualChunks(id) {
+          if (/src[\\/]background[\\/](?:custom-ai-adapter|openai-client|sse|retry)\.ts$/.test(id)) return 'custom-ai-runtime';
+          if (/src[\\/]background[\\/]expert-commands\.ts$/.test(id)) return 'expert-commands';
+        },
       },
     },
   },

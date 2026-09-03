@@ -25,6 +25,8 @@ const hardExclusions = [
   '[contenteditable="true"]',
   '[hidden]',
   '[aria-hidden="true"]',
+  '.sr-only',
+  '.visually-hidden',
   '[data-vast-translator]',
   '[data-vast-inline-selection-translation]',
 ];

@@ -1,6 +1,6 @@
 # Vast Translator 隐私说明
 
-生效版本：0.4.2
+生效版本：0.7.0
 
 ## 数据处理原则
 
@@ -12,6 +12,7 @@ Vast Translator 不运营翻译服务器，不创建用户账号，也不收集�
 - 目标语言、显示模式、译文位置、翻译范围和有限上下文偏好
 - 用户主动要求翻译的网页文本或选区文本
 - 用户填写的自定义翻译要求
+- 用户启用的 AI 专家配置、随扩展离线打包的 VastNext 专家快照和自定义专家系统提示词
 - 为消歧而附带的有限邻近文本（仅在该选项开启时）
 - 翻译结果及其缓存键
 
@@ -19,21 +20,24 @@ Vast Translator 不运营翻译服务器，不创建用户账号，也不收集�
 
 Google 是默认引擎，请求发送到 `https://translate.googleapis.com/translate_a/t`。Bing 是备用引擎，请求发送到 `https://edge.microsoft.com/translate/translatetext`。两者会收到待翻译文本和语言参数，不会收到自定义 AI 的 API Key、模型或自定义翻译要求。
 
-自定义 AI 请求直接从扩展的 service worker 发送到用户配置 Base URL 的 `/chat/completions` 端点。请求可能包含待翻译文本、有限上下文、语言、模型和自定义翻译要求。API Key 仅用于所选实例请求的授权头。Options 中的连接测试只向选定的内置端点或候选自定义 AI 端点发送固定探测文本；它不是网页可调用的通用网络代理。
+自定义 AI 请求直接从扩展的 service worker 发送到用户配置 Base URL 的 `/chat/completions` 端点。请求可能包含待翻译文本、有限上下文、语言、模型、选定专家的系统提示词和自定义翻译要求。API Key 仅用于所选实例请求的授权头。Options 中的连接测试只向选定的内置端点或候选自定义 AI 端点发送固定探测文本；它不是网页可调用的通用网络代理。
 
-Vast Translator 不会将 API Key 返回给网页或 content script，也不会把 API Key 写入配置导出文件、翻译缓存或错误消息。
+内置专家来自 `VastNext/vast-expert-prompts` 的构建时快照。扩展运行时不会连接 GitHub 获取或更新专家；专家内容仅在用户选择自定义 AI 并主动翻译时，作为系统提示词的一部分发送给该 AI 服务。
+
+Vast Translator 不会将 API Key 返回给网页或 content script，也不会把 API Key 写入翻译缓存或错误消息。配置导出只有在用户选择“包含 API Key”时才会写入密钥。
 
 第三方 API 服务可能按照自己的条款记录请求和网络元数据。用户应自行评估并接受该服务的隐私政策、数据保留规则和费用规则。
 
 ## 本地存储
 
 - v2 配置与每个自定义实例的 API Key：保存在 `chrome.storage.local`。安全 Options 数据只返回逐实例 `hasApiKey`，不返回密钥值。
+- AI 专家开关、自定义专家提示词和每个 AI 底座的当前专家选择：保存在 `chrome.storage.local`。专家提示词只会在用户选择自定义 AI 翻译时发送给该 AI 服务。
 - 翻译缓存：保存在扩展 IndexedDB 中，默认保留 30 天，最多 5000 条，并按最近访问时间淘汰。
 - 页面进度：按标签页与 frame 保存在 `chrome.storage.session`，仅保留于当前浏览器会话，不写入 `chrome.storage.sync` 或 `chrome.storage.local`。
 
 用户可以在 Options 中清理翻译缓存；卸载扩展会由 Chrome 清除扩展本地数据。
 
-配置导出包含 v2 阅读偏好、内置项和自定义实例元数据，但不含任何 API Key 或 `hasApiKey`。导入会拒绝任何层级的 API Key、重复 ID 和保留 ID 伪装；只有 ID 与 Origin 均相同的本地自定义实例才会沿用本机密钥。旧版单实例配置会在本地迁移为 v2 自定义实例。
+配置导出由用户明确选择“包含 API Key”或“不含 API Key”，选择取消不会生成文件。导入含 API Key 的配置文件时，文件中的密钥会直接写入扩展本地存储；用户应只导入可信文件。导入仍会校验重复 ID、保留 ID 伪装和 Base URL；只有 ID 与 Origin 均相同的本地自定义实例才会沿用本机密钥。旧版单实例配置会在本地迁移为 v2 自定义实例。
 
 ## 不会进行的处理
 
@@ -47,7 +51,7 @@ Vast Translator 不会将 API Key 返回给网页或 content script，也不会�
 
 请勿翻译密码、访问令牌、支付信息、医疗记录、身份证件或其他敏感内容。建议使用权限和额度受限的 API Key，并定期轮换。远程 API 必须使用 HTTPS；HTTP 仅允许本机回环服务。
 
-Google 可能返回 `429` 限流错误，此时可稍后重试或切换到 Bing。Google 与 Bing 为非流式能力；自定义 AI 划词翻译可使用流式能力。各服务可能记录请求和网络元数据，具体以各自隐私政策为准。
+Google 可能返回 `429` 限流错误，此时可稍后重试或切换到 Bing。Google 与 Bing 为非流式能力；自定义 AI 划词翻译可使用流式能力。自定义 AI 流式响应若在完成前断开，扩展会在同一实例上最多自动续连 10 次；续连请求仍发送到用户配置的同一 Base URL，并可能包含已输出译文以避免重复。各服务可能记录请求和网络元数据，具体以各自隐私政策为准。
 
 ## 联系与变更
 

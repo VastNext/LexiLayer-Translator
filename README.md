@@ -5,6 +5,8 @@
   A browser translator that turns configurable AI prompts into domain-aware translation.
 </p>
 
+当前版本：`0.7.0`。
+
 <p align="center">
   <a href="https://github.com/VastNext/LexiLayer-Translator"><img src="https://img.shields.io/badge/status-MVP-orange.svg" alt="MVP status"></a>
   <a href="https://github.com/VastNext/LexiLayer-Translator"><img src="https://img.shields.io/badge/Manifest-V3-4285F4.svg" alt="Manifest V3"></a>
@@ -45,7 +47,7 @@ AI 翻译服务配置完成后，用户可以为不同阅读场景选择不同�
 - 🎮 **本地化专家**：根据角色、界面长度和目标受众调整表达风格。
 - ✍️ **自定义提示词**：由用户指定术语偏好、语气、受众、格式和特殊约束。
 
-当前版本已支持自定义 AI 实例和自定义翻译要求；预设领域专家提示词体系将作为后续产品能力持续完善。
+当前版本内置 29 个领域专家，并支持创建、编辑、启停和删除用户自定义专家。内置专家由 `VastNext/vast-expert-prompts` 生成版本化离线快照，扩展运行时不会访问 GitHub。
 
 ## 🔧 翻译引擎
 
@@ -88,6 +90,16 @@ npm test
 npm run typecheck
 npm run build
 ```
+
+更新并校验内置专家快照：
+
+```bash
+python -m pip install -r scripts/requirements-experts.txt
+npm run experts:sync -- --source "D:/WorkDev/MyShare/vast-expert-prompts"
+npm run experts:check -- --source "D:/WorkDev/MyShare/vast-expert-prompts"
+```
+
+也可以通过 `VAST_EXPERT_PROMPTS_DIR` 指定专家仓库路径。
 
 ### 在 Chrome 中加载
 
@@ -149,7 +161,7 @@ VAST_E2E_PROXY=http://127.0.0.1:7890 npm run e2e:network
 
 ## 🗺️ 当前状态与路线
 
-当前版本：`0.4.3` · MVP
+当前版本：`0.7.0` · MVP
 
 - ✅ Google / Bing 网页与划词翻译
 - ✅ 多个 OpenAI 兼容 AI 实例
@@ -157,11 +169,19 @@ VAST_E2E_PROXY=http://127.0.0.1:7890 npm run e2e:network
 - ✅ 现代 SPA 可见文本和动态节点翻译
 - ✅ 本地缓存、配置安全和中英文界面
 - ✅ Chrome Web Store 上架资料与发布检查清单
-- 🚧 预设领域 AI 专家提示词库
-- 🚧 翻译角色、术语偏好和风格配置的产品化
-- 🚧 更多阅读场景与专家配置能力
+- ✅ 29 个预设领域 AI 专家与版本化离线快照
+- ✅ 用户自定义专家的新建、编辑、启停和删除
+- ✅ 按 AI 底座保存当前专家选择
 
 当前不包含账号同步、云端配置、PDF 翻译、字幕翻译、术语库管理和自动整站翻译。
+
+## 0.7.0 更新
+
+- 内置专家迁移到独立的 `VastNext/vast-expert-prompts` 仓库，并记录上游 commit SHA 和 CC BY 4.0 归属说明。
+- 提供 29 个按常用场景排序的内置专家，旧专家 ID 和启用状态会自动迁移。
+- 新增用户自定义专家管理，保存后使用紧凑卡片展示，编辑时按需展开。
+- 自定义专家支持启停、取消新建、编辑和删除确认；编辑与删除使用紧凑图标按钮。
+- 配置导入导出增加 API Key 明确选择流程，并完善专家提示词缓存隔离和真实扩展测试。
 
 ## 📖 项目文档
 

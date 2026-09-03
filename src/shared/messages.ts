@@ -8,6 +8,7 @@ export interface TranslationRequest {
   targetLanguage: string;
   segments: TranslationSegment[];
   userInstruction?: string;
+  expertId?: string;
 }
 
 export interface TranslationResult {

@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PopupApp, type PopupApi } from '../../src/popup/PopupApp';
@@ -33,6 +33,32 @@ function createApi(overrides: Partial<PopupApi> = {}): PopupApi {
 }
 
 describe('精简 Popup', () => {
+  it('选择 AI 引擎时展示已启用专家并保存 expertId', async () => {
+    const api = createApi({
+      getConfig: vi.fn(async () => ({ preferences, activeEngineId: 'custom-work', theme: 'pearl-reader' as const,
+        availableEngines: [{ id: 'custom-work', kind: 'custom-ai', name: '工作 AI', ready: true, capabilities: { streaming: true } }],
+        experts: [{ id: 'technology', name: '科技类翻译大师', description: '技术内容', enabled: true }, { id: 'medical', name: '医学翻译大师', description: '医学内容', enabled: true }],
+        activeExpertByEngine: { 'custom-work': 'technology' },
+      })),
+    });
+    render(<PopupApp api={api} />);
+    const selector = await screen.findByLabelText('AI 专家');
+    await userEvent.selectOptions(selector, 'medical');
+    expect(api.savePopupState).toHaveBeenCalledWith('custom-work', preferences, 'medical');
+  });
+
+  it('自定义 AI 默认不选择任何专家，使用基础翻译提示词', async () => {
+    const api = createApi({
+      getConfig: vi.fn(async () => ({ preferences, activeEngineId: 'custom-work', theme: 'pearl-reader' as const,
+        availableEngines: [{ id: 'custom-work', kind: 'custom-ai', name: '工作 AI', ready: true, capabilities: { streaming: true } }],
+        experts: [{ id: 'technology', name: '科技类翻译大师', description: '技术内容', enabled: true }], activeExpertByEngine: {},
+      })),
+    });
+    render(<PopupApp api={api} />);
+    expect(await screen.findByLabelText('AI 专家')).toHaveValue('');
+    await userEvent.click(screen.getByRole('button', { name: '翻译 (Alt + A)' }));
+    expect(api.sendToPage).toHaveBeenCalledWith(expect.not.objectContaining({ expertId: expect.anything() }));
+  });
   it('按正式结构展示品牌、同排语言、整行引擎、状态、模式主操作和设置', async () => {
     render(<PopupApp api={createApi()} />);
     expect(await screen.findByRole('main')).toHaveAttribute('data-theme', 'pearl-reader');
@@ -59,6 +85,19 @@ describe('精简 Popup', () => {
     await userEvent.click(screen.getByRole('button', { name: '双语对照' }));
     expect(api.savePopupState).toHaveBeenLastCalledWith('bing', expect.objectContaining({ sourceLanguage: 'en', targetLanguage: 'ja', displayMode: 'translation', scanScope: 'whole-page' }));
     expect(api.sendToPage).not.toHaveBeenCalled();
+  });
+
+  it('快速连续切换引擎、语言和模式时后续保存继续使用最新引擎', async () => {
+    const calls: string[] = [];
+    const api = createApi({ savePopupState: vi.fn(async (engineId) => { calls.push(engineId); }) });
+    render(<PopupApp api={api} />);
+    await screen.findByLabelText('翻译引擎');
+
+    fireEvent.change(screen.getByLabelText('翻译引擎'), { target: { value: 'bing' } });
+    fireEvent.change(screen.getByLabelText('目标语言'), { target: { value: 'ja' } });
+    fireEvent.click(screen.getByRole('button', { name: '双语对照' }));
+
+    await waitFor(() => expect(calls).toEqual(['bing', 'bing', 'bing']));
   });
 
   it('已翻译页面切换引擎后使用新引擎立即重译', async () => {

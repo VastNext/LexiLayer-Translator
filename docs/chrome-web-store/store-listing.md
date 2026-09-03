@@ -104,7 +104,7 @@ Translate user-selected text or user-requested webpage content and display the t
 中文：
 
 ```text
-用于在浏览器本地保存翻译偏好、自定义翻译引擎配置、API Key、翻译缓存和当前浏览器会话中的页面翻译进度。API Key 不返回网页，也不包含在配置导出文件中。
+用于在浏览器本地保存翻译偏好、自定义翻译引擎配置、API Key、翻译缓存和当前浏览器会话中的页面翻译进度。API Key 不返回网页；配置导出默认不含密钥，只有用户明确确认后才会包含。
 ```
 
 英文：

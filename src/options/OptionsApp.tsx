@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import packageJson from '../../package.json' with { type: 'json' };
 import { BrandMark } from '../BrandMark';
 import {
-  DEFAULT_SETTINGS, MAX_CUSTOM_ENGINES, exportSafeSettings, validateEngine,
+  DEFAULT_SETTINGS, MAX_CUSTOM_ENGINES, createGeneratedExpertId, exportSettingsWithApiKeys, stripApiKeys, validateEngine,
   type CustomAiEngine, type OptionsEngine, type OptionsSettings, type ReadingPreferences, type SafeSettings, type Theme,
 } from '../shared/config';
+import { defaultExperts, type Expert } from '../shared/experts';
 import { languageOptions } from '../shared/languages';
 import { createTranslator, type Translator } from '../shared/i18n';
 
@@ -26,10 +27,13 @@ export interface OptionsApi {
   reorderEngines(engineIds: string[]): Promise<void>;
   testEngine(engineId: string, candidate?: CustomAiEngine): Promise<void>;
   clearEngineApiKey(engineId: string): Promise<void>;
-  importSettings(settings: unknown): Promise<void>;
+  importSettings(settings: unknown, allowApiKeys?: boolean): Promise<void>;
   clearCache(): Promise<void>;
-  exportSettings(settings: SafeSettings): void;
+  exportSettings(settings: SafeSettings | OptionsSettings): void;
   saveTheme(theme: Theme): Promise<void>;
+  setExpertEnabled?(expertId: string, enabled: boolean): Promise<void>;
+  upsertExpert?(expert: Expert): Promise<void>;
+  deleteExpert?(expertId: string): Promise<void>;
 }
 
 const themeChoices: Array<{ id: Theme; name: string; descriptionKey: string; swatch: string }> = [
@@ -48,16 +52,16 @@ function origin(value: string): string | undefined {
   try { return new URL(value).origin; } catch { return undefined; }
 }
 
-function safeExport(settings: OptionsSettings, drafts: CustomDraft[]): SafeSettings {
-  return exportSafeSettings({
+function exportableSettings(settings: OptionsSettings, drafts: CustomDraft[]): Parameters<typeof exportSettingsWithApiKeys>[0] {
+  return {
     ...settings,
     engines: settings.engines.map((engine) => {
       if (engine.kind !== 'custom-ai') return engine;
-      const draft = drafts.find((candidate) => candidate.id === engine.id) ?? customDraft(engine);
-      const { hasApiKey: _hasApiKey, savedBaseUrl: _savedBaseUrl, isNew: _isNew, apiKey: _apiKey, ...safe } = draft;
-      return { ...safe, apiKey: '' };
+      const draft = drafts.find((candidate) => candidate.id === engine.id);
+      const { hasApiKey: _hasApiKey, ...withoutStatus } = engine;
+      return { ...withoutStatus, apiKey: draft?.apiKey ?? '' };
     }),
-  } as Parameters<typeof exportSafeSettings>[0]);
+  } as Parameters<typeof exportSettingsWithApiKeys>[0];
 }
 
 export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t?: Translator }) {
@@ -73,6 +77,11 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
   const [confirmKey, setConfirmKey] = useState<string>();
   const [confirmCache, setConfirmCache] = useState(false);
   const [visibleApiKeys, setVisibleApiKeys] = useState<Set<string>>(() => new Set());
+  const [collapsedEngines, setCollapsedEngines] = useState<Set<string>>(() => new Set());
+  const [exportChoice, setExportChoice] = useState(false);
+  const [editingExpertId, setEditingExpertId] = useState<string>();
+  const [newExpertIds, setNewExpertIds] = useState<Set<string>>(() => new Set());
+  const confirmExpertDelete = undefined;
   const importInput = useRef<HTMLInputElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const reloadGeneration = useRef(0);
@@ -201,12 +210,16 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
         reader.readAsText(file);
       });
       const parsed = JSON.parse(text);
-      await api.importSettings(parsed);
+      const containsApiKeys = JSON.stringify(parsed).toLowerCase().includes('apikey');
+      if (containsApiKeys) await api.importSettings(parsed, true); else await api.importSettings(stripApiKeys(parsed));
       await reload(t('importApplied'));
     } catch (error) { setStatus(error instanceof Error ? error.message : t('importInvalid')); }
   }
 
   const customCount = drafts.length;
+  const experts = settings.experts ?? defaultExperts();
+  const builtinExperts = experts.filter((expert) => expert.kind === 'builtin');
+  const customExperts = experts.filter((expert) => expert.kind === 'custom');
   const statusState = /失败|错误|无效|不能为空|不能|failed|invalid/i.test(status) ? 'error' : 'ready';
 
   async function chooseTheme(theme: Theme): Promise<void> {
@@ -230,12 +243,69 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
     content.scrollTo({ top: target.offsetTop - content.offsetTop, behavior: 'smooth' });
   }
 
+  async function saveExpert(expert: Expert): Promise<void> {
+    const errors = !expert.name.trim() ? ['专家名称不能为空'] : !expert.prompt?.trim() ? ['专家提示词不能为空'] : [];
+    if (errors.length) return setStatus(errors.join('；'));
+    await act(async () => {
+      await api.upsertExpert?.(expert);
+      setNewExpertIds((current) => { const next = new Set(current); next.delete(expert.id); return next; });
+      setEditingExpertId(undefined);
+    }, 'AI 专家已保存', true);
+  }
+
+  function cancelExpertEdit(expertId: string): void {
+    if (newExpertIds.has(expertId)) {
+      setSettings((current) => ({ ...current, experts: (current.experts ?? []).filter((expert) => expert.id !== expertId) }));
+      setNewExpertIds((current) => { const next = new Set(current); next.delete(expertId); return next; });
+    } else {
+      void reload();
+    }
+    setEditingExpertId(undefined);
+  }
+
+  async function deleteExpert(expertId: string): Promise<void> {
+    await act(async () => {
+      await api.deleteExpert?.(expertId);
+      setEditingExpertId(undefined);
+    }, '专家已删除', true);
+  }
+
+  function requestDeleteExpert(expert: Expert): void {
+    if (window.confirm(`确定删除专家“${expert.name}”吗？`)) void deleteExpert(expert.id);
+  }
+
+  function setConfirmExpertDelete(expertId: string): void {
+    const expert = (settings.experts ?? []).find((item) => item.id === expertId);
+    if (expert) requestDeleteExpert(expert);
+  }
+
+
+  function createExpert(): void {
+    const id = createGeneratedExpertId((settings.experts ?? []).map((expert) => expert.id));
+    setSettings((current) => ({ ...current, experts: [...(current.experts ?? []), { id, kind: 'custom', name: '我的翻译专家', description: '自定义翻译能力', prompt: 'Translate accurately into {{to}}. Preserve meaning and formatting.', enabled: true, order: current.experts?.length ?? 0 }] }));
+    setNewExpertIds((current) => new Set(current).add(id));
+    setEditingExpertId(id);
+  }
+
+  async function exportFile(includeApiKeys: boolean): Promise<void> {
+    const source = exportableSettings(settings, drafts);
+    if (includeApiKeys) {
+      source.engines = await Promise.all(source.engines.map(async (engine) => engine.kind === 'custom-ai'
+        ? { ...engine, apiKey: engine.apiKey || await api.getEngineApiKey(engine.id) }
+        : engine));
+    }
+    const exported = exportSettingsWithApiKeys(source, includeApiKeys);
+    api.exportSettings(exported as SafeSettings | OptionsSettings);
+    setExportChoice(false);
+  }
+
   return <main className="shell options" data-theme={settings.theme}>
     <aside className="options-nav">
       <div className="options-brand"><span className="brand-icon"><BrandMark /></span><strong>Vast</strong></div>
       <nav aria-label={t('settingsNavigation')}>
         <button onClick={() => navigateTo('builtin-engines')}>{t('translationEngine')}</button>
         <button onClick={() => navigateTo('custom-engines')}>{t('customAiEngines')}</button>
+        <button onClick={() => navigateTo('ai-experts')}>AI 专家</button>
         <button onClick={() => navigateTo('reading-preferences')}>{t('optionsReadingPreferences')}</button>
         <button onClick={() => navigateTo('selection-preferences')}>{t('selectionPreferences')}</button>
         <button onClick={() => navigateTo('appearance-theme')}>{t('appearanceTheme')}</button>
@@ -260,24 +330,38 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
       </article>)}</div>
     </section>
 
+    <section id="ai-experts" className="section" aria-label="AI 专家"><div className="section-header"><div><h2>AI 专家</h2><p className="section-copy">选择适合当前内容的翻译方式，也可以创建自己的专家。</p></div><span className="section-index">03 / EXPERTS</span></div>
+      <div className="expert-settings-list">{builtinExperts.map((expert) => <article className="expert-setting" aria-label={expert.name} key={expert.id}><div className="expert-setting-head"><div><h3>{expert.name}</h3><span className="badge">PROMPTS</span><p>{expert.description}</p></div><label className="toggle"><input type="checkbox" aria-label={`${expert.name} 启用`} checked={expert.enabled} onChange={(event) => void act(() => api.setExpertEnabled?.(expert.id, event.target.checked) ?? Promise.resolve(), '专家状态已更新', true)} /> 启用</label></div></article>)}</div>
+      {customExperts.length > 0 && <div className="expert-custom-group"><div className="expert-custom-heading"><div><h3>用户自定义专家</h3><p>你创建的专家，点击编辑后修改详细提示词。</p></div><span className="section-index">CUSTOM</span></div><div className="expert-settings-list">{customExperts.map((expert) => {
+        const editing = editingExpertId === expert.id;
+        const isNew = newExpertIds.has(expert.id);
+        return <article className={`expert-setting expert-setting--custom ${editing ? 'expert-setting--editing' : ''}`} aria-label={expert.name} key={expert.id}>
+          {!editing && <label className="toggle expert-compact-toggle"><input type="checkbox" aria-label={`${expert.name} 启用`} checked={expert.enabled} onChange={(event) => void act(() => api.setExpertEnabled?.(expert.id, event.target.checked) ?? Promise.resolve(), '专家状态已更新', true)} /> 启用</label>}
+          {!editing ? <div className="expert-setting-head"><div><h3>{expert.name}</h3><span className="badge">CUSTOM</span><p>{expert.description}</p></div><div className="expert-card-actions"><span className={`expert-status ${expert.enabled ? 'expert-status--on' : ''}`}>{expert.enabled ? '已启用' : '未启用'}</span><button type="button" className="icon-button" aria-label={`编辑 ${expert.name}`} title="编辑" onClick={() => setEditingExpertId(expert.id)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16-.7 4.7L8 20l11.5-11.5a2.1 2.1 0 0 0-3-3L5 17Z" /><path d="m14.5 6.5 3 3" /></svg></button>{confirmExpertDelete === expert.id ? <button type="button" className="icon-button icon-button--danger" aria-label={`确认删除 ${expert.name}`} title="确认删除" onClick={() => void deleteExpert(expert.id)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M9 7V4h6v3m-9 0 1 13h10l1-13" /></svg></button> : <button type="button" className="icon-button icon-button--danger" aria-label={`删除 ${expert.name}`} title="删除" onClick={() => setConfirmExpertDelete(expert.id)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M9 7V4h6v3m-9 0 1 13h10l1-13" /></svg></button>}</div></div> : <><div className="expert-setting-head"><div><h3>{expert.name}</h3><span className="badge">{isNew ? 'NEW' : 'CUSTOM'}</span></div><label className="toggle"><input type="checkbox" aria-label={`${expert.name} 启用`} checked={expert.enabled} onChange={(event) => setSettings((current) => ({ ...current, experts: (current.experts ?? []).map((item) => item.id === expert.id ? { ...item, enabled: event.target.checked } : item) }))} /> 启用</label></div><div className="grid"><label className="field">名称<input value={expert.name} onChange={(event) => setSettings((current) => ({ ...current, experts: (current.experts ?? []).map((item) => item.id === expert.id ? { ...item, name: event.target.value } : item) }))} /></label><label className="field field--wide">说明<input value={expert.description} onChange={(event) => setSettings((current) => ({ ...current, experts: (current.experts ?? []).map((item) => item.id === expert.id ? { ...item, description: event.target.value } : item) }))} /></label><label className="field field--wide">系统提示词<textarea value={expert.prompt} onChange={(event) => setSettings((current) => ({ ...current, experts: (current.experts ?? []).map((item) => item.id === expert.id ? { ...item, prompt: event.target.value } : item) }))} /></label></div><div className="actions expert-edit-actions"><button className="primary options-action" onClick={() => void saveExpert(expert)}>保存专家</button><button className="secondary options-action" onClick={() => cancelExpertEdit(expert.id)}>{isNew ? '取消' : '取消编辑'}</button>{!isNew && (confirmExpertDelete === expert.id ? <button className="danger options-action" onClick={() => void deleteExpert(expert.id)}>确认删除</button> : <button type="button" className="icon-button icon-button--danger" aria-label={`删除 ${expert.name}`} title="删除" onClick={() => setConfirmExpertDelete(expert.id)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M9 7V4h6v3m-9 0 1 13h10l1-13" /></svg></button>)}</div></>}
+        </article>;
+      })}</div></div>}
+      <button className="secondary options-action add-engine" onClick={createExpert}>＋ 自定义专家</button>
+    </section>
+
     <section id="custom-engines" className="section" aria-labelledby="custom-engines-title">
       <div className="section-header"><div><h2 id="custom-engines-title">{t('customAiEngines')}</h2><p className="section-copy">{t('customAiDescription')}</p></div><span className="section-index">02 / AI · {customCount}/{MAX_CUSTOM_ENGINES}</span></div>
       <div className="engine-stack">{drafts.map((draft, index) => {
         const changedOrigin = Boolean(draft.savedBaseUrl && origin(draft.baseUrl) !== origin(draft.savedBaseUrl));
-        return <fieldset className="engine-card" aria-label={draft.name} key={draft.id}>
-          <legend>{draft.name}</legend>
+        const collapsed = collapsedEngines.has(draft.id);
+        return <fieldset className={`engine-card ${collapsed ? 'engine-card--collapsed' : ''}`} aria-label={draft.name} key={draft.id}>
+          <legend><button type="button" className="engine-collapse" aria-expanded={!collapsed} aria-label={`${draft.name} ${collapsed ? '展开' : '折叠'}`} onClick={() => setCollapsedEngines((current) => { const next = new Set(current); if (next.has(draft.id)) next.delete(draft.id); else next.add(draft.id); return next; })}>{collapsed ? '›' : '⌄'}</button>{draft.name}</legend>
           <div className="engine-card-head"><div className="engine-identity"><span className="badge">AI</span>{settings.activeEngineId === draft.id && <span className="badge badge--active">{t('activeDefault')}</span>}</div><label className="toggle"><input type="checkbox" aria-label={t('enabled')} checked={draft.enabled} onChange={(event) => {
             if (draft.isNew) updateDraft(draft.id, 'enabled', event.target.checked);
             else void act(() => api.setEngineEnabled(draft.id, event.target.checked), t('statusEngineUpdated'), true);
           }} /> {t('enabled')}</label></div>
-          <div className="grid engine-grid">
+          {!collapsed && <div className="grid engine-grid">
             <label className="field">{t('engineName')}<input aria-label={t('engineName')} value={draft.name} onChange={(event) => updateDraft(draft.id, 'name', event.target.value)} /></label>
             <label className="field">{t('model')}<input aria-label={t('model')} value={draft.model} onChange={(event) => updateDraft(draft.id, 'model', event.target.value)} /></label>
             <label className="field field--wide">Base URL<input aria-label="Base URL" value={draft.baseUrl} onChange={(event) => updateBaseUrl(draft.id, event.target.value)} /><small>{t('connectionDestination')}<span className="origin">{origin(draft.baseUrl) ?? t('invalidAddress')}</span></small></label>
             <label className="field field--wide">API Key<span className="input-wrapper"><input aria-label="API Key" type={visibleApiKeys.has(draft.id) ? 'text' : 'password'} autoComplete="off" value={draft.apiKey} onChange={(event) => updateDraft(draft.id, 'apiKey', event.target.value)} /><button type="button" className="input-icon-button" aria-label={visibleApiKeys.has(draft.id) ? t('hideApiKey') : t('showApiKey')} onClick={() => toggleApiKey(draft.id)}>{visibleApiKeys.has(draft.id) ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 4.2A10.8 10.8 0 0 1 12 4c5.5 0 9 5.1 9 8a8.7 8.7 0 0 1-2.1 3.8M6.2 6.2C4.2 7.6 3 10 3 12c0 2.9 3.5 8 9 8 1.2 0 2.3-.2 3.2-.6" /></svg> : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12c0-2.9 3.5-8 9-8s9 5.1 9 8-3.5 8-9 8-9-5.1-9-8Z" /><circle cx="12" cy="12" r="3" /></svg>}</button></span><small>{draft.hasApiKey && !changedOrigin ? t('optionsKeySaved') : t('apiKeyHelp')}</small></label>
-          </div>
-          {changedOrigin && <p className="note">{t('engineOriginChanged')}</p>}
-          <div className="actions engine-actions">
+           </div>}
+           {!collapsed && changedOrigin && <p className="note">{t('engineOriginChanged')}</p>}
+           {!collapsed && <div className="actions engine-actions">
             <button className="primary options-action" onClick={() => void saveDraft(draft)}>{t('saveEngine')}</button>
             <button className="secondary options-action" onClick={() => void testConnection(draft.id, { id: draft.id, kind: 'custom-ai', name: draft.name, enabled: draft.enabled, order: draft.order, baseUrl: draft.baseUrl, model: draft.model, apiKey: draft.apiKey })}>{t('actionTestConnection')}</button>
             <button className="secondary options-action" disabled={!draft.enabled || changedOrigin || (!draft.hasApiKey && !draft.apiKey)} onClick={() => void act(() => api.setActiveEngine(draft.id), t('statusActiveChanged'), true)}>{t('setDefault')}</button>
@@ -287,7 +371,7 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
             {confirmKey === draft.id && <><span className="help">{t('confirmClearKey')}</span><button className="danger options-action" onClick={() => void act(async () => { await api.clearEngineApiKey(draft.id); setConfirmKey(undefined); await reload(t('statusKeyCleared')); }, t('statusKeyCleared'))}>{t('actionConfirmClearKey')}</button></>}
             {!draft.isNew && confirmDelete !== draft.id && <button className="danger options-action" onClick={() => setConfirmDelete(draft.id)}>{t('deleteEngine')}</button>}
             {confirmDelete === draft.id && <><span className="help">{t('confirmDeleteEngine')}</span><button className="danger options-action" onClick={() => void act(async () => { await api.deleteEngine(draft.id); setConfirmDelete(undefined); await reload(t('statusEngineDeleted')); }, t('statusEngineDeleted'))}>{t('confirmDeleteEngineAction')}</button></>}
-          </div>
+           </div>}
         </fieldset>;
       })}</div>
       <button className="secondary options-action add-engine" disabled={!loaded || customCount >= MAX_CUSTOM_ENGINES} onClick={() => {
@@ -319,7 +403,7 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
 
     <section id="data-privacy" className="section" aria-labelledby="data-title"><div className="section-header"><div><h2 id="data-title">{t('dataPrivacy')}</h2><p className="section-copy">{t('privacyWarning')}</p></div><span className="section-index">06 / LOCAL</span></div>
       <input ref={importInput} hidden aria-label={t('actionImport')} type="file" accept="application/json" onChange={(event) => void importFile(event.target.files?.[0])} />
-      <div className="actions"><button className="secondary options-action" onClick={() => importInput.current?.click()}>{t('actionImport')}</button><button className="secondary options-action" onClick={() => api.exportSettings(safeExport(settings, drafts))}>{t('actionExport')}</button>
+       <div className="actions"><button className="secondary options-action" onClick={() => importInput.current?.click()}>{t('actionImport')}</button>{!exportChoice ? <button className="secondary options-action" onClick={() => setExportChoice(true)}>{t('actionExport')}</button> : <span className="export-choice"><span className="help">是否包含 API Key？</span><button className="primary options-action" onClick={() => void exportFile(true)}>包含 API Key</button><button className="secondary options-action" onClick={() => void exportFile(false)}>不含 API Key</button><button className="secondary options-action" onClick={() => setExportChoice(false)}>取消导出</button></span>}
       {!confirmCache ? <button className="danger options-action" onClick={() => setConfirmCache(true)}>{t('actionClearCache')}</button> : <><span className="help">{t('confirmClear')}</span><button className="danger options-action" onClick={() => void act(async () => { await api.clearCache(); setConfirmCache(false); }, t('cacheCleared'))}>{t('actionConfirmClear')}</button></>}</div>
     </section>
     <p className="status status-toast" role="status" data-state={statusState}>{status || t('unchanged')} {loadFailed && <button className="secondary options-action" onClick={() => void reload()}>{t('actionRetry')}</button>}</p>

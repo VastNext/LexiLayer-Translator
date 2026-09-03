@@ -298,4 +298,62 @@ describe('OpenAiClient', () => {
 
     await expect(consume()).rejects.toThrow('流式响应格式无效');
   });
+
+  it('流在完成事件前断开时最多重试十次，并只继续输出新内容', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(new Response('data: {"choices":[{"delta":{"content":"你"}}]}\n\n', {
+        headers: { 'Content-Type': 'text/event-stream' },
+      }))
+      .mockResolvedValueOnce(new Response('data: {"choices":[{"delta":{"content":"好"}}]}\n\ndata: [DONE]\n\n', {
+        headers: { 'Content-Type': 'text/event-stream' },
+      }));
+    const client = new OpenAiClient({
+      baseUrl: 'https://api.example.com/v1', apiKey: 'sk-secret', model: 'gpt-test', fetch,
+      sleep: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const chunks: string[] = [];
+    for await (const chunk of client.streamText('Hello', 'en', 'zh-Hans')) chunks.push(chunk);
+
+    expect(chunks).toEqual(['你', '好']);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const retryBody = JSON.parse(fetch.mock.calls[1][1].body as string);
+    expect(retryBody.messages.at(-1)).toEqual(expect.objectContaining({ role: 'user' }));
+    expect(retryBody.messages.at(-1).content).toContain('你');
+  });
+
+  it('流持续在完成事件前断开时最多请求十一次', async () => {
+    const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response('', {
+      headers: { 'Content-Type': 'text/event-stream' },
+    })));
+    const client = new OpenAiClient({
+      baseUrl: 'https://api.example.com/v1', apiKey: 'sk-secret', model: 'gpt-test', fetch,
+      sleep: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const consume = async () => {
+      for await (const _chunk of client.streamText('Hello', 'en', 'zh-Hans')) { /* 消费完整流。 */ }
+    };
+
+    await expect(consume()).rejects.toThrow('流式响应在完成前断开');
+    expect(fetch).toHaveBeenCalledTimes(11);
+  });
+
+  it('上游以 408 upstream_error 返回 stream disconnected 时继续重试', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ message: 'stream error: stream disconnected before completion', type: 'upstream_error', code: 408 }, 408))
+      .mockResolvedValueOnce(new Response('data: {"choices":[{"delta":{"content":"完成"}}]}\n\ndata: [DONE]\n\n', {
+        headers: { 'Content-Type': 'text/event-stream' },
+      }));
+    const client = new OpenAiClient({
+      baseUrl: 'https://api.example.com/v1', apiKey: 'sk-secret', model: 'gpt-test', fetch,
+      sleep: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const chunks: string[] = [];
+    for await (const chunk of client.streamText('Hello', 'en', 'zh-Hans')) chunks.push(chunk);
+
+    expect(chunks).toEqual(['完成']);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
 });

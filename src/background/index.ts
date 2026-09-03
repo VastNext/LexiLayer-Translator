@@ -8,6 +8,8 @@ import {
 } from '../shared/config';
 import { mapChromeUiLanguage } from '../shared/languages';
 import type { TranslationRequest, TranslationResult, TranslationSegment } from '../shared/messages';
+import { expertById } from '../shared/experts';
+import { handleExpertCommand } from './expert-commands';
 
 type AsyncMessageListener = (message: unknown, sender: chrome.runtime.MessageSender, sendResponse: (response: unknown) => void) => boolean | void;
 
@@ -36,7 +38,7 @@ const allowedTypes = new Set([
   'translate-batch', 'cancel-task', 'get-public-config', 'get-popup-config', 'get-options-settings', 'get-engine-api-key',
   'test-engine', 'translate-selection-inline', 'translate-selection-fallback', 'cancel-selection-fallback', 'clear-cache',
   'save-reading-preferences', 'upsert-engine', 'delete-engine', 'set-active-engine', 'set-engine-enabled', 'reorder-engines', 'import-settings',
-  'save-popup-preferences', 'save-theme',
+  'save-popup-preferences', 'save-theme', 'upsert-expert', 'delete-expert', 'set-expert-enabled',
   'clear-engine-api-key',
   'page-progress', 'get-page-progress',
 ]);
@@ -92,6 +94,29 @@ function requireEngine(settings: Settings, engineId: string): Engine {
   return engine;
 }
 
+let builtinPrompts: Record<string, string> = {};
+let builtinPromptsLoad: Promise<void> | undefined;
+
+async function loadBuiltinPrompts(): Promise<void> {
+  if (!builtinPromptsLoad) {
+    const url = typeof chrome !== 'undefined' && chrome.runtime?.getURL ? chrome.runtime.getURL('experts.json') : '';
+    builtinPromptsLoad = url ? fetch(url).then(async (response) => {
+      if (response.ok) {
+        const payload = await response.json() as { prompts?: Record<string, string> };
+        builtinPrompts = payload.prompts ?? {};
+      }
+    }).catch(() => undefined) : Promise.resolve();
+  }
+  await builtinPromptsLoad;
+}
+
+async function expertInstruction(settings: Settings, engine: Engine, expertId: unknown, context?: string): Promise<string | undefined> {
+  if (engine.kind !== 'custom-ai') return undefined;
+  const expert = expertById(settings.experts ?? [], typeof expertId === 'string' ? expertId : undefined);
+  await loadBuiltinPrompts();
+  return [expert?.prompt || (expert?.kind === 'builtin' ? builtinPrompts[expert.id] : undefined), settings.readingPreferences.userInstruction, context].filter(Boolean).join('\n') || undefined;
+}
+
 function effectivePreferences(settings: Settings, api: BackgroundChrome): ReadingPreferences {
   const preferences = structuredClone(settings.readingPreferences);
   if (preferences.targetLanguage === 'auto') preferences.targetLanguage = mapChromeUiLanguage(api.i18n.getUILanguage());
@@ -103,6 +128,8 @@ function publicConfig(settings: Settings, api: BackgroundChrome, dependencies: B
     preferences: effectivePreferences(settings, api),
     theme: settings.theme,
     activeEngineId: settings.activeEngineId,
+    experts: (settings.experts ?? []).filter((expert) => expert.enabled).map(({ id, name, description, enabled }) => ({ id, name, description, enabled })),
+    activeExpertByEngine: settings.activeExpertByEngine ?? {},
     availableEngines: settings.engines.map((engine) => {
       let capabilities = { streaming: engine.kind === 'custom-ai' };
       if (engineReady(engine)) {
@@ -117,17 +144,19 @@ export async function readSettings(api: BackgroundChrome): Promise<Settings> {
   const stored = await api.storage.local.get(['translatorSettings', 'translatorConfig']) as { translatorSettings?: unknown; translatorConfig?: unknown };
   if (stored.translatorSettings !== undefined) {
     const settings = normalizeSettings(stored.translatorSettings);
-    const raw = stored.translatorSettings as { mvpDefaultsVersion?: number };
-    if (raw?.mvpDefaultsVersion !== 1) {
+    const raw = stored.translatorSettings as { mvpDefaultsVersion?: number; expertDefaultsVersion?: number };
+    if (raw?.mvpDefaultsVersion !== 1 || raw?.expertDefaultsVersion !== 6) {
       settings.mvpDefaultsVersion = 1;
-      settings.readingPreferences.targetLanguage = 'auto';
-      settings.readingPreferences.scanScope = 'whole-page';
+      if (raw?.mvpDefaultsVersion !== 1) {
+        settings.readingPreferences.targetLanguage = 'auto';
+        settings.readingPreferences.scanScope = 'whole-page';
+      }
       await api.storage.local.set({ translatorSettings: settings });
     }
     return settings;
   }
   if (stored.translatorConfig !== undefined) {
-    const migrated = migrateSettings(stored.translatorConfig);
+    const migrated = normalizeSettings(migrateSettings(stored.translatorConfig));
     await api.storage.local.set({ translatorSettings: migrated });
     return migrated;
   }
@@ -189,7 +218,7 @@ export function createBackgroundController(api: BackgroundChrome, dependencies: 
   let settingsMutationQueue = Promise.resolve();
   const settingsMutationTypes = new Set([
     'save-reading-preferences', 'upsert-engine', 'delete-engine', 'set-active-engine', 'set-engine-enabled',
-    'save-popup-preferences', 'save-theme',
+    'save-popup-preferences', 'save-theme', 'upsert-expert', 'delete-expert', 'set-expert-enabled',
     'reorder-engines', 'import-settings', 'clear-engine-api-key',
   ]);
   const translateWithProvider = (provider: Provider, request: TranslationRequest, signal: AbortSignal) => dependencies.translate?.(provider, request, signal) ?? provider.translate(request, signal);
@@ -252,13 +281,14 @@ export function createBackgroundController(api: BackgroundChrome, dependencies: 
       }
       if (message.type === 'clear-cache') { await dependencies.clearCache(); return { ok: true }; }
       if (message.type === 'translate-selection-inline') {
-        if (!hasOnlyKeys(message, ['type', 'engineId', 'targetLanguage', 'text', 'context']) || !isSafeId(message.engineId) || !isSafeString(message.targetLanguage, 64) || !isSafeString(message.text, 5000) || (message.context !== undefined && (typeof message.context !== 'string' || message.context.length > 600))) return { ok: false, error: '消息格式无效' };
+         if (!hasOnlyKeys(message, ['type', 'engineId', 'targetLanguage', 'text', 'context', 'expertId']) || !isSafeId(message.engineId) || !isSafeString(message.targetLanguage, 64) || !isSafeString(message.text, 5000) || (message.expertId !== undefined && !isSafeId(message.expertId)) || (message.context !== undefined && (typeof message.context !== 'string' || message.context.length > 600))) return { ok: false, error: '消息格式无效' };
         if (sender.tab?.id === undefined || sender.frameId === undefined || !sender.documentId) return { ok: false, error: '消息来源无效' };
         const engine = requireEngine(settings, message.engineId);
         const context = typeof message.context === 'string' && message.context ? `以下邻近文本仅用于消歧，不要翻译或输出：${message.context}` : '';
-        const userInstruction = engine.kind === 'custom-ai' ? [settings.readingPreferences.userInstruction, context].filter(Boolean).join('\n') || undefined : undefined;
+         const expertId = message.expertId ?? settings.activeExpertByEngine?.[message.engineId];
+         const userInstruction = await expertInstruction(settings, engine, expertId, context);
         const [result] = await translateWithProvider(dependencies.createProvider(engine), {
-          sourceLanguage: 'auto', targetLanguage: message.targetLanguage, segments: [{ id: 'selection-inline', text: message.text }], userInstruction,
+           sourceLanguage: 'auto', targetLanguage: message.targetLanguage, segments: [{ id: 'selection-inline', text: message.text }], userInstruction, ...(typeof expertId === 'string' ? { expertId } : {}),
         }, new AbortController().signal);
         if (!result) throw new Error('翻译响应格式无效');
         return { ok: true, data: { text: result.text } };
@@ -274,9 +304,11 @@ export function createBackgroundController(api: BackgroundChrome, dependencies: 
         return { ok: true };
       }
       if (message.type === 'save-popup-preferences') {
-        if (!hasOnlyKeys(message, ['type', 'engineId', 'readingPreferences']) || !isSafeId(message.engineId)) return { ok: false, error: '消息格式无效' };
-        requireEngine(settings, message.engineId);
-        const candidate = { ...settings, activeEngineId: message.engineId, readingPreferences: message.readingPreferences as ReadingPreferences };
+         if (!hasOnlyKeys(message, ['type', 'engineId', 'readingPreferences', 'expertId']) || !isSafeId(message.engineId) || (message.expertId !== undefined && message.expertId !== null && !isSafeId(message.expertId))) return { ok: false, error: '消息格式无效' };
+         requireEngine(settings, message.engineId);
+         const expertId = message.expertId === null ? undefined : typeof message.expertId === 'string' && expertById(settings.experts ?? [], message.expertId) ? message.expertId : settings.activeExpertByEngine?.[message.engineId];
+         const activeExpertByEngine = expertId ? { ...(settings.activeExpertByEngine ?? {}), [message.engineId]: expertId } : Object.fromEntries(Object.entries(settings.activeExpertByEngine ?? {}).filter(([id]) => id !== message.engineId));
+         const candidate = { ...settings, activeEngineId: message.engineId, readingPreferences: message.readingPreferences as ReadingPreferences, activeExpertByEngine };
         await saveSettings(candidate);
         return { ok: true };
       }
@@ -284,7 +316,7 @@ export function createBackgroundController(api: BackgroundChrome, dependencies: 
         if (!hasOnlyKeys(message, ['type', 'engineId']) || !isSafeId(message.engineId)) return { ok: false, error: '消息格式无效' };
         requireEngine(settings, message.engineId); await saveSettings({ ...settings, activeEngineId: message.engineId }); return { ok: true };
       }
-      if (message.type === 'set-engine-enabled') {
+       if (message.type === 'set-engine-enabled') {
         if (!hasOnlyKeys(message, ['type', 'engineId', 'enabled']) || !isSafeId(message.engineId) || typeof message.enabled !== 'boolean') return { ok: false, error: '消息格式无效' };
         const engine = settings.engines.find((item) => item.id === message.engineId);
         if (!engine) return { ok: false, error: '翻译引擎不存在' };
@@ -294,8 +326,11 @@ export function createBackgroundController(api: BackgroundChrome, dependencies: 
         const activeEngineId = !message.enabled && settings.activeEngineId === engine.id
           ? (ready.find((item) => item.id === 'google') ?? ready[0]).id
           : settings.activeEngineId;
-        await saveSettings({ ...settings, engines, activeEngineId }); return { ok: true };
-      }
+         await saveSettings({ ...settings, engines, activeEngineId }); return { ok: true };
+       }
+        if (message.type === 'set-expert-enabled' || message.type === 'upsert-expert' || message.type === 'delete-expert') {
+          return await handleExpertCommand(message, settings, saveSettings);
+        }
       if (message.type === 'reorder-engines') {
         if (!hasOnlyKeys(message, ['type', 'engineIds']) || !Array.isArray(message.engineIds) || message.engineIds.some((id) => !isSafeId(id))) return { ok: false, error: '消息格式无效' };
         const ids = message.engineIds as string[];
@@ -305,8 +340,8 @@ export function createBackgroundController(api: BackgroundChrome, dependencies: 
         await saveSettings({ ...settings, engines }); return { ok: true };
       }
       if (message.type === 'import-settings') {
-        if (!hasOnlyKeys(message, ['type', 'settings'])) return { ok: false, error: '消息格式无效' };
-        await saveSettings(importSettings(message.settings, settings)); return { ok: true };
+       if (!hasOnlyKeys(message, ['type', 'settings', 'allowApiKeys']) || (message.allowApiKeys !== undefined && typeof message.allowApiKeys !== 'boolean')) return { ok: false, error: '消息格式无效' };
+         await saveSettings(importSettings(message.settings, settings, message.allowApiKeys === true)); return { ok: true };
       }
       if (message.type === 'upsert-engine') {
         if (!hasOnlyKeys(message, ['type', 'engine']) || validateEngine(message.engine).length) return { ok: false, error: '消息格式无效' };
@@ -382,21 +417,22 @@ export function createBackgroundController(api: BackgroundChrome, dependencies: 
         const { key, controller } = reservation;
         try {
           if (controller.signal.aborted) return { ok: false, error: '任务已取消' };
-          const instruction = [settings.readingPreferences.userInstruction, reservation.context ? `以下邻近文本仅用于消歧，不要翻译或输出：${reservation.context}` : ''].filter(Boolean).join('\n');
-          const data = await translateWithProvider(dependencies.createProvider(engine), { sourceLanguage: reservation.sourceLanguage, targetLanguage: reservation.targetLanguage, segments: [{ id: 'selection', text: reservation.text }], userInstruction: instruction }, controller.signal);
+            const instruction = await expertInstruction(settings, engine, settings.activeExpertByEngine?.[reservation.engineId], reservation.context ? `以下邻近文本仅用于消歧，不要翻译或输出：${reservation.context}` : undefined);
+           const data = await translateWithProvider(dependencies.createProvider(engine), { sourceLanguage: reservation.sourceLanguage, targetLanguage: reservation.targetLanguage, segments: [{ id: 'selection', text: reservation.text }], userInstruction: instruction }, controller.signal);
           if (controller.signal.aborted) return { ok: false, error: '任务已取消' }; return { ok: true, data };
         } finally { if (fallbackTasks.get(key) === controller) fallbackTasks.delete(key); }
       }
       if (message.type === 'translate-batch') {
-        if (!hasOnlyKeys(message, ['type', 'taskId', 'engineId', 'sourceLanguage', 'targetLanguage', 'segments', 'context']) || !isSafeId(message.taskId) || !isSafeId(message.engineId) || !isSafeString(message.sourceLanguage, 64) || !isSafeString(message.targetLanguage, 64)) return { ok: false, error: '消息格式无效' };
+         if (!hasOnlyKeys(message, ['type', 'taskId', 'engineId', 'sourceLanguage', 'targetLanguage', 'segments', 'context', 'expertId']) || !isSafeId(message.taskId) || !isSafeId(message.engineId) || !isSafeString(message.sourceLanguage, 64) || !isSafeString(message.targetLanguage, 64) || (message.expertId !== undefined && !isSafeId(message.expertId))) return { ok: false, error: '消息格式无效' };
         const segments = parseSegments(message.segments); if (!segments) return { ok: false, error: '消息格式无效' };
         const key = pageTaskKey(sender, message.taskId); if (!key) return { ok: false, error: '消息来源无效' };
         const engine = requireEngine(settings, message.engineId); const provider = dependencies.createProvider(engine);
         const controller = new AbortController(); const controllers = tasks.get(key) ?? new Set<AbortController>(); controllers.add(controller); tasks.set(key, controllers);
         try {
           const context = typeof message.context === 'string' && message.context.length <= 600 ? `以下邻近文本仅用于消歧，不要翻译或输出：${message.context}` : '';
-          const instruction = engine.kind === 'custom-ai' ? [settings.readingPreferences.userInstruction, context].filter(Boolean).join('\n') : undefined;
-          const data = await translateWithProvider(provider, { sourceLanguage: message.sourceLanguage, targetLanguage: message.targetLanguage, segments, userInstruction: instruction }, controller.signal);
+            const expertId = message.expertId ?? settings.activeExpertByEngine?.[message.engineId];
+             const instruction = await expertInstruction(settings, engine, expertId, context);
+            const data = await translateWithProvider(provider, { sourceLanguage: message.sourceLanguage, targetLanguage: message.targetLanguage, segments, userInstruction: instruction, ...(typeof expertId === 'string' ? { expertId } : {}) }, controller.signal);
           if (controller.signal.aborted) return { ok: false, error: '任务已取消' }; return { ok: true, data };
         } finally { controllers.delete(controller); if (!controllers.size) tasks.delete(key); }
       }
@@ -425,7 +461,7 @@ export function createBackgroundController(api: BackgroundChrome, dependencies: 
       port.onMessage.addListener((message: unknown) => {
         if (!isMessage(message)) return;
         if (message.type === 'cancel-selection' && isSafeId(message.requestId)) { controllers.get(message.requestId)?.abort(); controllers.delete(message.requestId); return; }
-        if (message.type !== 'translate-selection' || !isSafeId(message.requestId) || !isSafeId(message.engineId) || !isSafeString(message.text, 5000)) return;
+        if (message.type !== 'translate-selection' || !isSafeId(message.requestId) || !isSafeId(message.engineId) || (message.expertId !== undefined && !isSafeId(message.expertId)) || !isSafeString(message.text, 5000)) return;
         const now = Date.now(); const recent = (selectionRequests.get(tabId) ?? []).filter((timestamp) => now - timestamp < 10_000);
         if (recent.length >= 5) { port.postMessage({ type: 'selection-error', requestId: message.requestId, engineId: message.engineId, canFallback: false, error: '划词翻译请求过于频繁，请稍后重试' }); return; }
         recent.push(now); selectionRequests.set(tabId, recent);
@@ -437,9 +473,9 @@ export function createBackgroundController(api: BackgroundChrome, dependencies: 
             const engine = requireEngine(settings, engineId);
             canFallback = engine.kind === 'custom-ai';
             const provider = dependencies.createProvider(engine);
-            const instruction = engine.kind === 'custom-ai' ? settings.readingPreferences.userInstruction : undefined;
+             const instruction = await expertInstruction(settings, engine, message.expertId ?? settings.activeExpertByEngine?.[engineId]);
             const context = typeof message.context === 'string' ? message.context.slice(0, 600) : undefined;
-            for await (const chunk of streamWithProvider(provider, text, String(message.sourceLanguage ?? 'auto'), String(message.targetLanguage ?? settings.readingPreferences.targetLanguage), instruction, context, controller.signal)) {
+            for await (const chunk of streamWithProvider(provider, text, String(message.sourceLanguage ?? 'auto'), String(message.targetLanguage ?? settings.readingPreferences.targetLanguage), instruction ?? '', context, controller.signal)) {
               if (!controller.signal.aborted) port.postMessage({ type: 'selection-chunk', requestId, engineId, chunk });
             }
             if (!controller.signal.aborted) port.postMessage({ type: 'selection-complete', requestId, engineId });
