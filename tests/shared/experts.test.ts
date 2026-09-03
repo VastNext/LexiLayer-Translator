@@ -32,7 +32,7 @@ describe('VastNext expert snapshot', () => {
       revision: string;
       prompts: Record<string, string>;
     };
-    expect(snapshot.source).toBe('https://github.com/VastNext/vast-expert-prompts');
+    expect(snapshot.source).toBe('https://github.com/VastNext/LexiLayerPrompts');
     expect(snapshot.revision).toBe(EXPERT_CATALOG_REVISION);
     expect(Object.keys(snapshot.prompts)).toHaveLength(BUILTIN_EXPERTS.length);
     expect(snapshot.prompts.technology).toContain('For software terminology');

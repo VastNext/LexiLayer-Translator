@@ -10,7 +10,7 @@ import sys
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SOURCE = Path(os.environ.get("VAST_EXPERT_PROMPTS_DIR", ROOT.parent / "vast-expert-prompts"))
+DEFAULT_SOURCE = Path(os.environ.get("VAST_EXPERT_PROMPTS_DIR", ROOT.parent / "LexiLayerPrompts"))
 DISPLAY_NAMES = {
     "ao3": "同人文学专家",
     "bilingual-mix": "双语混合专家",
@@ -155,7 +155,7 @@ def write_or_check(path: Path, content: str, check: bool) -> bool:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Generate the Chrome extension expert snapshot from vast-expert-prompts.")
+    parser = argparse.ArgumentParser(description="Generate the Chrome extension expert snapshot from LexiLayerPrompts.")
     parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
@@ -170,7 +170,7 @@ def main() -> int:
         print(str(error), file=sys.stderr)
         return 1
     prompt_payload = {
-        "source": "https://github.com/VastNext/vast-expert-prompts",
+        "source": "https://github.com/VastNext/LexiLayerPrompts",
         "revision": revision,
         "prompts": prompts,
     }
@@ -180,7 +180,7 @@ def main() -> int:
         write_or_check(ROOT / "public/EXPERTS-NOTICE.txt", (
             "VastNext Expert Prompts\n"
             "Copyright 2026 VastNext 瀚海未来科技.\n"
-            "Source: https://github.com/VastNext/vast-expert-prompts\n"
+            "Source: https://github.com/VastNext/LexiLayerPrompts\n"
             f"Snapshot revision: {revision}\n"
             "Expert prompt content is licensed under CC BY 4.0.\n"
         ), args.check),

@@ -11,7 +11,7 @@
   <a href="https://github.com/VastNext/LexiLayer-Translator"><img src="https://img.shields.io/badge/status-MVP-orange.svg" alt="MVP status"></a>
   <a href="https://github.com/VastNext/LexiLayer-Translator"><img src="https://img.shields.io/badge/Manifest-V3-4285F4.svg" alt="Manifest V3"></a>
   <a href="https://github.com/VastNext/LexiLayer-Translator"><img src="https://img.shields.io/badge/TypeScript-React-3178C6.svg" alt="TypeScript and React"></a>
-  <a href="https://github.com/VastNext/LexiLayer-Translator"><img src="https://img.shields.io/badge/license-not%20released-lightgrey.svg" alt="License not released"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-VN--RSL--1.0-blue.svg" alt="License VN-RSL 1.0"></a>
   <a href="https://vastnext.com"><img src="https://img.shields.io/badge/website-vastnext.com-111827.svg" alt="VastNext website"></a>
 </p>
 
@@ -47,7 +47,7 @@ AI 翻译服务配置完成后，用户可以为不同阅读场景选择不同�
 - 🎮 **本地化专家**：根据角色、界面长度和目标受众调整表达风格。
 - ✍️ **自定义提示词**：由用户指定术语偏好、语气、受众、格式和特殊约束。
 
-当前版本内置 29 个领域专家，并支持创建、编辑、启停和删除用户自定义专家。内置专家由 `VastNext/vast-expert-prompts` 生成版本化离线快照，扩展运行时不会访问 GitHub。
+当前版本内置 29 个领域专家，并支持创建、编辑、启停和删除用户自定义专家。内置专家由 `VastNext/LexiLayerPrompts` 生成版本化离线快照，扩展运行时不会访问 GitHub。
 
 ## 🔧 翻译引擎
 
@@ -95,8 +95,9 @@ npm run build
 
 ```bash
 python -m pip install -r scripts/requirements-experts.txt
-npm run experts:sync -- --source "D:/WorkDev/MyShare/vast-expert-prompts"
-npm run experts:check -- --source "D:/WorkDev/MyShare/vast-expert-prompts"
+git clone https://github.com/VastNext/LexiLayerPrompts.git ../LexiLayerPrompts
+npm run experts:sync -- --source "../LexiLayerPrompts"
+npm run experts:check -- --source "../LexiLayerPrompts"
 ```
 
 也可以通过 `VAST_EXPERT_PROMPTS_DIR` 指定专家仓库路径。
@@ -202,7 +203,13 @@ VAST_E2E_PROXY=http://127.0.0.1:7890 npm run e2e:network
 
 ## 📄 许可证
 
-当前仓库暂未添加开源许可证。未经明确授权，请不要将本项目代码作为开源软件再分发。
+本项目基于 [VastNext Revenue-Share License (VN-RSL) 1.0](./LICENSE) 发布：
+
+- ✅ 个人学习、教育和非商业用途：可免费使用、修改和再分发。
+- 💼 商业用途（包括作为付费产品或服务分发、商业集成、营利性组织内部使用）：必须先与版权方签订书面分成协议。
+- 🤝 商业合作与分成洽谈：请通过 [https://vastnext.com](https://vastnext.com) 或 [GitHub Issues](https://github.com/VastNext/LexiLayer-Translator/issues) 联系。
+
+Google™、Bing™、Chrome™ 等名称与商标归其各自所有者所有；本项目与这些服务之间不存在隶属或背书关系。专家提示词内容遵循 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) 许可，见 [public/EXPERTS-NOTICE.txt](./public/EXPERTS-NOTICE.txt)。
 
 <p align="center">
   <sub>Built for a more readable web by VastNext.</sub>

@@ -1,5 +1,5 @@
 VastNext Expert Prompts
 Copyright 2026 VastNext 瀚海未来科技.
-Source: https://github.com/VastNext/vast-expert-prompts
+Source: https://github.com/VastNext/LexiLayerPrompts
 Snapshot revision: 97296662e6fb8e9c836e18580e3708a2463807bb
 Expert prompt content is licensed under CC BY 4.0.

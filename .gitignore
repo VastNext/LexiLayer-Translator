@@ -11,3 +11,7 @@ error.log
 .env.*
 research/private-reference/
 release/
+
+.zcode/
+scripts/capture-notebooklm-fullpage.mjs
+tests/e2e/capture-notebooklm-evidence.spec.ts

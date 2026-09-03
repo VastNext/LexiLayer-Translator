@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>语层翻译 LexiLayer Translator · 使用文档</title>
+<meta name="description" content="语层翻译（LexiLayer Translator）使用文档：安装、网页双语翻译、划词翻译、AI 专家与自定义 AI 配置的完整指南。">
+<link rel="icon" href="assets/favicon.ico">
+<style>
+  :root {
+    --brand: #4353ff;
+    --brand-dark: #3644d8;
+    --ink: #1b1f2a;
+    --ink-2: #59606f;
+    --line: #e7e9f0;
+    --bg: #ffffff;
+    --bg-soft: #f7f8fb;
+    --radius: 14px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+    line-height: 1.75;
+  }
+  a { color: var(--brand); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  img { display: block; max-width: 100%; }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 0 24px; }
+  section { padding: 64px 0; }
+  section.alt { background: var(--bg-soft); }
+  h2 { font-size: 28px; letter-spacing: .01em; margin-bottom: 10px; }
+  .lead { color: var(--ink-2); max-width: 720px; margin-bottom: 28px; }
+  .section-kicker {
+    display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: .12em;
+    color: var(--brand); background: rgba(67,83,255,.08); border-radius: 999px;
+    padding: 2px 12px; margin-bottom: 12px;
+  }
+
+  /* 顶栏 */
+  header.topbar {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(255,255,255,.86); backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  .topbar-inner { display: flex; align-items: center; justify-content: space-between; height: 58px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; color: var(--ink); }
+  .brand:hover { text-decoration: none; }
+  .brand img { width: 28px; height: 28px; border-radius: 7px; }
+  .brand .ver { font-size: 11px; font-weight: 600; color: var(--brand); background: rgba(67,83,255,.08); padding: 1px 8px; border-radius: 999px; }
+  nav.mainnav { display: flex; gap: 4px; flex-wrap: wrap; }
+  nav.mainnav a {
+    color: var(--ink-2); font-size: 13.5px; padding: 6px 11px; border-radius: 8px;
+  }
+  nav.mainnav a:hover { color: var(--brand); background: rgba(67,83,255,.06); text-decoration: none; }
+  @media (max-width: 900px) { nav.mainnav { display: none; } }
+
+  /* Hero */
+  .hero { padding: 84px 0 72px; text-align: center; background:
+    radial-gradient(1200px 420px at 50% -120px, rgba(67,83,255,.10), transparent 70%), var(--bg); }
+  .hero img.logo { width: 84px; height: 84px; border-radius: 20px; margin: 0 auto 22px; box-shadow: 0 12px 32px rgba(27,31,42,.16); }
+  .hero h1 { font-size: 40px; line-height: 1.25; letter-spacing: .01em; }
+  .hero .en { font-size: 17px; color: var(--ink-2); font-weight: 500; margin-top: 6px; }
+  .hero p.tagline { font-size: 17px; color: var(--ink-2); max-width: 640px; margin: 18px auto 30px; }
+  .hero .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    display: inline-block; padding: 11px 26px; border-radius: 10px; font-size: 15px; font-weight: 600;
+  }
+  .btn:hover { text-decoration: none; }
+  .btn.primary { background: var(--brand); color: #fff; box-shadow: 0 6px 18px rgba(67,83,255,.28); }
+  .btn.primary:hover { background: var(--brand-dark); }
+  .btn.ghost { color: var(--ink); border: 1px solid var(--line); background: #fff; }
+  .btn.ghost:hover { border-color: #c9cdda; }
+  .hero .badges { margin-top: 26px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .badge {
+    font-size: 12.5px; color: var(--ink-2); border: 1px solid var(--line);
+    padding: 3px 12px; border-radius: 999px; background: #fff;
+  }
+
+  /* 功能卡片 */
+  .grid { display: grid; gap: 14px; }
+  .grid.features { grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 900px) { .grid.features { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) { .grid.features { grid-template-columns: 1fr; } }
+  .card {
+    background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 20px 22px;
+  }
+  section.alt .card { box-shadow: 0 1px 2px rgba(27,31,42,.03); }
+  .card h3 { font-size: 15.5px; margin: 8px 0 6px; }
+  .card p { font-size: 13.5px; color: var(--ink-2); line-height: 1.7; }
+  .card .emoji { font-size: 22px; }
+
+  /* 安装 */
+  .grid.install { grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 900px) { .grid.install { grid-template-columns: 1fr; } }
+  .install-card { position: relative; display: flex; flex-direction: column; }
+  .install-card .tag {
+    position: absolute; top: 16px; right: 16px; font-size: 11px; font-weight: 700;
+    padding: 2px 10px; border-radius: 999px;
+  }
+  .tag.soon { color: #9a6b00; background: #fff4d6; }
+  .tag.rec { color: var(--brand); background: rgba(67,83,255,.08); }
+  ol.steps { padding-left: 0; list-style: none; counter-reset: step; margin-top: 6px; }
+  ol.steps li { counter-increment: step; position: relative; padding-left: 34px; margin-bottom: 10px; font-size: 14px; color: var(--ink-2); }
+  ol.steps li::before {
+    content: counter(step); position: absolute; left: 0; top: 3px;
+    width: 22px; height: 22px; border-radius: 999px; background: rgba(67,83,255,.09);
+    color: var(--brand); font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+  }
+  code, kbd {
+    font-family: ui-monospace, SFMono-Regular, Consolas, "Courier New", monospace;
+    font-size: .92em; background: #f1f2f7; border-radius: 5px; padding: 1px 6px; color: var(--ink);
+  }
+  kbd { border: 1px solid #d7dae4; border-bottom-width: 2px; padding: 0 7px; background: #fafbfd; }
+  pre {
+    background: #14161f; color: #e6e8f2; border-radius: 10px; padding: 16px 18px;
+    font-size: 13px; overflow-x: auto; line-height: 1.7;
+  }
+  pre code { background: none; color: inherit; padding: 0; }
+  .note {
+    display: flex; gap: 10px; background: rgba(67,83,255,.05); border: 1px solid rgba(67,83,255,.16);
+    border-radius: 10px; padding: 12px 16px; font-size: 13.5px; color: var(--ink-2); margin-top: 18px;
+  }
+  .note.warn { background: #fff8ec; border-color: #f2ddb0; }
+
+  /* 截图 */
+  .shot {
+    border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line);
+    box-shadow: 0 10px 30px rgba(27,31,42,.10); background: #fff;
+  }
+  .shot img { width: 100%; }
+  figcaption { text-align: center; font-size: 12.5px; color: #9aa0ae; margin-top: 10px; }
+  figure { margin: 26px 0; }
+  .duo { display: grid; grid-template-columns: 1.35fr 1fr; gap: 22px; align-items: center; }
+  @media (max-width: 860px) { .duo { grid-template-columns: 1fr; } }
+  .duo .phone { max-width: 330px; margin: 0 auto; width: 100%; }
+  .scrolldoc { max-height: 620px; overflow-y: auto; }
+  .scrolldoc img { width: 100%; }
+
+  /* 表格 */
+  table { width: 100%; border-collapse: collapse; font-size: 14px; background: #fff; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); }
+  th, td { text-align: left; padding: 11px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: var(--bg-soft); font-size: 13px; color: var(--ink-2); font-weight: 600; white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  td .sub { display: block; font-size: 12.5px; color: #9aa0ae; }
+
+  /* 专家 chips */
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 6px; }
+  .chip {
+    font-size: 13px; color: var(--ink); background: #fff; border: 1px solid var(--line);
+    padding: 4px 14px; border-radius: 999px;
+  }
+  .chip.hl { color: var(--brand); border-color: rgba(67,83,255,.35); background: rgba(67,83,255,.05); }
+
+  /* 设置页导航条 */
+  .options-map { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .options-map .chip b { font-weight: 600; }
+
+  /* FAQ */
+  details {
+    background: #fff; border: 1px solid var(--line); border-radius: 12px;
+    padding: 15px 20px; margin-bottom: 10px;
+  }
+  summary { cursor: pointer; font-weight: 600; font-size: 15px; }
+  details p { margin-top: 10px; color: var(--ink-2); font-size: 14px; }
+
+  /* 页脚 */
+  footer { border-top: 1px solid var(--line); background: var(--bg-soft); padding: 40px 0 48px; text-align: center; color: var(--ink-2); font-size: 13.5px; }
+  footer .foot-brand { display: flex; align-items: center; justify-content: center; gap: 9px; font-weight: 700; color: var(--ink); font-size: 15px; margin-bottom: 10px; }
+  footer .foot-brand img { width: 24px; height: 24px; border-radius: 6px; }
+  footer .links { display: flex; gap: 18px; justify-content: center; flex-wrap: wrap; margin: 8px 0 14px; }
+  footer .copyright { font-size: 12.5px; color: #9aa0ae; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap topbar-inner">
+    <a class="brand" href="#top">
+      <img src="assets/icon.png" alt="语层翻译图标"> 语层翻译 <span class="ver">v0.7.1</span>
+    </a>
+    <nav class="mainnav">
+      <a href="#features">功能</a>
+      <a href="#install">安装</a>
+      <a href="#quickstart">快速开始</a>
+      <a href="#page">页面翻译</a>
+      <a href="#selection">划词翻译</a>
+      <a href="#experts">AI 专家</a>
+      <a href="#setup">引擎与设置</a>
+      <a href="#privacy">数据与隐私</a>
+      <a href="#faq">常见问题</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="wrap">
+      <img class="logo" src="assets/icon.png" alt="语层翻译 LexiLayer Translator 图标">
+      <h1>语层翻译</h1>
+      <div class="en">LexiLayer Translator</div>
+      <p class="tagline">让 AI 按语境、领域与风格理解网页。Google / Bing 一键双语阅读；接入你自己的 OpenAI 兼容 AI 服务后，可获得领域专家级的翻译质量。</p>
+      <div class="cta">
+        <a class="btn primary" href="#quickstart">三分钟上手</a>
+        <a class="btn ghost" href="#install">安装扩展</a>
+      </div>
+      <div class="badges">
+        <span class="badge">Manifest V3</span>
+        <span class="badge">Chrome / Edge 等 Chromium 浏览器</span>
+        <span class="badge">当前版本 v0.7.1</span>
+        <span class="badge">内置引擎免费 · 无需注册</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 功能 -->
+  <section id="features" class="alt">
+    <div class="wrap">
+      <span class="section-kicker">功能一览</span>
+      <h2>为网页阅读而生的翻译层</h2>
+      <p class="lead">翻译引擎负责「说另一种语言」，AI 专家提示词负责「理解这段内容应该怎样被翻译」。两者自由组合，适配你的每一次阅读。</p>
+      <div class="grid features">
+        <div class="card"><span class="emoji">🌐</span><h3>网页翻译</h3><p>一键翻译网页主要内容或整页，译文直接渲染在当前页面，随时一键还原原文。</p></div>
+        <div class="card"><span class="emoji">📝</span><h3>双语对照阅读</h3><p>支持双语对照与仅译文两种显示模式，译文可显示在原文之前或之后。</p></div>
+        <div class="card"><span class="emoji">🔎</span><h3>划词翻译</h3><p>选中网页文字后，通过 V 形入口打开独立翻译面板，互不干扰页面本身。</p></div>
+        <div class="card"><span class="emoji">🧠</span><h3>AI 专家翻译</h3><p>29 个内置领域专家：技术文档、论文、法律、金融、新闻、本地化……也支持自定义专家。</p></div>
+        <div class="card"><span class="emoji">🔌</span><h3>多引擎支持</h3><p>Google 默认、Bing 备用，均可免费用；还可添加最多 20 个 OpenAI 兼容 AI 实例。</p></div>
+        <div class="card"><span class="emoji">🌊</span><h3>流式划词结果</h3><p>自定义 AI 划词翻译优先使用流式响应，边生成边显示，体验更流畅。</p></div>
+        <div class="card"><span class="emoji">⚡</span><h3>现代网页适配</h3><p>优先处理可见文本，支持 React、Vue、Angular、Web Component 与动态新增内容。</p></div>
+        <div class="card"><span class="emoji">💾</span><h3>本地缓存</h3><p>译文保存在浏览器本地 IndexedDB，默认保留 30 天、最多 5000 条，可随时清理。</p></div>
+        <div class="card"><span class="emoji">⌨️</span><h3>快捷键与双语界面</h3><p>使用 <kbd>Alt</kbd> + <kbd>A</kbd> 切换当前页面翻译；界面提供简体中文与英文。</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 安装 -->
+  <section id="install">
+    <div class="wrap">
+      <span class="section-kicker">安装</span>
+      <h2>把语层翻译装进浏览器</h2>
+      <p class="lead">适用于 Chrome 以及 Edge 等较新版本的 Chromium 内核浏览器，全程无需注册账号。</p>
+      <div class="grid install">
+        <div class="card install-card">
+          <span class="tag soon">即将上架</span>
+          <span class="emoji">🛍️</span>
+          <h3>Chrome Web Store</h3>
+          <p>语层翻译正在准备 Chrome Web Store 上架审核。上架后，你将可以直接从应用商店一键安装并自动获得更新。</p>
+        </div>
+        <div class="card install-card">
+          <span class="tag rec">推荐</span>
+          <span class="emoji">📦</span>
+          <h3>下载发布包</h3>
+          <ol class="steps">
+            <li>打开项目的 <strong>GitHub Releases</strong> 页面，下载 <code>lexilayer-translator-0.7.1-chrome-web-store.zip</code> 并解压。</li>
+            <li>打开 <code>chrome://extensions</code>，开启右上角「开发者模式」。</li>
+            <li>点击「加载已解压的扩展程序」，选择解压后的文件夹。</li>
+          </ol>
+        </div>
+        <div class="card install-card">
+          <span class="emoji">🛠️</span>
+          <h3>从源码构建</h3>
+          <ol class="steps">
+            <li>克隆仓库，安装 Node.js 20 或更高版本。</li>
+            <li>执行 <code>npm install</code> 与 <code>npm run build</code>。</li>
+            <li>在 <code>chrome://extensions</code> 中以开发者模式加载 <code>dist/</code> 目录。</li>
+          </ol>
+        </div>
+      </div>
+      <div class="note"><span>💡</span><span>安装完成后，建议点击工具栏的拼图图标，将「语层翻译」固定到工具栏，方便随时打开控制弹窗。</span></div>
+    </div>
+  </section>
+
+  <!-- 快速开始 -->
+  <section id="quickstart" class="alt">
+    <div class="wrap">
+      <span class="section-kicker">快速开始</span>
+      <h2>三步开始双语阅读</h2>
+      <p class="lead">不需要任何配置，使用内置的 Google 引擎即可立即翻译网页。</p>
+      <div class="duo">
+        <div>
+          <ol class="steps" style="margin-top:0;">
+            <li><strong>固定扩展。</strong>安装后，在工具栏拼图菜单中把「语层翻译」固定到工具栏。</li>
+            <li><strong>打开控制弹窗。</strong>进入任意想阅读的网页，点击工具栏中的语层翻译图标。语层翻译只有在你主动发起后才会扫描页面内容。</li>
+            <li><strong>开始翻译。</strong>确认源语言（默认自动判断）与目标语言（默认简体中文），点击「翻译当前页面」，译文会直接显示在页面原文旁。</li>
+          </ol>
+          <div class="note" style="margin-top:22px;"><span>⌨️</span><span>翻译完成后，随时按 <kbd>Alt</kbd> + <kbd>A</kbd>（或再次点击按钮）在译文与原文之间切换。</span></div>
+        </div>
+        <figure class="phone">
+          <div class="shot"><img src="assets/popup.png" alt="语层翻译弹窗：选择源语言、目标语言、翻译引擎与 AI 专家"></div>
+          <figcaption>工具栏弹窗：语言、引擎、专家与翻译开关</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- 页面翻译 -->
+  <section id="page">
+    <div class="wrap">
+      <span class="section-kicker">页面翻译</span>
+      <h2>整页双语阅读</h2>
+      <p class="lead">语层翻译会优先翻译你正在阅读的可见正文，并持续适配 React、Vue、Angular 等现代网页动态加载的内容。</p>
+
+      <table>
+        <tr><th style="width:170px;">弹窗控件</th><th>说明</th></tr>
+        <tr><td><strong>源语言 / 目标语言</strong></td><td>源语言默认「自动判断」，目标语言默认简体中文，可自由组合。</td></tr>
+        <tr><td><strong>翻译引擎</strong></td><td>选择本次使用的引擎：Google、Bing 或已配置的自定义 AI 实例。</td></tr>
+        <tr><td><strong>AI 专家</strong></td><td>使用自定义 AI 时可选领域专家，让翻译贴合内容的领域与风格。</td></tr>
+        <tr><td><strong>状态</strong></td><td>实时显示「就绪」或「翻译中 x/y」进度，长页面可随时观察进展。</td></tr>
+        <tr><td><strong>显示模式</strong></td><td>双语对照 / 仅译文一键切换；还可在设置中把译文调整为显示在原文之前或之后。</td></tr>
+        <tr><td><strong>主按钮</strong></td><td>「翻译当前页面」开始翻译；翻译后变为「显示原文 <kbd>Alt</kbd> + <kbd>A</kbd>」，一键还原。</td></tr>
+      </table>
+
+      <figure>
+        <div class="shot"><img src="assets/bilingual.webp" alt="NotebookLM 页面双语对照翻译效果"></div>
+        <figcaption>双语对照效果：原文与译文逐段相邻显示</figcaption>
+      </figure>
+
+      <figure>
+        <div class="shot scrolldoc"><img src="assets/fullpage.webp" alt="Findry AI 页面整页翻译效果（长图，可滚动查看）"></div>
+        <figcaption>整页翻译效果（长截图，可在框内滚动查看）</figcaption>
+      </figure>
+
+      <div class="note warn"><span>🛡️</span><span>语层翻译不会在后台自动扫描网页：只有当你主动发起页面翻译后才会处理正文；密码框、输入框等交互控件不会被翻译。</span></div>
+    </div>
+  </section>
+
+  <!-- 划词翻译 -->
+  <section id="selection" class="alt">
+    <div class="wrap">
+      <span class="section-kicker">划词翻译</span>
+      <h2>选中即译，不离开当前页面</h2>
+      <p class="lead">只需要翻译一段文字时，划词翻译最快：它只处理你主动选择的文字，其余内容一动不动。</p>
+      <div class="duo">
+        <div>
+          <ol class="steps" style="margin-top:0;">
+            <li><strong>选中文字。</strong>用鼠标选中想翻译的内容，选区旁会出现 V 形入口图标。</li>
+            <li><strong>打开翻译面板。</strong>点击 V 形图标，弹出独立的翻译面板，默认使用当前默认引擎与目标语言。</li>
+            <li><strong>按需调整。</strong>面板内可即时切换翻译引擎与目标语言，重新翻译；支持一键复制结果。</li>
+          </ol>
+          <div class="note" style="margin-top:22px;"><span>🌊</span><span>使用自定义 AI 时，划词结果支持流式输出——翻译边生成边显示；引擎不支持时自动回退为整段返回。</span></div>
+        </div>
+        <div>
+          <figure style="margin-top:0;">
+            <div class="shot"><img src="assets/selection-trigger.webp" alt="选中文字后出现 V 形翻译入口"></div>
+            <figcaption>第一步：选中文字，出现 V 形入口</figcaption>
+          </figure>
+          <figure>
+            <div class="shot"><img src="assets/selection-panel.webp" alt="划词翻译面板显示译文，可切换引擎与语言"></div>
+            <figcaption>第二步：面板内查看译文，可切换引擎与语言</figcaption>
+          </figure>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- AI 专家 -->
+  <section id="experts">
+    <div class="wrap">
+      <span class="section-kicker">AI 专家</span>
+      <h2>让 AI 懂得「这段内容该怎么翻译」</h2>
+      <p class="lead">AI 专家是一组经过领域调校的提示词。配置自定义 AI 后，为不同阅读场景选择不同专家，术语、语气、受众和格式都会更贴合内容本身。</p>
+      <div class="chips">
+        <span class="chip hl">💻 科技类翻译大师</span>
+        <span class="chip hl">📚 论文翻译专家</span>
+        <span class="chip hl">⚖️ 法律翻译专家</span>
+        <span class="chip hl">📰 新闻翻译专家</span>
+        <span class="chip hl">🎮 本地化专家</span>
+        <span class="chip">🩺 医学翻译大师</span>
+        <span class="chip">💰 金融翻译专家</span>
+        <span class="chip">📖 小说翻译专家</span>
+        <span class="chip">🎨 设计师</span>
+        <span class="chip">🐙 GitHub 专家</span>
+        <span class="chip">✨ 通俗英语专家</span>
+        <span class="chip">…共 29 个内置专家</span>
+      </div>
+      <figure>
+        <div class="shot" style="max-width:733px;"><img src="assets/options-ai-experts.webp" alt="设置页 AI 专家卡片列表，可按场景启用"></div>
+        <figcaption>设置页「AI 专家」：按场景启用，也可以创建自己的专家</figcaption>
+      </figure>
+      <div class="grid" style="grid-template-columns:repeat(3,1fr); margin-top:8px;">
+        <div class="card"><h3>🧩 自定义专家</h3><p>在「AI 专家」页新建自定义专家：写好名称与提示词，即可像内置专家一样启用、编辑、停用和删除。</p></div>
+        <div class="card"><h3>🎯 按实例记忆</h3><p>每个自定义 AI 实例会分别记住你上一次选择的专家，切换实例时无需反复设置。</p></div>
+        <div class="card"><h3>📴 离线快照</h3><p>内置专家由版本化离线快照提供，扩展运行时不会访问 GitHub，保证隐私与稳定性。</p></div>
+      </div>
+      <div class="note"><span>💡</span><span>专家提示词只对自定义 AI 生效。使用 Google / Bing 翻译时，AI 专家不会参与翻译。</span></div>
+    </div>
+  </section>
+
+  <!-- 引擎与设置 -->
+  <section id="setup" class="alt">
+    <div class="wrap">
+      <span class="section-kicker">引擎与设置</span>
+      <h2>翻译引擎与自定义 AI 配置</h2>
+      <p class="lead">在扩展「设置页」（弹窗右上角齿轮图标进入）中管理引擎、专家、偏好与数据。</p>
+
+      <table>
+        <tr><th style="width:150px;">引擎</th><th>用途</th><th>特点</th></tr>
+        <tr><td><strong>Google</strong></td><td>默认引擎</td><td>免费、无需 API Key，适合日常快速翻译。</td></tr>
+        <tr><td><strong>Bing</strong></td><td>备用引擎</td><td>免费、无需 API Key，Google 不可用时的稳妥选择。</td></tr>
+        <tr><td><strong>自定义 AI</strong></td><td>专家级翻译</td><td>OpenAI 兼容 API，模型与提示词可配置，最多添加 20 个实例。</td></tr>
+      </table>
+      <div class="note"><span>🔀</span><span>Google 与 Bing 不会自动互相切换：你选择哪个引擎，就只使用哪个引擎，结果完全可预期。</span></div>
+
+      <h2 style="font-size:22px; margin-top:40px;">添加一个自定义 AI 实例</h2>
+      <div class="duo" style="margin-top:16px;">
+        <div>
+          <ol class="steps" style="margin-top:0;">
+            <li>打开设置页，进入「<strong>自定义 AI</strong>」，点击「新增自定义 AI」。</li>
+            <li>填写<strong>名称</strong>、<strong>模型</strong>、<strong>Base URL</strong> 与 <strong>API Key</strong>，然后点击「保存实例」。</li>
+            <li>点击「<strong>测试连接</strong>」确认服务可达，再点击「<strong>设为默认</strong>」，即可在弹窗与划词面板中使用。</li>
+          </ol>
+          <pre><code>Base URL: https://api.openai.com/v1
+模型:      gpt-4o-mini
+API Key:  sk-...</code></pre>
+          <p style="font-size:13px; color:#9aa0ae;">本机 OpenAI 兼容服务也可用，例如 Ollama：<code>http://127.0.0.1:11434/v1</code></p>
+        </div>
+        <figure style="margin-top:0;">
+          <div class="shot"><img src="assets/options-custom-ai.webp" alt="设置页自定义 AI：配置名称、模型、Base URL 与 API Key"></div>
+          <figcaption>自定义 AI：每个实例独立保存连接与密钥</figcaption>
+        </figure>
+      </div>
+
+      <h2 style="font-size:22px; margin-top:40px;">设置页功能地图</h2>
+      <div class="options-map">
+        <span class="chip"><b>翻译引擎</b> · 启用/测试/设默认</span>
+        <span class="chip"><b>自定义 AI</b> · 实例与密钥管理</span>
+        <span class="chip"><b>AI 专家</b> · 内置与自定义专家</span>
+        <span class="chip"><b>阅读偏好</b> · 默认模式与语言</span>
+        <span class="chip"><b>划词翻译</b> · 划词行为设置</span>
+        <span class="chip"><b>外观主题</b> · 界面主题与语言</span>
+        <span class="chip"><b>数据隐私</b> · 缓存与导入导出</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 数据与隐私 -->
+  <section id="privacy">
+    <div class="wrap">
+      <span class="section-kicker">数据与隐私</span>
+      <h2>你的数据停留在哪里</h2>
+      <p class="lead">语层翻译不创建账号、不投放广告、不做跨站追踪，也没有接收翻译内容的自营服务器。</p>
+      <div class="grid" style="grid-template-columns:repeat(2,1fr);">
+        <div class="card"><h3>🔑 API Key 只留在本机</h3><p>API Key 仅保存在浏览器的 <code>chrome.storage.local</code> 中，不会发送给网页或内容脚本，也不会出现在错误信息里；导出配置文件默认不包含 API Key，只有你明确确认后才会写入。</p></div>
+        <div class="card"><h3>👆 只在你发起时工作</h3><p>只有当你主动发起页面翻译后，扩展才会扫描正文；划词翻译只处理你主动选择的文字。平时浏览完全静默。</p></div>
+        <div class="card"><h3>💾 缓存仅存本地</h3><p>成功的译文保存在本地 IndexedDB，默认保留 30 天、最多 5000 条，可在设置页「数据隐私」中一键清理。</p></div>
+        <div class="card"><h3>🔒 连接安全</h3><p>自定义 AI 服务必须使用 HTTPS；仅本机回环地址（如 127.0.0.1）允许 HTTP，方便本地大模型。</p></div>
+      </div>
+      <div class="note warn"><span>⚠️</span><span>翻译文本会发送到你当前选择的 Google、Bing 或自定义 AI 服务商，并按其隐私政策处理。请勿翻译密码、访问令牌、支付信息、医疗记录或其他敏感内容。</span></div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section id="faq" class="alt">
+    <div class="wrap">
+      <span class="section-kicker">常见问题</span>
+      <h2>FAQ</h2>
+      <details>
+        <summary>点击「翻译当前页面」没有反应怎么办？</summary>
+        <p>先看弹窗中的状态提示：如果当前网络环境访问 Google 受限，请在设置页启用 Bing 或配置一个自定义 AI 实例并设为默认；然后刷新页面重新发起翻译。</p>
+      </details>
+      <details>
+        <summary>Google 和 Bing 会自动互相切换吗？</summary>
+        <p>不会。语层翻译不会自动降级：你选择哪个引擎，就只使用哪个引擎，避免结果不可预期。需要切换时在弹窗或设置页手动选择即可。</p>
+      </details>
+      <details>
+        <summary>AI 专家为什么没有生效？</summary>
+        <p>专家提示词只对自定义 AI 生效。请先在「自定义 AI」中添加实例并设为默认，再在设置页「AI 专家」或弹窗中选择专家；使用 Google / Bing 时专家不参与翻译。</p>
+      </details>
+      <details>
+        <summary>我的 API Key 安全吗？</summary>
+        <p>API Key 仅保存在本机 <code>chrome.storage.local</code>，不会发送给网页、不写入错误信息；配置导出默认不含 API Key，只有你明确确认后才写入导出文件。</p>
+      </details>
+      <details>
+        <summary>翻译记录保存在哪里？如何清理？</summary>
+        <p>成功译文保存在浏览器本地 IndexedDB，默认保留 30 天、最多 5000 条，到期或超限自动淘汰。打开设置页「数据隐私」可随时手动清理缓存。</p>
+      </details>
+      <details>
+        <summary>为什么有些内容没有被翻译？</summary>
+        <p>语层翻译只处理可见正文，会跳过密码框、输入框等交互控件和图标类内容；未主动发起翻译的页面不会被扫描。动态加载的内容（如无限滚动）会在出现后自动纳入翻译。</p>
+      </details>
+      <details>
+        <summary>快捷键 <kbd>Alt</kbd> + <kbd>A</kbd> 无效怎么办？</summary>
+        <p>可能被其他扩展或应用占用。打开 <code>chrome://extensions/shortcuts</code>，找到「语层翻译」重新指定快捷键即可。</p>
+      </details>
+      <details>
+        <summary>支持哪些浏览器？</summary>
+        <p>目前支持 Chrome 与 Edge 等较新版本的 Chromium 内核浏览器（Manifest V3）。Firefox 与 Safari 暂未适配。</p>
+      </details>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-brand"><img src="assets/icon.png" alt=""> 语层翻译 LexiLayer Translator</div>
+    <div class="links">
+      <a href="https://vastnext.com" target="_blank" rel="noopener">VastNext 官网</a>
+      <a href="https://github.com/VastNext/LexiLayer-Translator" target="_blank" rel="noopener">GitHub 仓库</a>
+      <span>Chrome Web Store · 即将上架</span>
+    </div>
+    <div>当前版本 v0.7.1 · 让每一次跨语言阅读都更贴近原意。</div>
+    <div class="copyright">© 2026 VastNext · 语层翻译使用文档</div>
+  </div>
+</footer>
+
+</body>
+</html>

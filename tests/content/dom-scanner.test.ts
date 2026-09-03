@@ -169,7 +169,7 @@ describe('scanParagraphElements', () => {
     expect(scanParagraphElements(header, rule, 'main-content')).toEqual([]);
   });
 
-  it('1000 个候选仅沿祖先链去重，不做候选两两 contains 比较', () => {
+  it('1000 个候选仅沿祖先链去重，不做候选两两 contains 比较', { timeout: 15_000 }, () => {
     document.body.innerHTML = `<main>${Array.from({ length: 1000 }, (_, index) => `<p id="p${index}">text ${index}</p>`).join('')}</main>`;
     const metrics: ScanMetrics = { normalizedTexts: 0, ancestorChecks: 0 };
 

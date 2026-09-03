@@ -1,0 +1,70 @@
+VastNext Revenue-Share License (VN-RSL) 1.0
+
+Copyright (c) 2026 VastNext. All rights reserved.
+
+1. Definitions
+
+   "Software" means the source code, built distributions, prompts, rules,
+   documentation and other files in this repository.
+
+   "Commercial Use" means any use of the Software that is primarily
+   intended for or directed toward commercial advantage or monetary
+   compensation, including but not limited to:
+
+   a) distributing, selling, sublicensing, or offering the Software or a
+      modified version of it as a paid product, paid service, or as part
+      of a paid product or service;
+   b) bundling, embedding, or deriving products from the Software that are
+      sold, charged for, or otherwise monetized; and
+   c) using the Software inside a for-profit organization in support of
+      its business operations.
+
+2. Non-Commercial Grant
+
+   Permission is granted, free of charge, to any person or organization to
+   use, copy, modify, merge, and distribute the Software for personal,
+   educational, academic, or other non-commercial purposes, subject to the
+   conditions in Section 4.
+
+3. Commercial Use Requires a Revenue-Share Agreement
+
+   Commercial Use of the Software is not permitted without a prior written
+   revenue-share agreement with the copyright holder. If you want to use
+   the Software commercially, you must contact the copyright holder and
+   negotiate a revenue share or licensing fee. Such an agreement is
+   separate from this License and, once signed, governs the commercial
+   relationship.
+
+4. Conditions
+
+   Any redistribution of the Software, in source or built form, must:
+
+   a) retain the copyright notice and the text of this License;
+   b) clearly mark files that were changed from the original; and
+   c) not use the names "LexiLayer", "语层", "VastNext", or the names of
+      contributors to endorse or promote derived products without prior
+      written consent.
+
+5. Trademarks and Third-Party Services
+
+   This License covers the content of this repository only. "Google",
+   "Bing", "Chrome", and other third-party names and trademarks belong to
+   their respective owners; no affiliation with or endorsement by them is
+   claimed or implied. The Software interoperates with third-party
+   translation services under those services' own terms, which this
+   License does not modify.
+
+6. Contributions
+
+   Unless you state otherwise, any contribution submitted for inclusion in
+   the Software is licensed under this License, without additional terms.
+
+7. Disclaimer of Warranty and Limitation of Liability
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND
+   NONINFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS
+   BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN
+   ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN
+   CONNECTION WITH THE SOFTWARE OR ITS USE.
