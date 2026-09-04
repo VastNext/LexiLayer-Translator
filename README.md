@@ -12,7 +12,7 @@
   <a href="https://github.com/VastNext/LexiLayer-Translator"><img src="https://img.shields.io/badge/Manifest-V3-4285F4.svg" alt="Manifest V3"></a>
   <a href="https://github.com/VastNext/LexiLayer-Translator"><img src="https://img.shields.io/badge/TypeScript-React-3178C6.svg" alt="TypeScript and React"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-VN--RSL--1.0-blue.svg" alt="License VN-RSL 1.0"></a>
-  <a href="https://vastnext.com"><img src="https://img.shields.io/badge/website-vastnext.com-111827.svg" alt="VastNext website"></a>
+  <a href="https://vastnext.com/lexi-layer/"><img src="https://img.shields.io/badge/website-vastnext.com-111827.svg" alt="VastNext website"></a>
 </p>
 
 ## 语层是什么？
@@ -198,7 +198,7 @@ VAST_E2E_PROXY=http://127.0.0.1:7890 npm run e2e:network
 
 ## 🌐 官方地址
 
-- Website: https://vastnext.com
+- Website: https://vastnext.com/lexi-layer/
 - Repository: https://github.com/VastNext/LexiLayer-Translator
 
 ## 📄 许可证
@@ -207,7 +207,7 @@ VAST_E2E_PROXY=http://127.0.0.1:7890 npm run e2e:network
 
 - ✅ 个人学习、教育和非商业用途：可免费使用、修改和再分发。
 - 💼 商业用途（包括作为付费产品或服务分发、商业集成、营利性组织内部使用）：必须先与版权方签订书面分成协议。
-- 🤝 商业合作与分成洽谈：请通过 [https://vastnext.com](https://vastnext.com) 或 [GitHub Issues](https://github.com/VastNext/LexiLayer-Translator/issues) 联系。
+- 🤝 商业合作与分成洽谈：请通过 [https://vastnext.com/lexi-layer/](https://vastnext.com/lexi-layer/) 或 [GitHub Issues](https://github.com/VastNext/LexiLayer-Translator/issues) 联系。
 
 Google™、Bing™、Chrome™ 等名称与商标归其各自所有者所有；本项目与这些服务之间不存在隶属或背书关系。专家提示词内容遵循 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) 许可，见 [public/EXPERTS-NOTICE.txt](./public/EXPERTS-NOTICE.txt)。
 
