@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "LexiLayer Translator 运行时架构",
+    "locale": "zh-CN",
+    "output": "lexilayer-runtime.html",
+    "quality_profile": "showcase",
+    "viewBox": [1360, 780],
+    "repository": {
+      "url": "https://github.com/VastNext/LexiLayer-Translator.git",
+      "revision": "7d639d404e4006a840c37c4758d04355cdff168d"
+    },
+    "views": [
+      {
+        "id": "main-path",
+        "label": "主要翻译路径",
+        "focus": ["user-page", "content-script", "background", "provider-registry", "google"],
+        "note": "从用户网页/划词到外部 Google 端点的整个翻译旅程。"
+      },
+      {
+        "id": "engine-selection",
+        "label": "多引擎与外部端点",
+        "focus": ["provider-registry", "google", "bing", "custom-ai"],
+        "note": "Google 默认、Bing 备用，以及用户配置的 OpenAI 兼容实例。"
+      },
+      {
+        "id": "trust-and-persist",
+        "label": "信任边界与持久化",
+        "focus": ["storage", "cache", "background", "options-ui"],
+        "note": "API Key 只在背景上下文消费，缓存与设置均保存在本地。"
+      }
+    ]
+  },
+  "components": [
+    { "id": "user-page", "type": "external", "label": "用户网页", "sublabel": "Web Page", "pos": [30, 390], "size": [150, 76], "sources": [{ "path": "src/content/index.ts", "line": 365, "end_line": 371, "label": "注入" }] },
+    { "id": "content-script", "type": "frontend", "label": "Content Script", "sublabel": "DOM 扫描 · 划词 · 渲染", "pos": [240, 390], "size": [180, 76], "sources": [{ "path": "src/content/index.ts", "line": 66, "end_line": 290, "label": "控制器" }] },
+    { "id": "background", "type": "backend", "label": "Background Service Worker", "sublabel": "消息白名单 · 批处理 · 重试 · 取消", "pos": [500, 385], "size": [210, 86], "sources": [{ "path": "src/background/index.ts", "line": 213, "end_line": 445, "label": "控制器" }] },
+    { "id": "provider-registry", "type": "backend", "label": "Provider Registry", "sublabel": "引擎工厂", "pos": [780, 390], "size": [170, 76], "sources": [{ "path": "src/background/provider-registry.ts", "line": 8, "end_line": 15, "label": "工厂" }] },
+    { "id": "google", "type": "external", "label": "Google 翻译", "sublabel": "translate.googleapis.com", "pos": [1060, 170], "size": [180, 76], "sources": [{ "path": "src/background/google-translate-client.ts", "line": 20, "end_line": 35, "label": "客户端" }] },
+    { "id": "bing", "type": "external", "label": "Bing 翻译", "sublabel": "edge.microsoft.com", "pos": [1060, 390], "size": [180, 76], "sources": [{ "path": "src/background/bing-translate-client.ts", "line": 11, "end_line": 28, "label": "客户端" }] },
+    { "id": "custom-ai", "type": "external", "label": "自定义 AI 实例", "sublabel": "OpenAI 兼容端点", "pos": [1060, 630], "size": [180, 76], "sources": [{ "path": "src/background/custom-ai-adapter.ts", "line": 6, "end_line": 31, "label": "适配器" }] },
+    { "id": "popup-ui", "type": "frontend", "label": "Popup UI", "sublabel": "当前标签页翻译控制", "pos": [240, 90], "size": [170, 76], "sources": [{ "path": "src/popup/api.ts", "line": 44, "end_line": 124, "label": "API" }] },
+    { "id": "options-ui", "type": "frontend", "label": "Options UI", "sublabel": "引擎配置 · API Key 管理", "pos": [440, 90], "size": [180, 76], "sources": [{ "path": "src/options/api.ts", "line": 6, "end_line": 34, "label": "API" }] },
+    { "id": "cache", "type": "database", "label": "翻译缓存", "sublabel": "IndexedDB", "pos": [650, 90], "size": [180, 76], "sources": [{ "path": "src/background/cache.ts", "line": 141, "end_line": 174, "label": "缓存层" }] },
+    { "id": "storage", "type": "database", "label": "设置与密钥", "sublabel": "chrome.storage.local", "pos": [500, 630], "size": [190, 76], "sources": [{ "path": "src/background/index.ts", "line": 143, "end_line": 166, "label": "读取" }] }
+  ],
+  "boundaries": [
+    {
+      "kind": "security-group",
+      "label": "扩展信任边界 (Extension Trust Boundary)",
+      "wraps": ["content-script", "background", "provider-registry", "popup-ui", "options-ui", "cache", "storage"]
+    }
+  ],
+  "connections": [
+    { "id": "user-content", "from": "user-page", "to": "content-script", "label": "划词 / 页面翻译", "variant": "emphasis", "fromSide": "right", "toSide": "left", "labelAt": [210, 480] },
+    { "id": "content-bg", "from": "content-script", "to": "background", "label": "translate-batch", "variant": "emphasis", "fromSide": "right", "toSide": "left", "labelAt": [460, 480] },
+    { "id": "bg-registry", "from": "background", "to": "provider-registry", "label": "createProvider", "variant": "emphasis", "fromSide": "right", "toSide": "left", "labelAt": [745, 485] },
+    { "id": "registry-google", "from": "provider-registry", "to": "google", "label": "POST /translate_a/t", "variant": "emphasis", "fromSide": "right", "toSide": "left" },
+    { "id": "registry-bing", "from": "provider-registry", "to": "bing", "label": "POST /translatetext", "fromSide": "right", "toSide": "left", "labelAt": [1100, 480] },
+    { "id": "registry-custom", "from": "provider-registry", "to": "custom-ai", "label": "Bearer API Key", "variant": "security", "fromSide": "right", "toSide": "left" },
+    { "id": "bg-cache", "from": "background", "to": "cache", "label": "命中读 / 译文写回", "fromSide": "top", "toSide": "bottom" },
+    { "id": "bg-storage", "from": "background", "to": "storage", "label": "设置与密钥（仅后台）", "variant": "security", "fromSide": "bottom", "toSide": "top" },
+    { "id": "popup-content", "from": "popup-ui", "to": "content-script", "label": "注入/还原页面脚本", "variant": "dashed", "fromSide": "left", "toSide": "top", "labelDy": 40 },
+    { "id": "popup-bg", "from": "popup-ui", "to": "background", "label": "读取配置 / 保存偏好", "fromSide": "bottom", "toSide": "top" },
+    { "id": "options-bg", "from": "options-ui", "to": "background", "label": "引擎配置 / 测试 / 密钥", "fromSide": "bottom", "toSide": "top" }
+  ],
+  "cards": [
+    { "dot": "emerald", "title": "主路径", "items": ["用户网页 / 划词 → Content Script 扫描 DOM", "→ Background 路由并批处理 → Provider 引擎工厂", "→ 外部翻译端点，结果回写缓存并渲染回页面"] },
+    { "dot": "rose", "title": "信任边界", "items": ["API Key 只保存在 chrome.storage.local", "仅在 Background 上下文消费，绝不进入网页", "导入配置需显式允许才会携带密钥"] },
+    { "dot": "cyan", "title": "外部依赖", "items": ["Google 翻译（默认，无需密钥）", "Bing 翻译（备用，用户显式选择）", "用户配置的 OpenAI 兼容 AI 实例"] }
+  ]
+}
