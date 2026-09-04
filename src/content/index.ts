@@ -105,6 +105,26 @@ export function createContentController(dependencies: ContentControllerDependenc
     };
   }
 
+  // 提取面向用户的稳定错误消息，避免把英文异常或敏感内容渲染到页面。
+  function readableError(error: unknown): string {
+    return error instanceof Error && /^[\u3400-\u9fff]/u.test(error.message) ? error.message : '翻译失败，请重试';
+  }
+
+  function markFailed(items: ParagraphRecord[], message: string): void {
+    for (const paragraph of items) dependencies.renderError(paragraph, message);
+    for (const paragraph of items) { completedIds.delete(paragraph.id); failedIds.add(paragraph.id); }
+  }
+
+  // 开启新翻译代际：作废旧队列与旧任务，返回代际号；已被新命令抢占时返回 undefined。
+  async function beginSession(): Promise<number | undefined> {
+    const currentGeneration = ++generation;
+    const previousTaskId = activeTaskId;
+    activeTaskId = undefined;
+    if (previousTaskId || active) dependencies.stopObserver();
+    if (previousTaskId) await dependencies.cancel(previousTaskId);
+    return currentGeneration === generation ? currentGeneration : undefined;
+  }
+
   async function processParagraphs(items: ParagraphRecord[], currentGeneration: number, taskId: string): Promise<{ completed: number; failed: number }> {
     let completed = 0;
     let failed = 0;
@@ -144,12 +164,26 @@ export function createContentController(dependencies: ContentControllerDependenc
       if (currentGeneration === generation) reportCurrent();
     });
     if (currentGeneration !== generation) return { completed: 0, failed: 0 };
-    for (const failure of failures) {
-      const message = failure.error instanceof Error && /^[\u3400-\u9fff]/u.test(failure.error.message) ? failure.error.message : '翻译失败，请重试';
-      for (const paragraph of failure.item) dependencies.renderError(paragraph, message);
-      for (const paragraph of failure.item) { completedIds.delete(paragraph.id); failedIds.add(paragraph.id); }
-    }
+    for (const failure of failures) markFailed(failure.item, readableError(failure.error));
     return { completed, failed: failed + failures.reduce((count, failure) => count + failure.item.length, 0) };
+  }
+
+  function createObserverHandler(currentGeneration: number, taskId: string): (changes: ObserverChanges) => Promise<void> {
+    return async ({ added, invalidated, removed = [] }) => {
+      if (currentGeneration !== generation) return;
+      if (added.length === 0 && invalidated.length === 0 && removed.length === 0) return;
+      for (const paragraph of removed) { paragraphs.delete(paragraph.id); completedIds.delete(paragraph.id); failedIds.delete(paragraph.id); }
+      const changed: ParagraphRecord[] = [];
+      for (const paragraph of invalidated) {
+        completedIds.delete(paragraph.id); failedIds.delete(paragraph.id);
+        dependencies.restore(paragraph);
+        changed.push(store.refresh(paragraph.element));
+      }
+      for (const element of added) changed.push(store.getOrCreate(element));
+      for (const paragraph of changed) { paragraphs.set(paragraph.id, paragraph); dependencies.renderLoading(paragraph); }
+      if (changed.length) await processParagraphs(changed, currentGeneration, taskId);
+      if (currentGeneration === generation) reportCurrent();
+    };
   }
 
   async function restore(): Promise<void> {
@@ -167,12 +201,8 @@ export function createContentController(dependencies: ContentControllerDependenc
   }
 
   async function translate(command: PageCommand): Promise<void> {
-    const currentGeneration = ++generation;
-    const previousTaskId = activeTaskId;
-    activeTaskId = undefined;
-    if (previousTaskId || active) dependencies.stopObserver();
-    if (previousTaskId) await dependencies.cancel(previousTaskId);
-    if (currentGeneration !== generation) return;
+    const currentGeneration = await beginSession();
+    if (currentGeneration === undefined) return;
     command = await resolveCommand(command);
     if (currentGeneration !== generation) return;
     lastCommand = { ...lastCommand, ...command, type: 'translate-page' };
@@ -191,21 +221,7 @@ export function createContentController(dependencies: ContentControllerDependenc
       dependencies.renderLoading(paragraph);
     }
     active = true;
-    dependencies.startObserver(rule, store, command.scope ?? 'main-content', async ({ added, invalidated, removed = [] }) => {
-      if (currentGeneration !== generation) return;
-      if (added.length === 0 && invalidated.length === 0 && removed.length === 0) return;
-      for (const paragraph of removed) { paragraphs.delete(paragraph.id); completedIds.delete(paragraph.id); failedIds.delete(paragraph.id); }
-      const changed: ParagraphRecord[] = [];
-      for (const paragraph of invalidated) {
-        completedIds.delete(paragraph.id); failedIds.delete(paragraph.id);
-        dependencies.restore(paragraph);
-        changed.push(store.refresh(paragraph.element));
-      }
-      for (const element of added) changed.push(store.getOrCreate(element));
-      for (const paragraph of changed) { paragraphs.set(paragraph.id, paragraph); dependencies.renderLoading(paragraph); }
-      if (changed.length) await processParagraphs(changed, currentGeneration, taskId);
-      if (currentGeneration === generation) reportCurrent();
-    });
+    dependencies.startObserver(rule, store, command.scope ?? 'main-content', createObserverHandler(currentGeneration, taskId));
     report('translating');
 
     try {
@@ -214,12 +230,39 @@ export function createContentController(dependencies: ContentControllerDependenc
       reportCurrent();
     } catch (error) {
       if (currentGeneration !== generation) return;
-      const message = error instanceof Error && /^[\u3400-\u9fff]/u.test(error.message)
-        ? error.message
-        : '翻译失败，请重试';
-      for (const paragraph of paragraphs.values()) dependencies.renderError(paragraph, message);
-      for (const paragraph of paragraphs.values()) { completedIds.delete(paragraph.id); failedIds.add(paragraph.id); }
+      markFailed([...paragraphs.values()], readableError(error));
       report('error', 0, paragraphs.size);
+    }
+  }
+
+  // 重试只重发失败段落：保留已成功译文与页面状态，避免整页重翻浪费资源。
+  async function retryFailed(): Promise<void> {
+    if (!active) return;
+    const failedParagraphs = [...failedIds]
+      .map((id) => paragraphs.get(id))
+      .filter((paragraph): paragraph is ParagraphRecord => paragraph !== undefined);
+    if (failedParagraphs.length === 0) return;
+    const currentGeneration = await beginSession();
+    if (currentGeneration === undefined) return;
+    const taskId = `page-${currentGeneration}`;
+    activeTaskId = taskId;
+    const rule = await dependencies.loadRule();
+    if (currentGeneration !== generation) return;
+    dependencies.startObserver(rule, store, lastCommand.scope ?? 'main-content', createObserverHandler(currentGeneration, taskId));
+    // 重试前刷新原文，段落文本若已变化则按当前文本重发。
+    for (const paragraph of failedParagraphs) {
+      store.refresh(paragraph.element);
+      dependencies.renderLoading(paragraph);
+    }
+    report('translating', completedIds.size, failedIds.size);
+    try {
+      await processParagraphs(failedParagraphs, currentGeneration, taskId);
+      if (currentGeneration !== generation) return;
+      reportCurrent();
+    } catch (error) {
+      if (currentGeneration !== generation) return;
+      markFailed(failedParagraphs, readableError(error));
+      reportCurrent();
     }
   }
 
@@ -228,7 +271,7 @@ export function createContentController(dependencies: ContentControllerDependenc
     if (message.type === 'restore-page') return restore();
     if (message.type === 'toggle-page-translation') return active ? restore() : translate(message);
     if (message.type === 'translate-page') return translate(message);
-    if (message.type === 'retry-page-translation') return translate(lastCommand);
+    if (message.type === 'retry-page-translation') return retryFailed();
     if (message.type === 'translate-selection' && message.source === 'context-menu' && typeof message.text === 'string') {
       dependencies.showSelectionText(message.text);
     }

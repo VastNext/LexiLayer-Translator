@@ -154,7 +154,8 @@ export class OpenAiClient {
   }
 
   private async sendRaw(body: Record<string, unknown>, externalSignal?: AbortSignal): Promise<ResponseHandle> {
-    const timeoutMs = this.options.timeoutMs ?? 45_000;
+    // 批量翻译最多 8 段 / 6000 字符，慢模型或慢网络需要更长等待，默认放宽到 90 秒。
+    const timeoutMs = this.options.timeoutMs ?? 90_000;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     const abort = () => controller.abort();

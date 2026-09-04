@@ -11,7 +11,8 @@ export async function fetchTranslation(
   const fetch = options.fetch ?? globalThis.fetch.bind(globalThis);
   return withRetry(async () => {
     if (signal?.aborted) throw new Error('任务已取消');
-    const timeoutMs = options.timeoutMs ?? 15_000;
+    // Google/Bing 公共端点在代理或慢网络下可能较慢，默认等待放宽到 30 秒。
+    const timeoutMs = options.timeoutMs ?? 30_000;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     const abort = () => controller.abort();

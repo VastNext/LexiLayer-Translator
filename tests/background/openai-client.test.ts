@@ -92,7 +92,7 @@ describe('OpenAiClient', () => {
     expect((responseBody as ReadableStream<Uint8Array> | null)?.locked).toBe(false);
   });
 
-  it('每次请求默认 45 秒超时并清理计时器', async () => {
+  it('每次请求默认 90 秒超时并清理计时器', async () => {
     vi.useFakeTimers();
     const fetch = vi.fn((_url: string | URL | Request, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
       init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
@@ -102,10 +102,10 @@ describe('OpenAiClient', () => {
     });
 
     const translation = client.translate(request).catch((error: unknown) => error);
-    await vi.advanceTimersByTimeAsync(44_999);
+    await vi.advanceTimersByTimeAsync(89_999);
     expect(fetch.mock.calls[0][1]?.signal?.aborted).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
-    await expect(translation).resolves.toMatchObject({ message: 'API 请求超时（45000ms）' });
+    await expect(translation).resolves.toMatchObject({ message: 'API 请求超时（90000ms）' });
     expect(vi.getTimerCount()).toBe(0);
     vi.useRealTimers();
   });

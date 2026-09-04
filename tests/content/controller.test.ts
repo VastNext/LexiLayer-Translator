@@ -200,6 +200,11 @@ describe('网页翻译控制器', () => {
   });
 
   it('任务启动时固定 engineId，动态段落和 retry 沿用原引擎', async () => {
+    let dynamicAttempts = 0;
+    vi.mocked(dependencies.translate).mockImplementation(async ({ segments }) => {
+      if (segments.some((segment) => segment.text === 'dynamic') && ++dynamicAttempts === 1) throw new Error('网络异常');
+      return segments.map((segment) => ({ id: segment.id, text: `译:${segment.text}` }));
+    });
     await dependencies.listeners[0]({ type: 'translate-page', engineId: 'bing', targetLanguage: 'ja' });
     const observer = vi.mocked(dependencies.startObserver).mock.calls[0][3];
     const added = document.createElement('p'); added.textContent = 'dynamic'; document.body.append(added);
@@ -207,6 +212,7 @@ describe('网页翻译控制器', () => {
     await dependencies.listeners[0]({ type: 'retry-page-translation' });
 
     expect(vi.mocked(dependencies.translate).mock.calls.map(([request]) => request.engineId)).toEqual(['bing', 'bing', 'bing']);
+    expect(vi.mocked(dependencies.translate).mock.calls[2][0].segments.map((segment) => segment.text)).toEqual(['dynamic']);
     expect(dependencies.report).toHaveBeenCalledWith(expect.objectContaining({ engineId: 'bing' }));
   });
 
@@ -254,6 +260,69 @@ describe('网页翻译控制器', () => {
 
     await dependencies.listeners[0]({ type: 'retry-page-translation' });
     expect(dependencies.translate).toHaveBeenCalledTimes(2);
+    // retry 只重发失败段落，不重新扫描或恢复已渲染内容
+    expect(dependencies.scan).toHaveBeenCalledOnce();
+    expect(dependencies.restore).not.toHaveBeenCalled();
+    expect(dependencies.report).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'complete', completed: 1, failed: 0 }));
+  });
+
+  it('部分失败后 retry 只重发失败段落，不重翻已成功段落', async () => {
+    document.body.innerHTML = `<main><p>${'a'.repeat(4000)}</p><p>${'b'.repeat(4000)}</p><p>${'c'.repeat(4000)}</p><p>${'d'.repeat(4000)}</p></main>`;
+    vi.mocked(dependencies.scan).mockReturnValue([...document.querySelectorAll('p')] as HTMLElement[]);
+    vi.mocked(dependencies.translate).mockImplementation(async ({ segments }) => {
+      if (segments.some((segment) => segment.text.startsWith('b'))) throw new Error('网络异常');
+      return segments.map((segment) => ({ id: segment.id, text: `译:${segment.text.slice(0, 1)}` }));
+    });
+    await dependencies.listeners[0]({ type: 'translate-page' });
+
+    // 4 个长段各自成批：a/c/d 成功，b 批失败 → partial
+    expect(dependencies.report).toHaveBeenLastCalledWith({ status: 'partial', completed: 3, failed: 1, total: 4, engineId: 'google' });
+    expect(dependencies.renderTranslation).toHaveBeenCalledTimes(3);
+    expect(dependencies.renderError).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(dependencies.translate)).toHaveBeenCalledTimes(4);
+
+    vi.mocked(dependencies.translate).mockClear();
+    vi.mocked(dependencies.translate).mockImplementation(async ({ segments }) => segments.map((segment) => ({ id: segment.id, text: `译:${segment.text.slice(0, 1)}` })));
+    await dependencies.listeners[0]({ type: 'retry-page-translation' });
+    expect(vi.mocked(dependencies.translate)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(dependencies.translate).mock.calls[0][0].segments).toHaveLength(1);
+    expect(vi.mocked(dependencies.translate).mock.calls[0][0].segments[0].text.startsWith('b')).toBe(true);
+    expect(dependencies.scan).toHaveBeenCalledOnce();
+    expect(dependencies.restore).not.toHaveBeenCalled();
+    expect(dependencies.report).toHaveBeenLastCalledWith({ status: 'complete', completed: 4, failed: 0, total: 4, engineId: 'google' });
+  });
+
+  it('retry 后仍失败的段落保留错误与重试入口', async () => {
+    vi.mocked(dependencies.translate).mockRejectedValue(new Error('网络异常'));
+    await dependencies.listeners[0]({ type: 'translate-page' });
+    expect(dependencies.report).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'error', failed: 1 }));
+
+    await dependencies.listeners[0]({ type: 'retry-page-translation' });
+    expect(dependencies.translate).toHaveBeenCalledTimes(2);
+    expect(dependencies.renderError).toHaveBeenCalledTimes(2);
+    expect(dependencies.report).toHaveBeenLastCalledWith({ status: 'error', completed: 0, failed: 1, total: 1, engineId: 'google' });
+  });
+
+  it('全部成功后 retry 不再发起任何翻译请求', async () => {
+    await dependencies.listeners[0]({ type: 'translate-page' });
+    expect(dependencies.report).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'complete' }));
+
+    await dependencies.listeners[0]({ type: 'retry-page-translation' });
+    expect(dependencies.translate).toHaveBeenCalledTimes(1);
+    expect(dependencies.scan).toHaveBeenCalledOnce();
+    expect(dependencies.report).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'complete' }));
+  });
+
+  it('恢复原文后 retry 不重新启动翻译', async () => {
+    vi.mocked(dependencies.translate).mockRejectedValueOnce(new Error('网络异常'));
+    await dependencies.listeners[0]({ type: 'translate-page' });
+    await dependencies.listeners[0]({ type: 'restore-page' });
+    vi.mocked(dependencies.translate).mockClear();
+
+    await dependencies.listeners[0]({ type: 'retry-page-translation' });
+
+    expect(dependencies.translate).not.toHaveBeenCalled();
+    expect(dependencies.report).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'idle' }));
   });
 
   it('混合成功失败时逐段收口并报告 partial', async () => {
