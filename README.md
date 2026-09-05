@@ -5,7 +5,7 @@
   A browser translator that turns configurable AI prompts into domain-aware translation.
 </p>
 
-当前版本：`0.7.6`。
+当前版本：`0.7.7`。
 
 <p align="center">
   <a href="https://github.com/VastNext/LexiLayer-Translator"><img src="https://img.shields.io/badge/status-MVP-orange.svg" alt="MVP status"></a>
@@ -162,7 +162,7 @@ VAST_E2E_PROXY=http://127.0.0.1:7890 npm run e2e:network
 
 ## 🗺️ 当前状态与路线
 
-当前版本：`0.7.6` · MVP
+当前版本：`0.7.7` · MVP
 
 - ✅ Google / Bing 网页与划词翻译
 - ✅ 多个 OpenAI 兼容 AI 实例
@@ -201,6 +201,11 @@ VAST_E2E_PROXY=http://127.0.0.1:7890 npm run e2e:network
 
 - 🧭 进一步收紧 Google、Reddit、GitHub 站点规则，参考内部规则资料中的正文边界思路，排除元信息、评论操作区、代码行和更多非正文模块。
 
+## 0.7.7 更新
+
+- 🧭 完善 Google、Reddit、GitHub、YouTube、X、Bing、Stack Overflow、Substack 的正文边界与非正文排除规则。
+- 📚 新增站点翻译规则维护指南，说明规则结构、执行流程、选择器优先级和新增规则的验证方式。
+
 ## 0.7.1 更新
 
 - 产品品牌更名为语层翻译（LexiLayer Translator），简称语层 / LexiLayer；扩展、文档与商店资料统一使用新名称。
@@ -220,6 +225,7 @@ VAST_E2E_PROXY=http://127.0.0.1:7890 npm run e2e:network
 - [实现计划](./docs/plans/2026-08-27-lexilayer-translator-implementation.md)
 - [隐私说明](./PRIVACY.md)
 - [Chrome Web Store 上架文档](./docs/chrome-web-store/README.md)
+- [站点翻译规则维护指南](./docs/rules/README.md)
 
 ## 🌐 官方地址
 

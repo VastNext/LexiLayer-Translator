@@ -22,6 +22,7 @@ const hardExclusions = [
   '[class*="icon-font" i]',
   '[role="img"]',
   '[role="tooltip"]',
+  'relative-time',
   '[contenteditable="true"]',
   '[hidden]',
   '[aria-hidden="true"]',
@@ -119,7 +120,7 @@ export function scanParagraphElements(
       : Array.from(scanRoot.querySelectorAll(paragraphSelector));
 
     for (const candidate of candidates) {
-      if (candidate.matches('li') && !hasDirectText(candidate) && candidate.querySelector('a,button,[role="link"],[role="button"]')) continue;
+      if (candidate.matches('li') && !hasDirectText(candidate)) continue;
       if (hasText(candidate) && !isExcluded(candidate, rule)) results.add(candidate);
     }
     for (const candidate of textLeafCandidates(scanRoot, results, rule)) results.add(candidate);

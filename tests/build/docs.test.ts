@@ -135,12 +135,12 @@ describe('文档发布契约', () => {
     expect(packager).toContain('ZIP 第一层必须且只能包含一个 manifest.json');
   });
 
-  it('0.7.4 发布说明记录仅译文源文隐藏修复', async () => {
+  it('历史发布说明记录仅译文源文隐藏修复', async () => {
     const [pkg, notes] = await Promise.all([
       readFile(resolve('package.json'), 'utf8').then(JSON.parse),
       readFile(resolve('docs/release-notes/0.7.4.md'), 'utf8'),
     ]);
-    expect(pkg.version).toBe('0.7.6');
+    expect(pkg.version).toBe('0.7.7');
     expect(notes).toContain('“仅译文”模式显示源文');
     expect(notes).toContain('高优先级 CSS');
   });

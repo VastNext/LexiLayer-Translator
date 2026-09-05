@@ -5,6 +5,11 @@ import type { SiteRule } from '../../src/rules/types';
 import { rule as githubRule } from '../../src/rules/sites/github';
 import { rule as googleSearchRule } from '../../src/rules/sites/google-search';
 import { rule as redditRule } from '../../src/rules/sites/reddit';
+import { rule as bingSearchRule } from '../../src/rules/sites/bing-search';
+import { rule as stackoverflowRule } from '../../src/rules/sites/stackoverflow';
+import { rule as substackRule } from '../../src/rules/sites/substack';
+import { rule as xRule } from '../../src/rules/sites/x';
+import { rule as youtubeRule } from '../../src/rules/sites/youtube';
 
 const rule: SiteRule = {
   id: 'test',
@@ -153,6 +158,19 @@ describe('scanParagraphElements', () => {
     expect(elements[0].id).toBe('visible');
   });
 
+  it('排除屏幕阅读器标题和时间元数据，避免隐藏辅助文案生成可见译文', () => {
+    document.body.innerHTML = `<main>
+      <h2 data-testid="screen-reader-heading">Latest commit</h2>
+      <h2 class="prc-src-InternalVisuallyHidden-abc">Repository files navigation</h2>
+      <relative-time>Sep 5, 2026</relative-time>
+      <p id="visible">可见正文</p>
+    </main>`;
+
+    const elements = scanParagraphElements(document, githubRule, 'main-content');
+
+    expect(elements.map((element) => element.id)).toEqual(['visible']);
+  });
+
   it.each([
     ['<li id="outer"><p id="inner">列表段落</p></li>', 'inner'],
     ['<blockquote id="outer"><p id="inner">引用段落</p></blockquote>', 'inner'],
@@ -233,6 +251,28 @@ describe('scanParagraphElements', () => {
     expect(ids).not.toEqual(expect.arrayContaining(['author', 'comment-meta', 'code', 'reply']));
   });
 
+  it('GitHub Repository files 标题和 Latest commit 模块不翻译，README 正文保留', () => {
+    document.body.innerHTML = `<main>
+      <div itemscope itemtype="https://schema.org/abstract">
+        <h2 id="repo-files-heading">Repository files navigation</h2>
+        <nav aria-label="Repository files"><span>README</span><span>Contributing</span></nav>
+        <div data-testid="latest-commit">
+          <h2 data-testid="screen-reader-heading">Latest commit</h2>
+          <div data-testid="author-avatar"><a>sunsunsun-java</a></div>
+          <span data-testid="latest-commit-html">Merge pull request #299</span>
+          <relative-time>Sep 5, 2026</relative-time>
+          <div data-testid="latest-commit-details"><span>219 Commits</span></div>
+        </div>
+        <div id="readme"><h1 id="readme-heading">Archify</h1><p id="readme-copy">README body</p></div>
+      </div>
+    </main>`;
+
+    const ids = scanParagraphElements(document, githubRule, 'main-content').map((element) => element.id);
+
+    expect(ids).toEqual(['readme-heading', 'readme-copy']);
+    expect(ids).not.toContain('repo-files-heading');
+  });
+
   it('Reddit 帖子和评论可翻译，但投票、操作区和侧栏不翻译', () => {
     document.body.innerHTML = `
       <main>
@@ -282,6 +322,74 @@ describe('scanParagraphElements', () => {
 
     expect(ids).toEqual(['result-title', 'result-snippet']);
     expect(ids).not.toEqual(expect.arrayContaining(['ad', 'search-button', 'page']));
+  });
+
+  it('Bing 搜索保留结果正文，排除侧栏、广告、统计和分页', () => {
+    document.body.innerHTML = `<main>
+      <div id="b_tween"><span id="stats">12 results</span></div>
+      <ol id="b_results"><li><h2 id="bing-title">Useful result</h2><p id="bing-copy">Result summary</p></li></ol>
+      <aside id="b_context"><p id="bing-side">Related information</p></aside>
+      <div id="b_pag"><a id="bing-next">Next</a></div>
+    </main>`;
+
+    const ids = scanParagraphElements(document, bingSearchRule, 'main-content').map((element) => element.id);
+
+    expect(ids).toEqual(['bing-title', 'bing-copy']);
+  });
+
+  it('YouTube 保留标题、描述和评论正文，排除播放器、作者元数据与操作区', () => {
+    document.body.innerHTML = `<main><div id="primary">
+      <div id="movie_player"><p id="player-label">Play</p></div>
+      <h1 id="youtube-title">Video title</h1>
+      <div id="owner"><p id="channel">Channel name</p></div>
+      <div id="description"><p id="youtube-description">Video description</p></div>
+      <div id="actions"><button>Like</button><span id="likes">123 likes</span></div>
+      <div id="comments"><ytd-comment-thread-renderer><p id="youtube-comment">Helpful comment</p><div id="toolbar"><button>Reply</button></div></ytd-comment-thread-renderer></div>
+    </div></main>`;
+
+    const ids = scanParagraphElements(document, youtubeRule, 'main-content').map((element) => element.id);
+
+    expect(ids).toEqual(['youtube-title', 'youtube-description', 'youtube-comment']);
+  });
+
+  it('X 保留推文正文，排除用户元信息、统计和操作按钮', () => {
+    document.body.innerHTML = `<main><article>
+      <div data-testid="User-Name"><span id="x-user">User Name</span></div>
+      <div data-testid="tweetText"><p id="tweet-copy">Tweet body</p></div>
+      <time id="tweet-time">10:30</time>
+      <div role="group"><button data-testid="reply">Reply</button><span id="tweet-stats">10 likes</span></div>
+    </article></main>`;
+
+    const ids = scanParagraphElements(document, xRule, 'main-content').map((element) => element.id);
+
+    expect(ids).toEqual(['tweet-copy']);
+  });
+
+  it('Stack Overflow 保留问题、答案和评论正文，排除投票、作者与操作区', () => {
+    document.body.innerHTML = `<main id="content"><div id="mainbar">
+      <h1 id="so-title">How does this work?</h1>
+      <div class="question"><div class="js-voting-container"><button>Up vote</button></div><div class="s-prose"><p id="question-copy">Question body</p><pre><code>const x = 1</code></pre></div><div class="post-signature"><span id="question-author">Author</span></div></div>
+      <div class="answer"><div class="s-prose"><p id="answer-copy">Answer body</p></div><div class="js-post-menu"><a>Share</a></div></div>
+      <span class="comment-copy" id="comment-copy">Useful comment</span>
+    </div></main>`;
+
+    const ids = scanParagraphElements(document, stackoverflowRule, 'main-content').map((element) => element.id);
+
+    expect(ids).toEqual(['so-title', 'question-copy', 'answer-copy', 'comment-copy']);
+  });
+
+  it('Substack 保留文章和评论正文，排除订阅、分享与作者元信息', () => {
+    document.body.innerHTML = `<main><article>
+      <header><h1 id="substack-title">Article title</h1><div class="post-meta"><p id="substack-author">Author · 5 min read</p></div></header>
+      <div class="body markup"><p id="substack-copy">Article body</p></div>
+      <div class="subscribe-widget"><p id="subscribe">Subscribe now</p></div>
+      <div class="post-actions"><button>Share</button></div>
+      <div class="comment-body"><p id="substack-comment">Reader comment</p></div>
+    </article></main>`;
+
+    const ids = scanParagraphElements(document, substackRule, 'main-content').map((element) => element.id);
+
+    expect(ids).toEqual(['substack-title', 'substack-copy', 'substack-comment']);
   });
 
   it('1000 个候选仅沿祖先链去重，不做候选两两 contains 比较', { timeout: 15_000 }, () => {
