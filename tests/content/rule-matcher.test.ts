@@ -63,6 +63,14 @@ describe('matchSiteRule', () => {
     expect(loader).not.toHaveBeenCalled();
   });
 
+  it.each([
+    'https://github.com/settings/profile',
+    'https://github.com/login',
+    'https://github.com/signup',
+  ])('GitHub %s 页面回退通用规则', async (href) => {
+    await expect(matchSiteRule(new URL(href))).resolves.toMatchObject({ id: 'general' });
+  });
+
   it('支持子域名匹配并在未命中时回退 general', async () => {
     const loader = vi.fn(async () => ({ id: 'substack' } satisfies SiteRule));
     const catalog: RuleCatalogEntry[] = [

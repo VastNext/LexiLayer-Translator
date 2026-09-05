@@ -5,7 +5,7 @@
   A browser translator that turns configurable AI prompts into domain-aware translation.
 </p>
 
-当前版本：`0.7.4`。
+当前版本：`0.7.5`。
 
 <p align="center">
   <a href="https://github.com/VastNext/LexiLayer-Translator"><img src="https://img.shields.io/badge/status-MVP-orange.svg" alt="MVP status"></a>
@@ -162,7 +162,7 @@ VAST_E2E_PROXY=http://127.0.0.1:7890 npm run e2e:network
 
 ## 🗺️ 当前状态与路线
 
-当前版本：`0.7.4` · MVP
+当前版本：`0.7.5` · MVP
 
 - ✅ Google / Bing 网页与划词翻译
 - ✅ 多个 OpenAI 兼容 AI 实例
@@ -190,6 +190,12 @@ VAST_E2E_PROXY=http://127.0.0.1:7890 npm run e2e:network
 ## 0.7.4 更新
 
 - 🧱 修复站点 CSS 覆盖 `hidden` 属性时，开启“仅译文”仍显示源文的问题。
+
+## 0.7.5 更新
+
+- 🐙 改进 GitHub 规则：排除仓库名、仓库导航、文件导航、操作按钮和代码区域，避免 README 左侧图标或仓库元信息被误翻。
+- 👽 改进 Reddit 规则：覆盖新版 Shreddit 帖子/评论结构，并排除投票、分享、回复等操作区域。
+- 🔎 改进 Google 规则：排除广告、搜索工具栏和分页等非结果正文区域。
 
 ## 0.7.1 更新
 

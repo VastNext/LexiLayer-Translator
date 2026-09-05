@@ -4,6 +4,7 @@ import { scanParagraphElements, type ScanMetrics } from '../../src/content/dom-s
 import type { SiteRule } from '../../src/rules/types';
 import { rule as githubRule } from '../../src/rules/sites/github';
 import { rule as googleSearchRule } from '../../src/rules/sites/google-search';
+import { rule as redditRule } from '../../src/rules/sites/reddit';
 
 const rule: SiteRule = {
   id: 'test',
@@ -193,6 +194,75 @@ describe('scanParagraphElements', () => {
     const elements = scanParagraphElements(document, googleSearchRule, 'main-content');
 
     expect(elements.map((element) => element.id)).toEqual(['summary']);
+  });
+
+  it('GitHub 仓库名、文件导航和图标不翻译，但 README 正文保留', () => {
+    document.body.innerHTML = `
+      <main>
+        <div class="js-repo-nav"><a id="owner">owner</a><strong id="repo">sample-repo</strong></div>
+        <aside class="Layout-sidebar">
+          <a id="readme-nav"><svg aria-hidden="true"><path /></svg><span>存储库文件导航</span></a>
+        </aside>
+        <div class="js-navigation-container"><table><tbody><tr><td id="file">README.md</td></tr></tbody></table></div>
+        <div id="readme"><h1 id="readme-title">Beginner Racing &amp; Controls</h1><p id="readme-text">Keyboard and controller setups.</p></div>
+      </main>`;
+
+    const elements = scanParagraphElements(document, githubRule, 'main-content');
+    const ids = elements.map((element) => element.id);
+
+    expect(ids).toEqual(['readme-title', 'readme-text']);
+    expect(ids).not.toEqual(expect.arrayContaining(['owner', 'repo', 'readme-nav', 'file']));
+  });
+
+  it('Reddit 帖子和评论可翻译，但投票、操作区和侧栏不翻译', () => {
+    document.body.innerHTML = `
+      <main>
+        <article id="post">
+          <h1 id="post-title">A useful title</h1>
+          <p id="post-body">Post body</p>
+          <button id="vote">Upvote</button>
+          <button id="share">Share</button>
+          <div data-testid="comment"><p id="comment-body">Comment body</p><button id="reply">Reply</button></div>
+        </article>
+        <aside><p id="sidebar">Recommended communities</p></aside>
+      </main>`;
+
+    const elements = scanParagraphElements(document, redditRule, 'main-content');
+    const ids = elements.map((element) => element.id);
+
+    expect(ids).toEqual(['post-title', 'post-body', 'comment-body']);
+    expect(ids).not.toEqual(expect.arrayContaining(['vote', 'share', 'reply', 'sidebar']));
+  });
+
+  it('Reddit Shreddit 帖子和评论正文可翻译，操作区不翻译', () => {
+    document.body.innerHTML = `
+      <main>
+        <shreddit-post><h1 id="shreddit-title">Post title</h1><div><p id="shreddit-body">Post body</p></div><div data-testid="post-action-row"><button>Share</button></div></shreddit-post>
+        <shreddit-comment><p id="shreddit-comment-body">Comment body</p><div data-testid="comment-action-row"><button>Reply</button></div></shreddit-comment>
+      </main>`;
+
+    const elements = scanParagraphElements(document, redditRule, 'main-content');
+    const ids = elements.map((element) => element.id);
+
+    expect(ids).toEqual(['shreddit-title', 'shreddit-body', 'shreddit-comment-body']);
+  });
+
+  it('Google 搜索的广告、工具栏和分页不翻译，搜索结果正文保留', () => {
+    document.body.innerHTML = `
+      <main>
+        <div id="search">
+          <form><input aria-label="Search"><button id="search-button">Search</button></form>
+          <div id="tads"><p id="ad">Sponsored result</p></div>
+          <div class="MjjYud"><h3 id="result-title">Useful result</h3><p id="result-snippet">Result snippet</p></div>
+          <div role="navigation"><a id="page">Next</a></div>
+        </div>
+      </main>`;
+
+    const elements = scanParagraphElements(document, googleSearchRule, 'main-content');
+    const ids = elements.map((element) => element.id);
+
+    expect(ids).toEqual(['result-title', 'result-snippet']);
+    expect(ids).not.toEqual(expect.arrayContaining(['ad', 'search-button', 'page']));
   });
 
   it('1000 个候选仅沿祖先链去重，不做候选两两 contains 比较', { timeout: 15_000 }, () => {

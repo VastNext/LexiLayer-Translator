@@ -2,6 +2,13 @@ import type { SiteRule } from '../types.ts';
 
 export const rule: SiteRule = {
   id: 'github',
-  mainContentSelectors: ['main', '[role="main"]', '#readme'],
-  excludeSelectors: ['nav', '[role="navigation"]', '.js-navigation-container,table'],
+  mainContentSelectors: ['#readme', '[data-testid="readme"]', 'main'],
+  excludeSelectors: [
+    'header', 'nav', '[role="banner"]', '[role="navigation"]', '[role="button"]', 'button',
+    '.js-navigation-container', '.js-repo-nav', '.AppHeader-context', '.Layout-header', '.Layout-sidebar',
+    '.file-navigation', '.file-header', '.file-info', '.gh-header-actions', '.gh-header-meta',
+    '[aria-label*="repository files" i]', '[aria-label*="file navigation" i]',
+    '[aria-label*="repository navigation" i]', '[data-testid="repository-name"]', '[itemprop="name"]',
+    '.repository-content .octicon', 'table', 'pre', 'code',
+  ],
 };
