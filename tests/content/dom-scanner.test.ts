@@ -214,6 +214,25 @@ describe('scanParagraphElements', () => {
     expect(ids).not.toEqual(expect.arrayContaining(['owner', 'repo', 'readme-nav', 'file']));
   });
 
+  it('GitHub Issue 元信息、评论操作区和代码行不翻译，Markdown 正文保留', () => {
+    document.body.innerHTML = `
+      <main>
+        <article>
+          <h1 id="issue-title">Fix translation issue</h1>
+          <div class="vcard-names-container"><a id="author">author</a></div>
+          <div class="timeline-comment-header"><span id="comment-meta">comment metadata</span></div>
+          <div class="markdown-body"><p id="issue-body">This is the issue body.</p><pre><code id="code">const value = 1</code></pre></div>
+          <div class="review-thread-reply"><button id="reply">Reply</button></div>
+        </article>
+      </main>`;
+
+    const elements = scanParagraphElements(document, githubRule, 'main-content');
+    const ids = elements.map((element) => element.id);
+
+    expect(ids).toEqual(['issue-title', 'issue-body']);
+    expect(ids).not.toEqual(expect.arrayContaining(['author', 'comment-meta', 'code', 'reply']));
+  });
+
   it('Reddit 帖子和评论可翻译，但投票、操作区和侧栏不翻译', () => {
     document.body.innerHTML = `
       <main>

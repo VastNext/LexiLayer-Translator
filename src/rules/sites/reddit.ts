@@ -8,5 +8,6 @@ export const rule: SiteRule = {
     'header', 'nav', 'aside', 'form', 'button', '[role="button"]',
     '[data-testid="post-action-row"]', '[data-testid="comment-action-row"]',
     '[data-testid="vote-arrows"]', '[data-testid="content-gate"]',
+    'shreddit-comment-action-row', 'faceplate-hovercard', '.text-neutral-content-weak',
   ],
 };

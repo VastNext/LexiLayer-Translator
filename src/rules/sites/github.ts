@@ -9,6 +9,8 @@ export const rule: SiteRule = {
     '.file-navigation', '.file-header', '.file-info', '.gh-header-actions', '.gh-header-meta',
     '[aria-label*="repository files" i]', '[aria-label*="file navigation" i]',
     '[aria-label*="repository navigation" i]', '[data-testid="repository-name"]', '[itemprop="name"]',
-    '.repository-content .octicon', 'table', 'pre', 'code',
+    '[data-testid="breadcrumbs"]', '.BorderGrid-cell', '.vcard-names-container', '.author', '.assignee',
+    '.timeline-comment-header', '.review-thread-reply', '.repository-content .octicon', 'a.anchor', 'g-emoji', 'img',
+    '.blob-code', 'table', 'pre', 'code',
   ],
 };
