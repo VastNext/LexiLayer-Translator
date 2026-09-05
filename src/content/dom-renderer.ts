@@ -1,5 +1,7 @@
 import type { ParagraphRecord } from './paragraph-store';
 
+const hide = (element: HTMLElement) => element.hidden = true;
+
 export type TranslationMode = 'bilingual' | 'translation-only';
 export type TranslationPlacement = 'before' | 'after';
 
@@ -47,8 +49,9 @@ export class DomRenderer {
 
     const internal = this.requiresInternalWrapper(paragraph.element);
     this.renderState(paragraph, 'translated', translation, options.placement, internal);
-    if (internal) this.setInternalSourceHidden(paragraph, options.mode === 'translation-only');
-    else paragraph.element.hidden = options.mode === 'translation-only';
+    const hidden = options.mode[0] === 't';
+    if (internal) this.setInternalSourceHidden(paragraph, hidden);
+    else if (hidden) hide(paragraph.element);
     return true;
   }
 
@@ -105,6 +108,7 @@ export class DomRenderer {
   }
 
   private setInternalSourceHidden(paragraph: ParagraphRecord, hidden: boolean): void {
-    this.ensureSourceWrapper(paragraph).hidden = hidden;
+    const source = this.ensureSourceWrapper(paragraph);
+    if (hidden) hide(source); else source.hidden = false;
   }
 }

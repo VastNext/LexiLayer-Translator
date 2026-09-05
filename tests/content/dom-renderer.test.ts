@@ -61,6 +61,18 @@ describe('ParagraphStore 与 DomRenderer', () => {
     expect(paragraph.currentTaskId).toBeUndefined();
   });
 
+  it('站点 CSS 覆盖 hidden 时仍强制隐藏普通源元素', () => {
+    source.style.setProperty('display', 'block', 'important');
+    const paragraph = store.getOrCreate(source);
+    const request = renderer.beginTask(paragraph);
+
+    renderer.renderTranslation(paragraph, '你好，世界', {
+      mode: 'translation-only', placement: 'after', ...request,
+    });
+
+    expect(source).toHaveAttribute('hidden');
+  });
+
   it('渲染 loading 和 error 状态并允许后续成功结果替换', () => {
     const paragraph = store.getOrCreate(source);
     const request = renderer.beginTask(paragraph);

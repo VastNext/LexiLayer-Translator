@@ -15,3 +15,4 @@
 }
 [data-vast-translator][data-vast-state="translated"] { margin-inline-start: .35em; }
 button [data-vast-translator], a [data-vast-translator], [role="button"] [data-vast-translator], [role="link"] [data-vast-translator] { display: inline; }
+[data-vast-source][hidden] { display: none !important; }
