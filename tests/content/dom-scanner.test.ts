@@ -273,6 +273,22 @@ describe('scanParagraphElements', () => {
     expect(ids).not.toContain('repo-files-heading');
   });
 
+  it('GitHub 新版 Repository files 父容器中的导航标题和语言切换不翻译', () => {
+    document.body.innerHTML = `<main>
+      <div itemscope itemtype="https://schema.org/abstract" class="OverviewRepoFiles-module__Box_3__bBU1C">
+        <h2 id="files-heading">Repository files navigation</h2>
+        <nav aria-label="Repository files"><ul><li><a><span data-component="text">README</span></a></li></ul></nav>
+        <p align="center" id="language-switch"><strong>English</strong> · <a href="/repo/blob/main/README_ZH.md">简体中文</a></p>
+        <div class="markdown-body"><p id="readme-body">This is the README body.</p></div>
+      </div>
+    </main>`;
+
+    const ids = scanParagraphElements(document, githubRule, 'main-content').map((element) => element.id);
+
+    expect(ids).toEqual(['readme-body']);
+    expect(ids).not.toEqual(expect.arrayContaining(['files-heading', 'language-switch']));
+  });
+
   it('Reddit 帖子和评论可翻译，但投票、操作区和侧栏不翻译', () => {
     document.body.innerHTML = `
       <main>

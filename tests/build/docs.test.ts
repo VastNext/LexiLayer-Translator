@@ -140,7 +140,7 @@ describe('文档发布契约', () => {
       readFile(resolve('package.json'), 'utf8').then(JSON.parse),
       readFile(resolve('docs/release-notes/0.7.4.md'), 'utf8'),
     ]);
-    expect(pkg.version).toBe('0.7.7');
+    expect(pkg.version).toBe('0.7.8');
     expect(notes).toContain('“仅译文”模式显示源文');
     expect(notes).toContain('高优先级 CSS');
   });

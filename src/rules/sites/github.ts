@@ -10,6 +10,7 @@ export const rule: SiteRule = {
     '[aria-label*="repository files" i]', '[aria-label*="file navigation" i]',
     '[aria-label*="repository navigation" i]', '[data-testid="repository-name"]', '[itemprop="name"]',
     '[itemscope][itemtype="https://schema.org/abstract"] > h2:first-child',
+    '[itemscope][itemtype="https://schema.org/abstract"] > p[align="center"]',
     '[data-testid="screen-reader-heading"]', '[class*="InternalVisuallyHidden" i]', '[class*="ScreenReaderHeading" i]',
     '[data-testid="latest-commit"]', '[data-testid="latest-commit-html"]', '[data-testid="latest-commit-details"]',
     '[data-testid="latest-commit-details-toggle"]', '[data-testid="author-avatar"]',
