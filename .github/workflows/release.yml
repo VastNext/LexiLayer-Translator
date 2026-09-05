@@ -72,6 +72,7 @@ jobs:
           gh release create "${{ steps.metadata.outputs.tag }}" \
             "release/${{ steps.metadata.outputs.package }}" \
             "release/${{ steps.metadata.outputs.package }}.sha256" \
+            "release/lexilayer-translator-${{ steps.metadata.outputs.version }}-release-notes.md" \
             --verify-tag \
             --title "LexiLayer Translator ${{ steps.metadata.outputs.version }}" \
-            --generate-notes
+            --notes-file "docs/release-notes/${{ steps.metadata.outputs.version }}.md"

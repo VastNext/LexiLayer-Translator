@@ -104,10 +104,11 @@ describe('文档发布契约', () => {
   });
 
   it('GitHub Release 工作流按标签重建、校验并发布商店包', async () => {
-    const [workflow, validator, packager] = await Promise.all([
+    const [workflow, validator, packager, releaseNotes] = await Promise.all([
       readFile(resolve('.github/workflows/release.yml'), 'utf8'),
       readFile(resolve('scripts/validate-release.mjs'), 'utf8'),
       readFile(resolve('scripts/package-release.py'), 'utf8'),
+      readFile(resolve('docs/release-notes/0.7.3.md'), 'utf8'),
     ]);
 
     expect(workflow).toContain("'v[0-9]+.[0-9]+.[0-9]+'");
@@ -121,6 +122,12 @@ describe('文档发布契约', () => {
     expect(workflow).toContain('actions/upload-artifact@v7');
     expect(workflow).toContain('gh release create');
     expect(workflow).toContain('python scripts/package-release.py');
+    expect(workflow).toContain('--notes-file');
+    expect(packager).toContain('release_notes_source');
+    expect(packager).toContain('releaseNotes');
+    expect(releaseNotes).toContain('GitHub 仓库表格误翻');
+    expect(releaseNotes).toContain('Google Trends 数据区域误翻');
+    expect(releaseNotes).toContain('划词内联翻译重复请求');
     expect(validator).toContain('dist/ 根目录缺少 manifest.json');
     expect(validator).toContain('Manifest 版本');
     expect(validator).toContain('发行目录包含禁止文件');
