@@ -285,6 +285,21 @@ describe('OpenAiClient', () => {
     expect(body.messages[0].content).toContain('附近文本');
   });
 
+  it('流式译文忽略模型在开头返回的空行', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response([
+      `data: ${JSON.stringify({ choices: [{ delta: { content: '\n\n你好' } }] })}\n\n`,
+      'data: [DONE]\n\n',
+    ].join(''), { headers: { 'Content-Type': 'text/event-stream' } }));
+    const client = new OpenAiClient({
+      baseUrl: 'https://api.example.com/v1', apiKey: 'sk-secret', model: 'gpt-test', fetch,
+    });
+
+    const chunks: string[] = [];
+    for await (const chunk of client.streamText('Hello', 'en', 'zh-Hans')) chunks.push(chunk);
+
+    expect(chunks).toEqual(['你好']);
+  });
+
   it('畸形 SSE 必须向调用方传播错误以触发非流式回退', async () => {
     const fetch = vi.fn().mockResolvedValue(new Response('data: {invalid\n\n', {
       headers: { 'Content-Type': 'text/event-stream' },

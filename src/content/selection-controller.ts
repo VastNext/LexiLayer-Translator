@@ -66,6 +66,7 @@ export function createSelectionController(dependencies: SelectionDependencies) {
   let activeRequestId: string | undefined;
   let activeRequestEngineId: string | undefined;
   let remembered: RememberedSelection | undefined;
+  let pending = false;
   let config: Awaited<ReturnType<SelectionDependencies['getPublicConfig']>> = { targetLanguage: 'en', selectionContext: true, selectionPopupEnabled: true, inlineSelectionModifier: 'Control', activeEngineId: 'google', activeExpertByEngine: {}, engines: [] };
   let selectionGeneration = 0;
   const events = dependencies.events ?? document;
@@ -103,6 +104,7 @@ export function createSelectionController(dependencies: SelectionDependencies) {
   };
 
   function close(): void {
+    pending = false;
     if (activeRequestId) safePost({ type: 'cancel-selection', requestId: activeRequestId });
     if (activeRequestId && activeRequestEngineId) void dependencies.cancelFallback(activeRequestId, activeRequestEngineId).catch(() => undefined);
     safeDisconnect();
@@ -150,8 +152,14 @@ export function createSelectionController(dependencies: SelectionDependencies) {
     if (!selected || !selected.block.isConnected) return;
     const existing = selected.block.nextElementSibling;
     if (existing?.hasAttribute('data-vast-inline-selection-translation')) { existing.remove(); return; }
+    if (pending) {
+      pending = false;
+      return;
+    }
+    pending = true;
     const result = await dependencies.translateInline(selected.text, selected.context, config.activeEngineId, config.targetLanguage).catch(() => '');
-    if (!result || remembered !== selected || !selected.block.isConnected) return;
+    if (!result || !pending || remembered !== selected || !selected.block.isConnected) return;
+    pending = false;
     const translation = selected.block.ownerDocument.createElement('div');
     translation.dataset.vastInlineSelectionTranslation = '';
     translation.textContent = result;

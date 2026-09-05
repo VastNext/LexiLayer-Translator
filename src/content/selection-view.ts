@@ -279,7 +279,7 @@ export class SelectionView implements SelectionViewHandle {
   private requestTranslation(): void {
     const language = (this.shadow.querySelector('[name="target-language"]') as HTMLSelectElement).value;
     const context = this.shadow.querySelector('[name="include-context"]')?.getAttribute('aria-pressed') === 'true';
-    this.setResult('');
+    this.setResult(this.t('preparing'));
     const engineId = (this.shadow.querySelector('[name="engine"]') as HTMLSelectElement).value;
     this.actions.translate(language, context, engineId);
   }

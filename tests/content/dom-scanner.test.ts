@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { scanParagraphElements, type ScanMetrics } from '../../src/content/dom-scanner';
 import type { SiteRule } from '../../src/rules/types';
+import { rule as githubRule } from '../../src/rules/sites/github';
+import { rule as googleSearchRule } from '../../src/rules/sites/google-search';
 
 const rule: SiteRule = {
   id: 'test',
@@ -167,6 +169,30 @@ describe('scanParagraphElements', () => {
     expect(scanParagraphElements(main, rule, 'main-content').map((element) => element.id)).toContain('body');
     const header = document.createElement('header'); header.innerHTML = '<p id="late-header">header</p>'; document.body.append(header);
     expect(scanParagraphElements(header, rule, 'main-content')).toEqual([]);
+  });
+
+  it('GitHub 数据表格不作为正文候选，但 README 普通段落仍可翻译', () => {
+    document.body.innerHTML = `
+      <main>
+        <div class="js-navigation-container"><table><tbody><tr><td id="file">README.md</td></tr></tbody></table></div>
+        <div id="readme"><p id="readme-text">README 正文</p></div>
+      </main>`;
+
+    const elements = scanParagraphElements(document, githubRule, 'main-content');
+
+    expect(elements.map((element) => element.id)).toEqual(['readme-text']);
+  });
+
+  it('Google Trends 数据展示表格不进入翻译候选', () => {
+    document.body.innerHTML = `
+      <main>
+        <section class="trends-data"><table><tbody><tr><td id="metric">搜索热度</td></tr></tbody></table></section>
+        <p id="summary">趋势摘要</p>
+      </main>`;
+
+    const elements = scanParagraphElements(document, googleSearchRule, 'main-content');
+
+    expect(elements.map((element) => element.id)).toEqual(['summary']);
   });
 
   it('1000 个候选仅沿祖先链去重，不做候选两两 contains 比较', { timeout: 15_000 }, () => {

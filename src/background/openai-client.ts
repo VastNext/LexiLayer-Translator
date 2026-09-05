@@ -106,7 +106,7 @@ export class OpenAiClient {
           const result = parser.push(value);
           if (result.fallback) throw new Error('流式响应格式无效');
           for (const chunk of result.chunks) {
-            const next = this.continuation(chunk, emitted);
+            const next = this.continuation(emitted ? chunk : chunk.replace(/^\n+/, ''), emitted);
             if (next) { emitted += next; yield next; }
           }
           if (result.done) return;
@@ -114,7 +114,7 @@ export class OpenAiClient {
         const final = parser.finish();
         if (final.fallback) throw new Error('流式响应格式无效');
         for (const chunk of final.chunks) {
-          const next = this.continuation(chunk, emitted);
+          const next = this.continuation(emitted ? chunk : chunk.replace(/^\n+/, ''), emitted);
           if (next) { emitted += next; yield next; }
         }
         throw new Error('流式响应在完成前断开');

@@ -12,8 +12,8 @@ async function loadRule(id: string): Promise<SiteRule> {
 export const ruleCatalog: RuleCatalogEntry[] = [
   {
     id: 'google-search',
-    hostnames: ['www.google.com', 'www.google.com.hk'],
-    pathPrefixes: ['/search'],
+    hostnames: ['www.google.com', 'www.google.com.hk', 'trends.google.com'],
+    pathPrefixes: ['/search', '/trends'],
     load: () => loadRule('google-search'),
   },
   {

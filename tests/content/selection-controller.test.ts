@@ -430,6 +430,23 @@ describe('划词翻译控制器', () => {
     expect(document.querySelector('[data-vast-inline-selection-translation]')).toBeNull();
   });
 
+  it('连续按两次 modifier 会取消进行中的内联翻译，不会重复发起请求', async () => {
+    let resolveTranslation!: (value: string) => void;
+    vi.mocked(dependencies.translateInline).mockReturnValue(new Promise((resolve) => { resolveTranslation = resolve; }));
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
+    register(); trustedMouseUp();
+    await vi.waitFor(() => expect(dependencies.getPublicConfig).toHaveBeenCalled());
+    dependencies.selection = null;
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' }));
+
+    expect(dependencies.translateInline).toHaveBeenCalledOnce();
+    resolveTranslation('不应插入的译文');
+    await Promise.resolve();
+    expect(document.querySelector('[data-vast-inline-selection-translation]')).toBeNull();
+  });
+
   it('按配置 modifier 触发，Off、repeat、输入框与 contenteditable 均不响应', async () => {
     vi.mocked(dependencies.getPublicConfig).mockResolvedValue({ ...(await dependencies.getPublicConfig()), inlineSelectionModifier: 'Alt' });
     dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
@@ -636,6 +653,21 @@ describe('划词翻译视图隔离', () => {
     const style = root!.querySelector('style')!.textContent ?? '';
     expect(style).toMatch(/\.result\{[^}]*padding:10px(?![^}]*78px)/s);
     expect(style).toMatch(/\.result-actions\{[^}]*justify-content:flex-end/s);
+    view.remove();
+  });
+
+  it('发起翻译时结果区立即显示翻译中提示', () => {
+    let root: ShadowRoot | undefined;
+    const original = Element.prototype.attachShadow;
+    vi.spyOn(HTMLElement.prototype, 'attachShadow').mockImplementation(function (this: HTMLElement, options) { root = original.call(this, options); return root; });
+    const translate = vi.fn();
+    const view = new SelectionView(document, new DOMRect(10, 10, 20, 20), { translate, copy: vi.fn(), close: vi.fn() });
+    view.mount();
+    view.open('zh-Hans');
+
+    (root!.querySelector('[data-action="retry"]') as HTMLButtonElement).click();
+
+    expect(root!.querySelector('[data-result]')).toHaveTextContent('准备翻译…');
     view.remove();
   });
 

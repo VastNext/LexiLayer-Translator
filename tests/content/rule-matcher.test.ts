@@ -12,6 +12,7 @@ const generalRule: SiteRule = {
 describe('matchSiteRule', () => {
   it.each([
     ['https://www.google.com/search?q=tdd', 'google-search'],
+    ['https://trends.google.com/trends/explore?q=tdd', 'google-search'],
     ['https://www.bing.com/search?q=tdd', 'bing-search'],
     ['https://github.com/vitest-dev/vitest', 'github'],
     ['https://www.youtube.com/watch?v=123', 'youtube'],
