@@ -11,7 +11,7 @@ const fallbackMessages: Record<string, string> = {
   connectionNoticeTitle: '连接提示', connectionNotice: '远程服务必须使用 HTTPS。HTTP 只允许本机回环地址 localhost、127.0.0.1 或 ::1。',
   actionTestConnection: '测试连接', statusTesting: '测试中…', optionsReadingPreferences: '阅读偏好', selectionPreferences: '划词翻译', defaultMode: '默认模式', translationPosition: '译文位置',
   positionAfter: '原文之后', positionBefore: '原文之前', defaultScope: '默认范围', limitedContext: '有限上下文', limitedContextLabel: '划词时使用有限上下文',
-  limitedContextHelp: '发送选区所在段落的有限文本帮助消歧，不翻译上下文本身。', selectionPopupEnabled: '显示划词悬浮按钮', inlineSelectionModifier: '选区内联翻译快捷键', modifierOff: '关闭',
+  limitedContextHelp: '发送选区所在段落的有限文本帮助消歧，不翻译上下文本身。', selectionPopupEnabled: '显示划词悬浮按钮', inlineSelectionModifier: '选区内联翻译快捷键', inlineSelectionTriggerCount: '触发次数', triggerOnce: '单击', triggerTwice: '双击', triggerThrice: '三击', modifierOff: '关闭',
   customInstruction: '自定义翻译要求', privacyWarning: '翻译页面或划词时，选中的文本及有限上下文会发送到你配置的 API 服务。请勿翻译密码、身份凭据或其他敏感内容。',
   unchanged: '设置尚未修改', actionSaveSettings: '保存设置', statusSaving: '保存中…', actionClearApiKey: '清除 API Key', statusKeyCleared: 'API Key 已清除',
   confirmClearKey: '再次点击确认清除密钥', actionConfirmClearKey: '确认清除 API Key',

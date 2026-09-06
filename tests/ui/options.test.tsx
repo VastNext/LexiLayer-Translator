@@ -157,11 +157,13 @@ describe('Options v2 多引擎设置', () => {
 
     await userEvent.click(popup);
     await userEvent.selectOptions(modifier, 'Alt');
+    await userEvent.selectOptions(screen.getByLabelText('触发次数'), '2');
     await userEvent.click(screen.getByRole('button', { name: '保存阅读偏好' }));
 
     expect(api.savePreferences).toHaveBeenCalledWith(expect.objectContaining({
       selectionPopupEnabled: false,
       inlineSelectionModifier: 'Alt',
+      inlineSelectionTriggerCount: 2,
     }));
     expect(screen.getByText(/发送选区所在段落的有限文本帮助消歧，不翻译上下文本身/)).toBeInTheDocument();
   });

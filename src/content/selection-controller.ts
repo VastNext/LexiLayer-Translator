@@ -14,7 +14,7 @@ export interface SelectionDependencies {
   cancelFallback(requestId: string, engineId: string): Promise<void>;
   copy(text: string): Promise<void>;
   translateInline(text: string, context: string | undefined, engineId: string, targetLanguage: string): Promise<string>;
-  getPublicConfig(): Promise<{ targetLanguage: string; selectionContext: boolean; selectionPopupEnabled: boolean; inlineSelectionModifier: 'Control' | 'Alt' | 'Shift' | 'Meta' | 'Off'; activeEngineId: string; activeExpertByEngine?: Record<string, string>; engines: Array<{ id: string; kind: string; name: string; ready: boolean; capabilities: { streaming: boolean } }> }>;
+  getPublicConfig(): Promise<{ targetLanguage: string; selectionContext: boolean; selectionPopupEnabled: boolean; inlineSelectionModifier: 'Control' | 'Alt' | 'Shift' | 'Meta' | 'Off'; inlineSelectionTriggerCount?: 1 | 2 | 3; activeEngineId: string; activeExpertByEngine?: Record<string, string>; engines: Array<{ id: string; kind: string; name: string; ready: boolean; capabilities: { streaming: boolean } }> }>;
   createView?(rect: DOMRect, actions: SelectionViewActions): SelectionViewHandle;
   events?: Pick<Document, 'addEventListener' | 'removeEventListener'>;
   now?: () => number;
@@ -67,8 +67,10 @@ export function createSelectionController(dependencies: SelectionDependencies) {
   let activeRequestEngineId: string | undefined;
   let remembered: RememberedSelection | undefined;
   let pending = false;
-  let config: Awaited<ReturnType<SelectionDependencies['getPublicConfig']>> = { targetLanguage: 'en', selectionContext: true, selectionPopupEnabled: true, inlineSelectionModifier: 'Control', activeEngineId: 'google', activeExpertByEngine: {}, engines: [] };
+  let config: Awaited<ReturnType<SelectionDependencies['getPublicConfig']>> = { targetLanguage: 'en', selectionContext: true, selectionPopupEnabled: true, inlineSelectionModifier: 'Control', inlineSelectionTriggerCount: 1, activeEngineId: 'google', activeExpertByEngine: {}, engines: [] };
   let selectionGeneration = 0;
+  let triggerCount = 0;
+  let triggerTimer: number | undefined;
   const events = dependencies.events ?? document;
   const now = dependencies.now ?? Date.now;
   const onMouseUp = (event: MouseEvent) => {
@@ -94,9 +96,21 @@ export function createSelectionController(dependencies: SelectionDependencies) {
   };
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === 'Escape') return close();
-    if (event.repeat || config.inlineSelectionModifier === 'Off' || event.key !== config.inlineSelectionModifier) return;
+    if (event.repeat || config.inlineSelectionModifier === 'Off') return;
+    if (event.key !== config.inlineSelectionModifier) {
+      triggerCount = 0;
+      if (triggerTimer !== undefined) { window.clearTimeout(triggerTimer); triggerTimer = undefined; }
+      return;
+    }
     const target = event.target instanceof Element ? event.target : null;
     if (target?.closest('input,textarea,[contenteditable="true"],[contenteditable=""],[type="password"]')) return;
+    triggerCount += 1;
+    if (triggerTimer !== undefined) window.clearTimeout(triggerTimer);
+    triggerTimer = window.setTimeout(() => { triggerCount = 0; triggerTimer = undefined; }, 600);
+    if (triggerCount < (config.inlineSelectionTriggerCount ?? 1)) return;
+    triggerCount = 0;
+    window.clearTimeout(triggerTimer);
+    triggerTimer = undefined;
     void toggleInline();
   };
   const onMouseDown = (event: MouseEvent) => {
@@ -104,6 +118,8 @@ export function createSelectionController(dependencies: SelectionDependencies) {
   };
 
   function close(): void {
+    triggerCount = 0;
+    if (triggerTimer !== undefined) { window.clearTimeout(triggerTimer); triggerTimer = undefined; }
     pending = false;
     if (activeRequestId) safePost({ type: 'cancel-selection', requestId: activeRequestId });
     if (activeRequestId && activeRequestEngineId) void dependencies.cancelFallback(activeRequestId, activeRequestEngineId).catch(() => undefined);
@@ -302,8 +318,8 @@ export function registerSelectionController() {
       return response.data?.text ?? '';
     },
     async getPublicConfig() {
-      const response = await runtimeMessage<{ data?: { preferences?: { targetLanguage?: string; selectionContext?: boolean; selectionPopupEnabled?: boolean; inlineSelectionModifier?: 'Control' | 'Alt' | 'Shift' | 'Meta' | 'Off' }; activeEngineId?: string; activeExpertByEngine?: Record<string, string>; availableEngines?: Array<{ id: string; kind: string; name: string; ready: boolean; capabilities: { streaming: boolean } }> } }>({ type: 'get-public-config' });
-      return { targetLanguage: response.data?.preferences?.targetLanguage ?? 'en', selectionContext: response.data?.preferences?.selectionContext ?? true, selectionPopupEnabled: response.data?.preferences?.selectionPopupEnabled ?? true, inlineSelectionModifier: response.data?.preferences?.inlineSelectionModifier ?? 'Control', activeEngineId: response.data?.activeEngineId ?? 'google', activeExpertByEngine: response.data?.activeExpertByEngine ?? {}, engines: response.data?.availableEngines ?? [{ id: 'google', kind: 'google', name: 'Google', ready: true, capabilities: { streaming: false } }, { id: 'bing', kind: 'bing', name: 'Bing', ready: true, capabilities: { streaming: false } }] };
+      const response = await runtimeMessage<{ data?: { preferences?: { targetLanguage?: string; selectionContext?: boolean; selectionPopupEnabled?: boolean; inlineSelectionModifier?: 'Control' | 'Alt' | 'Shift' | 'Meta' | 'Off'; inlineSelectionTriggerCount?: 1 | 2 | 3 }; activeEngineId?: string; activeExpertByEngine?: Record<string, string>; availableEngines?: Array<{ id: string; kind: string; name: string; ready: boolean; capabilities: { streaming: boolean } }> } }>({ type: 'get-public-config' });
+      return { targetLanguage: response.data?.preferences?.targetLanguage ?? 'en', selectionContext: response.data?.preferences?.selectionContext ?? true, selectionPopupEnabled: response.data?.preferences?.selectionPopupEnabled ?? true, inlineSelectionModifier: response.data?.preferences?.inlineSelectionModifier ?? 'Control', inlineSelectionTriggerCount: response.data?.preferences?.inlineSelectionTriggerCount ?? 1, activeEngineId: response.data?.activeEngineId ?? 'google', activeExpertByEngine: response.data?.activeExpertByEngine ?? {}, engines: response.data?.availableEngines ?? [{ id: 'google', kind: 'google', name: 'Google', ready: true, capabilities: { streaming: false } }, { id: 'bing', kind: 'bing', name: 'Bing', ready: true, capabilities: { streaming: false } }] };
     },
     createView: (rect, actions) => new SelectionView(document, rect, actions, t),
   });

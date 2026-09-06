@@ -48,6 +48,7 @@ describe('v2 settings', () => {
         selectionContext: true,
         selectionPopupEnabled: true,
         inlineSelectionModifier: 'Control',
+        inlineSelectionTriggerCount: 1,
       },
       experts: expect.arrayContaining([expect.objectContaining({ id: 'technology', kind: 'builtin', enabled: false })]),
       activeExpertByEngine: {},
@@ -124,7 +125,7 @@ describe('migration and normalization', () => {
       readingPreferences: {
         targetLanguage: 'zh-Hans', displayMode: 'translation', userInstruction: '保留术语',
         translationPosition: 'before', scanScope: 'whole-page', selectionContext: false,
-        selectionPopupEnabled: true, inlineSelectionModifier: 'Control', rendererMode: 'legacy',
+         selectionPopupEnabled: true, inlineSelectionModifier: 'Control', inlineSelectionTriggerCount: 1, rendererMode: 'legacy',
       },
       engines: [
         DEFAULT_SETTINGS.engines[0],
@@ -239,6 +240,7 @@ describe('migration and normalization', () => {
   it('校验划词悬浮开关与内联快捷键枚举', () => {
     expect(validateSettings({ ...settings, readingPreferences: { ...settings.readingPreferences, selectionPopupEnabled: 'yes' } })).toContain('划词悬浮按钮配置无效');
     expect(validateSettings({ ...settings, readingPreferences: { ...settings.readingPreferences, inlineSelectionModifier: 'CapsLock' } })).toContain('选区内联翻译快捷键无效');
+    expect(validateSettings({ ...settings, readingPreferences: { ...settings.readingPreferences, inlineSelectionTriggerCount: 4 } })).toContain('选区内联翻译触发次数无效');
   });
 
   it('为缺少主题的旧 v2 设置补 Pearl，并拒绝未知主题', () => {
@@ -270,8 +272,8 @@ describe('migration and normalization', () => {
     expect(migrateSettings({
       baseUrl: 'http://remote.example.com/v1', apiKey: '', model: '',
       targetLanguage: 'zh-Hant', displayMode: 'translation', userInstruction: '保留专名',
-        translationPosition: 'before', scanScope: 'whole-page', selectionContext: false,
-        selectionPopupEnabled: true, inlineSelectionModifier: 'Control',
+         translationPosition: 'before', scanScope: 'whole-page', selectionContext: false,
+         selectionPopupEnabled: true, inlineSelectionModifier: 'Control', inlineSelectionTriggerCount: 1,
     })).toMatchObject({
       activeEngineId: 'google',
       readingPreferences: { targetLanguage: 'zh-Hant', displayMode: 'translation', userInstruction: '保留专名', translationPosition: 'before', scanScope: 'whole-page', selectionContext: false },

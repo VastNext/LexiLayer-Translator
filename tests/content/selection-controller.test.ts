@@ -105,7 +105,7 @@ function createDependencies(): SelectionDependencies & {
     cancelFallback: vi.fn(async () => undefined),
     copy: vi.fn(async () => undefined),
     translateInline: vi.fn(async () => '段后中文译文'),
-    getPublicConfig: vi.fn(async () => ({ targetLanguage: 'zh-Hans', selectionContext: true, selectionPopupEnabled: true, inlineSelectionModifier: 'Control' as const, activeEngineId: 'google', engines: [{ id: 'google', kind: 'google', name: 'Google', ready: true, capabilities: { streaming: false } }, { id: 'bing', kind: 'bing', name: 'Bing', ready: true, capabilities: { streaming: false } }, { id: 'custom-work', kind: 'custom-ai', name: '工作接口', ready: true, capabilities: { streaming: true } }] })),
+    getPublicConfig: vi.fn(async () => ({ targetLanguage: 'zh-Hans', selectionContext: true, selectionPopupEnabled: true, inlineSelectionModifier: 'Control' as const, inlineSelectionTriggerCount: 1 as const, activeEngineId: 'google', engines: [{ id: 'google', kind: 'google', name: 'Google', ready: true, capabilities: { streaming: false } }, { id: 'bing', kind: 'bing', name: 'Bing', ready: true, capabilities: { streaming: false } }, { id: 'custom-work', kind: 'custom-ai', name: '工作接口', ready: true, capabilities: { streaming: true } }] })),
     events: eventSource,
     createView: (_rect, actions) => new TestSelectionView(actions),
   };
@@ -501,6 +501,48 @@ describe('划词翻译控制器', () => {
     expect(dependencies.translateInline).not.toHaveBeenCalled();
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Alt' }));
     await vi.waitFor(() => expect(dependencies.translateInline).toHaveBeenCalledOnce());
+  });
+
+  it('按配置需要双击 modifier 才触发内联翻译，单击不误触发', async () => {
+    vi.mocked(dependencies.getPublicConfig).mockResolvedValue({ ...(await dependencies.getPublicConfig()), inlineSelectionTriggerCount: 2 });
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
+    register(); trustedMouseUp();
+    await vi.waitFor(() => expect(dependencies.getPublicConfig).toHaveBeenCalled());
+    dependencies.selection = null;
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' }));
+    expect(dependencies.translateInline).not.toHaveBeenCalled();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' }));
+    await vi.waitFor(() => expect(dependencies.translateInline).toHaveBeenCalledOnce());
+
+  });
+
+  it('按配置需要三击 modifier 才触发内联翻译', async () => {
+    vi.mocked(dependencies.getPublicConfig).mockResolvedValue({ ...(await dependencies.getPublicConfig()), inlineSelectionTriggerCount: 3 });
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
+    register(); trustedMouseUp();
+    await vi.waitFor(() => expect(dependencies.getPublicConfig).toHaveBeenCalled());
+    dependencies.selection = null;
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' }));
+    expect(dependencies.translateInline).not.toHaveBeenCalled();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' }));
+    await vi.waitFor(() => expect(dependencies.translateInline).toHaveBeenCalledOnce());
+  });
+
+  it('modifier 后按普通快捷键会清零计数，Ctrl+C 不会误触发翻译', async () => {
+    vi.mocked(dependencies.getPublicConfig).mockResolvedValue({ ...(await dependencies.getPublicConfig()), inlineSelectionTriggerCount: 2 });
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
+    register(); trustedMouseUp();
+    await vi.waitFor(() => expect(dependencies.getPublicConfig).toHaveBeenCalled());
+    dependencies.selection = null;
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', ctrlKey: true }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' }));
+
+    expect(dependencies.translateInline).not.toHaveBeenCalled();
   });
 
   it('Off 完全禁用选区内联翻译', async () => {

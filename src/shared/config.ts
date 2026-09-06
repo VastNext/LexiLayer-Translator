@@ -4,6 +4,7 @@ import { canonicalExpertId, defaultExperts, MAX_EXPERTS, MAX_EXPERT_PROMPT_LENGT
 export type DisplayMode = 'bilingual' | 'translation';
 export type RendererMode = 'legacy' | 'inline';
 export type InlineSelectionModifier = 'Control' | 'Alt' | 'Shift' | 'Meta' | 'Off';
+export type InlineSelectionTriggerCount = 1 | 2 | 3;
 export type Theme = 'pearl-reader' | 'command-translator' | 'sage-global' | 'editorial-lingua' | 'precision-blue';
 
 export const THEMES: Theme[] = ['pearl-reader', 'command-translator', 'sage-global', 'editorial-lingua', 'precision-blue'];
@@ -18,6 +19,7 @@ export interface ReadingPreferences {
   selectionContext: boolean;
   selectionPopupEnabled: boolean;
   inlineSelectionModifier: InlineSelectionModifier;
+  inlineSelectionTriggerCount: InlineSelectionTriggerCount;
   rendererMode: RendererMode;
 }
 
@@ -82,6 +84,7 @@ export const DEFAULT_SETTINGS: Settings = {
     selectionContext: true,
     selectionPopupEnabled: true,
     inlineSelectionModifier: 'Control',
+    inlineSelectionTriggerCount: 1,
     rendererMode: 'inline',
   },
   engines: [
@@ -116,6 +119,7 @@ function validatePreferences(value: unknown): string[] {
   if (typeof value.selectionContext !== 'boolean') errors.push('有限上下文配置无效');
   if (typeof value.selectionPopupEnabled !== 'boolean') errors.push('划词悬浮按钮配置无效');
   if (!['Control', 'Alt', 'Shift', 'Meta', 'Off'].includes(String(value.inlineSelectionModifier))) errors.push('选区内联翻译快捷键无效');
+  if (![1, 2, 3].includes(Number(value.inlineSelectionTriggerCount))) errors.push('选区内联翻译触发次数无效');
   if (value.rendererMode !== 'legacy' && value.rendererMode !== 'inline') errors.push('渲染器模式无效');
   return errors;
 }
@@ -231,6 +235,7 @@ export function normalizeSettings(value: unknown): Settings {
   if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.sourceLanguage === undefined) normalizedValue.readingPreferences.sourceLanguage = 'auto';
   if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.selectionPopupEnabled === undefined) normalizedValue.readingPreferences.selectionPopupEnabled = true;
   if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.inlineSelectionModifier === undefined) normalizedValue.readingPreferences.inlineSelectionModifier = 'Control';
+  if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.inlineSelectionTriggerCount === undefined) normalizedValue.readingPreferences.inlineSelectionTriggerCount = 1;
   // 已存配置缺少渲染器模式或值为非法时受控回退兼容模式，避免整份设置被重置。
   if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.rendererMode === undefined) normalizedValue.readingPreferences.rendererMode = 'legacy';
   if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.rendererMode !== 'legacy' && normalizedValue.readingPreferences.rendererMode !== 'inline') normalizedValue.readingPreferences.rendererMode = 'legacy';
@@ -287,6 +292,7 @@ export function importSettings(value: unknown, current: Settings = DEFAULT_SETTI
   migrateExpertDefaults(input);
   if (isRecord(input.readingPreferences) && input.readingPreferences.selectionPopupEnabled === undefined) input.readingPreferences.selectionPopupEnabled = true;
   if (isRecord(input.readingPreferences) && input.readingPreferences.inlineSelectionModifier === undefined) input.readingPreferences.inlineSelectionModifier = 'Control';
+  if (isRecord(input.readingPreferences) && input.readingPreferences.inlineSelectionTriggerCount === undefined) input.readingPreferences.inlineSelectionTriggerCount = 1;
   // 旧导入配置缺少渲染器模式时回退兼容模式；非法值同样受控回退而不拒绝整份导入。
   if (isRecord(input.readingPreferences) && input.readingPreferences.rendererMode === undefined) input.readingPreferences.rendererMode = 'legacy';
   if (isRecord(input.readingPreferences) && input.readingPreferences.rendererMode !== 'legacy' && input.readingPreferences.rendererMode !== 'inline') input.readingPreferences.rendererMode = 'legacy';
@@ -345,6 +351,7 @@ export function migrateSettings(value: unknown): Settings {
       selectionContext: value.selectionContext as boolean,
       selectionPopupEnabled: true,
       inlineSelectionModifier: 'Control',
+      inlineSelectionTriggerCount: 1,
       rendererMode: 'legacy',
   };
   if (validatePreferences(legacyPreferences).length === 0) migrated.readingPreferences = legacyPreferences;
