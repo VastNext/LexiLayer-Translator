@@ -193,4 +193,48 @@ describe('ParagraphStore 与 DomRenderer', () => {
     expect(source.innerHTML).toBe(originalHtml);
     expect(source.getAttribute('href')).toBe('/category');
   });
+
+  it('checkbox label 内部包含 input 控件与 TextNode：译文挂载于独立文本 span，仅译文模式 input 保持可见与可交互', () => {
+    document.body.innerHTML = `
+      <label id="paris-label">
+        <input id="paris-input" type="checkbox" name="city" value="paris">
+        <span id="paris-text" data-vast-text-leaf>Paris</span>
+      </label>`;
+    const textSpan = document.getElementById('paris-text') as HTMLElement;
+    const input = document.getElementById('paris-input') as HTMLInputElement;
+    const label = document.getElementById('paris-label') as HTMLLabelElement;
+
+    const record = store.getOrCreate(textSpan);
+    const token = renderer.beginTask(record);
+
+    // 双语渲染
+    renderer.renderTranslation(record, '巴黎', {
+      mode: 'bilingual',
+      placement: 'after',
+      ...token,
+    });
+    expect(label.querySelector('[data-vast-translator]')?.textContent).toBe('巴黎');
+    expect(input.hidden).toBe(false);
+
+    // 仅译文模式：textSpan 被隐藏，但 input 绝不被 hidden
+    renderer.renderTranslation(record, '巴黎仅译文', {
+      mode: 'translation-only',
+      placement: 'after',
+      ...token,
+    });
+    expect(textSpan.hidden).toBe(true);
+    expect(input.hidden).toBe(false);
+    expect(label.hidden).toBe(false);
+
+    // 控件可正常勾选
+    expect(input.checked).toBe(false);
+    input.click();
+    expect(input.checked).toBe(true);
+
+    // 恢复测试
+    renderer.restore(record);
+    expect(textSpan.hidden).toBe(false);
+    expect(input.hidden).toBe(false);
+    expect(label.querySelector('[data-vast-translator]')).toBeNull();
+  });
 });

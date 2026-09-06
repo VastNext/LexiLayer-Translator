@@ -4,6 +4,16 @@ import { createContentController, type ContentControllerDependencies } from '../
 import { createRuntimeDependencies } from '../../src/content/main';
 import type { TranslationRequest } from '../../src/shared/messages';
 
+// 真实 DynamicPageObserver 的 MutationObserver 回调在 jsdom 环境缺少 HTMLElement 全局
+// 会抛 ReferenceError 污染测试进程；此处 mock 掉动态扫描。
+// 可见性调度（IntersectionObserver 队列）仍走真实实现，不受影响。
+vi.mock('../../src/content/dynamic-observer', () => ({
+  DynamicPageObserver: class {
+    start(): void {}
+    stop(): void {}
+  },
+}));
+
 function createDependencies(): ContentControllerDependencies & {
   listeners: Array<(message: unknown) => Promise<unknown>>;
 } {
@@ -542,7 +552,7 @@ describe('运行时可见性接线', () => {
       const store = new (await import('../../src/content/paragraph-store')).ParagraphStore();
       const records = [store.getOrCreate(first), store.getOrCreate(second)];
       const worker = vi.fn(async () => undefined);
-      const scheduled = dependencies.schedule(records.map((record) => [record]), worker);
+      const scheduled = dependencies.schedule(records.map((record) => [record]), worker, () => undefined);
       expect(worker).not.toHaveBeenCalled();
       notify(records.map((record) => ({ target: record.element, isIntersecting: true })));
       await scheduled;
@@ -568,7 +578,7 @@ describe('运行时可见性接线', () => {
       const store = new (await import('../../src/content/paragraph-store')).ParagraphStore();
       const record = store.getOrCreate(element);
       const worker = vi.fn(async () => undefined);
-      const scheduled = dependencies.schedule([[record]], worker);
+      const scheduled = dependencies.schedule([[record]], worker, () => undefined);
 
       dependencies.stopObserver();
       notify([{ target: element, isIntersecting: true }]);
@@ -578,5 +588,214 @@ describe('运行时可见性接线', () => {
     } finally {
       Object.defineProperty(globalThis, 'IntersectionObserver', { configurable: true, value: original });
     }
+  });
+
+  // 以下测试装配真实 ParagraphVisibilityBatchQueue（经 createRuntimeDependencies），
+  // 验证批次失败（尤其初始空闲后滚动才可见的批）传播到错误渲染与进度上报。
+  function installChromeRuntime(
+    translate: (segments: Array<{ id: string; text: string }>) => unknown,
+  ) {
+    const originalChrome = globalThis.chrome;
+    const sendMessage = vi.fn(async (message: { type: string; segments?: Array<{ id: string; text: string }> }) => {
+      if (message.type === 'get-public-config') {
+        return { data: { preferences: { targetLanguage: 'en', displayMode: 'bilingual', translationPosition: 'after', scanScope: 'whole-page', rendererMode: 'legacy' }, activeEngineId: 'google', availableEngines: [] } };
+      }
+      if (message.type === 'translate-batch') return translate(message.segments ?? []);
+      return {};
+    });
+    Object.defineProperty(globalThis, 'chrome', { configurable: true, value: { runtime: { sendMessage } } });
+    return {
+      sendMessage,
+      progressCalls: () => sendMessage.mock.calls
+        .map(([message]) => message as { type: string; progress?: Record<string, unknown> })
+        .filter((message) => message.type === 'page-progress')
+        .map((message) => message.progress!),
+      restoreChrome: () => Object.defineProperty(globalThis, 'chrome', { configurable: true, value: originalChrome }),
+    };
+  }
+
+  function fakeIntersectionObserver() {
+    const original = globalThis.IntersectionObserver;
+    const observed: Element[] = [];
+    let notify!: (entries: Pick<IntersectionObserverEntry, 'target' | 'isIntersecting'>[]) => void;
+    class FakeIntersectionObserver {
+      constructor(callback: typeof notify) { notify = callback; }
+      observe = (element: Element) => { observed.push(element); };
+      unobserve = vi.fn();
+      disconnect = vi.fn();
+    }
+    Object.defineProperty(globalThis, 'IntersectionObserver', { configurable: true, value: FakeIntersectionObserver });
+    return {
+      observed,
+      notify: (entries: Pick<IntersectionObserverEntry, 'target' | 'isIntersecting'>[]) => notify(entries),
+      restore: () => Object.defineProperty(globalThis, 'IntersectionObserver', { configurable: true, value: original }),
+    };
+  }
+
+  it('初始批完成后滚动可见批失败立即渲染错误并可重试恢复', async () => {
+    let secondAttempts = 0;
+    const chrome = installChromeRuntime(async (segments) => {
+      if (segments.some((segment) => segment.text === 'second') && secondAttempts++ === 0) {
+        return { ok: false, error: 'API 请求超时（90000ms）' };
+      }
+      return { ok: true, data: segments.map((segment) => ({ id: segment.id, text: `译:${segment.text}` })) };
+    });
+    const io = fakeIntersectionObserver();
+    try {
+      document.body.innerHTML = '<main><p>first</p><p>second</p></main>';
+      const [first, second] = [...document.querySelectorAll('p')] as HTMLElement[];
+      const controller = createContentController(createRuntimeDependencies());
+      const pending = controller.onMessage({ type: 'translate-page' });
+      await vi.waitFor(() => expect(io.observed).toHaveLength(2));
+
+      // 初始批：first 可见成功，second 离屏待滚动。
+      io.notify([{ target: first, isIntersecting: true }, { target: second, isIntersecting: false }]);
+      await vi.waitFor(() => expect(document.querySelector('[data-vast-state="translated"]')?.textContent).toContain('译:first'));
+
+      // 滚动后 second 可见且批次失败：必须立即出现错误与重试按钮，进度转 partial。
+      io.notify([{ target: second, isIntersecting: true }]);
+      await vi.waitFor(() => expect(document.querySelector('[data-vast-state="error"]')).not.toBeNull());
+      expect(document.querySelector('button[data-vast-retry-all]')).not.toBeNull();
+      expect(chrome.progressCalls().at(-1)).toMatchObject({ status: 'partial', completed: 1, failed: 1 });
+
+      // 重试仅重发失败段，成功后整体 complete，失败计数不重复。
+      const retry = controller.onMessage({ type: 'retry-page-translation' });
+      await vi.waitFor(() => expect(io.observed).toHaveLength(3));
+      io.notify([{ target: second, isIntersecting: true }]);
+      await retry;
+      expect(document.querySelectorAll('[data-vast-state="translated"]')).toHaveLength(2);
+      expect(chrome.progressCalls().at(-1)).toMatchObject({ status: 'complete', completed: 2, failed: 0 });
+      await pending;
+    } finally {
+      io.restore();
+      chrome.restoreChrome();
+    }
+  });
+
+  it('初始可见批失败经队列失败回调渲染错误并报告失败', async () => {
+    const chrome = installChromeRuntime(async () => ({ ok: false, error: 'API 请求失败' }));
+    const io = fakeIntersectionObserver();
+    try {
+      document.body.innerHTML = '<main><p>only</p></main>';
+      const controller = createContentController(createRuntimeDependencies());
+      const pending = controller.onMessage({ type: 'translate-page' });
+      await vi.waitFor(() => expect(io.observed).toHaveLength(1));
+      io.notify([{ target: io.observed[0], isIntersecting: true }]);
+      await pending;
+      expect(document.querySelector('[data-vast-state="error"]')).not.toBeNull();
+      expect(document.querySelector('button[data-vast-retry-all]')).not.toBeNull();
+      expect(chrome.progressCalls().at(-1)).toMatchObject({ status: 'error', completed: 0, failed: 1 });
+    } finally {
+      io.restore();
+      chrome.restoreChrome();
+    }
+  });
+
+  it('恢复会话后旧批次失败不渲染错误也不污染新任务', async () => {
+    let release!: (value: unknown) => void;
+    let hang = true;
+    const chrome = installChromeRuntime(async (segments) => {
+      if (hang) return new Promise((resolve) => { release = resolve; });
+      return { ok: true, data: segments.map((segment) => ({ id: segment.id, text: `译:${segment.text}` })) };
+    });
+    const io = fakeIntersectionObserver();
+    try {
+      document.body.innerHTML = '<main><p>solo</p></main>';
+      const controller = createContentController(createRuntimeDependencies());
+      const firstRun = controller.onMessage({ type: 'translate-page' });
+      await vi.waitFor(() => expect(io.observed).toHaveLength(1));
+      io.notify([{ target: io.observed[0], isIntersecting: true }]);
+      await vi.waitFor(() => expect(chrome.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'translate-batch' })));
+
+      // 恢复会话后旧批次的请求才失败：不得向新会话渲染旧错误。
+      await controller.onMessage({ type: 'restore-page' });
+      release({ ok: false, error: 'API 请求超时（90000ms）' });
+      await firstRun;
+      expect(document.querySelector('[data-vast-state="error"]')).toBeNull();
+      expect(chrome.progressCalls().at(-1)).toMatchObject({ status: 'idle' });
+
+      // 新任务照常成功，旧失败不留任何 failed 状态。
+      hang = false;
+      const secondRun = controller.onMessage({ type: 'translate-page' });
+      await vi.waitFor(() => expect(io.observed).toHaveLength(2));
+      io.notify([{ target: io.observed[1], isIntersecting: true }]);
+      await secondRun;
+      expect(document.querySelector('[data-vast-state="translated"]')).not.toBeNull();
+      expect(chrome.progressCalls().at(-1)).toMatchObject({ status: 'complete', completed: 1, failed: 0 });
+    } finally {
+      io.restore();
+      chrome.restoreChrome();
+    }
+  });
+
+  it('text-leaf 节点在动态文本变更和重译时保持 element 稳定且重译非空，全页恢复后 unwrap 纯文本', async () => {
+    const chrome = installChromeRuntime(async (segments) => ({
+      ok: true,
+      data: segments.map((segment) => ({ id: segment.id, text: `译:${segment.text}` })),
+    }));
+    const io = fakeIntersectionObserver();
+    try {
+      document.body.innerHTML = '<main><p id="source-p">Hello</p></main>';
+      const deps = createRuntimeDependencies();
+      let capturedOnChanges!: (changes: { added: HTMLElement[]; invalidated: unknown[]; removed: unknown[] }) => Promise<void>;
+      deps.startObserver = (_rule, _store, _scope, onChanges) => {
+        capturedOnChanges = onChanges as typeof capturedOnChanges;
+      };
+      const controller = createContentController(deps);
+
+      const pending = controller.onMessage({ type: 'translate-page' });
+      await vi.waitFor(() => expect(io.observed).toHaveLength(1));
+      io.notify([{ target: io.observed[0], isIntersecting: true }]);
+      await pending;
+
+      const p = document.getElementById('source-p') as HTMLElement;
+      await vi.waitFor(() => expect(document.querySelector('[data-vast-state="translated"]')?.textContent).toContain('译:Hello'));
+
+      // 模拟动态内容源文本变化触发 invalidate：
+      // controller invalidate 单段调用 restore，确保 paragraph.element 稳定可复用
+      const store = new (await import('../../src/content/paragraph-store')).ParagraphStore();
+      const paragraph = store.getOrCreate(p);
+
+      // 触发 observer 调度变更
+      paragraph.sourceText = 'Hello Updated';
+      const onChangesPromise = capturedOnChanges({ added: [], invalidated: [paragraph], removed: [] });
+      await vi.waitFor(() => expect(io.observed.length).toBeGreaterThan(1));
+      io.notify([{ target: io.observed.at(-1)!, isIntersecting: true }]);
+      await onChangesPromise;
+
+      // 全页恢复时：统一解包 unwrapAllTextLeaves，还原原始纯文本
+      await controller.onMessage({ type: 'restore-page' });
+      expect(document.querySelectorAll('[data-vast-text-leaf]')).toHaveLength(0);
+      expect(document.querySelector('[data-vast-translator]')).toBeNull();
+    } finally {
+      io.restore();
+      chrome.restoreChrome();
+    }
+  });
+
+  it('同批变更中同时处于 invalidated 与 removed 的段落或已离线节点被安全跳过', async () => {
+    const dependencies = createDependencies();
+    document.body.innerHTML = '<main><p id="p1">text1</p></main>';
+    let observerHandler!: (changes: { added: HTMLElement[]; invalidated: unknown[]; removed: unknown[] }) => Promise<void>;
+    dependencies.startObserver = vi.fn((_rule, _store, _scope, handler) => {
+      observerHandler = handler as typeof observerHandler;
+    });
+    const controller = createContentController(dependencies);
+    await controller.onMessage({ type: 'translate-page' });
+
+    const store = new (await import('../../src/content/paragraph-store')).ParagraphStore();
+    const detachedElement = document.createElement('p');
+    detachedElement.textContent = 'detached';
+    const detachedRecord = store.getOrCreate(detachedElement);
+
+    // 传入同批包含 removed 与 invalidated 的同一 record，以及 detached added 节点
+    await expect(observerHandler({
+      added: [detachedElement],
+      invalidated: [detachedRecord],
+      removed: [detachedRecord],
+    })).resolves.not.toThrow();
+
+    // detached 元素与已移除 record 不会进入渲染 loading
+    expect(dependencies.renderLoading).not.toHaveBeenCalledWith(detachedRecord);
   });
 });

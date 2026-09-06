@@ -48,7 +48,7 @@ export interface ContentControllerDependencies {
   getConfig(): Promise<PublicConfig>;
   getPageLanguage(): string;
   showSelectionText(text: string): void;
-  schedule(items: ParagraphRecord[][], worker: (paragraphs: ParagraphRecord[]) => Promise<void>): Promise<SchedulerFailure<ParagraphRecord[]>[]>;
+  schedule(items: ParagraphRecord[][], worker: (paragraphs: ParagraphRecord[]) => Promise<void>, onFailure: (items: ParagraphRecord[], error: unknown) => void): Promise<SchedulerFailure<ParagraphRecord[]>[]>;
   hasWaiting(): boolean;
   beginRender(paragraph: ParagraphRecord): { taskId: string; expectedVersion: number };
   renderLoading(paragraph: ParagraphRecord): void;
@@ -166,6 +166,12 @@ export function createContentController(dependencies: ContentControllerDependenc
         completed += 1;
       }
       if (currentGeneration === generation) reportCurrent();
+    }, (items, error) => {
+      // 批次请求失败（含滚动后才可见的晚批）即时渲染错误并刷新进度；
+      // 代际已更替的旧队列失败在此被隔离，不会污染新任务。
+      if (currentGeneration !== generation) return;
+      markFailed(items, readableError(error));
+      reportCurrent();
     });
     if (currentGeneration !== generation) return { completed: 0, failed: 0 };
     for (const failure of failures) markFailed(failure.item, readableError(failure.error));
@@ -176,14 +182,17 @@ export function createContentController(dependencies: ContentControllerDependenc
     return async ({ added, invalidated, removed = [] }) => {
       if (currentGeneration !== generation) return;
       if (added.length === 0 && invalidated.length === 0 && removed.length === 0) return;
+      const removedSet = new Set(removed);
       for (const paragraph of removed) { paragraphs.delete(paragraph.id); completedIds.delete(paragraph.id); failedIds.delete(paragraph.id); }
       const changed: ParagraphRecord[] = [];
       for (const paragraph of invalidated) {
+        if (removedSet.has(paragraph) || !paragraph.element.isConnected) continue;
         completedIds.delete(paragraph.id); failedIds.delete(paragraph.id);
         dependencies.restore(paragraph);
         changed.push(store.refresh(paragraph.element));
       }
       for (const element of added) {
+        if (!element.isConnected) continue;
         const paragraph = store.getOrCreate(element);
         if (paragraph.sourceText) changed.push(paragraph);
       }
@@ -216,6 +225,7 @@ export function createContentController(dependencies: ContentControllerDependenc
     // 渲染器模式在每次全新页面翻译时读取一次：会话内动态更新与重试固定本次模式。
     dependencies.setRendererMode?.(command.rendererMode ?? 'legacy');
     for (const paragraph of paragraphs.values()) dependencies.restore(paragraph);
+    dependencies.cleanupPage();
     paragraphs.clear();
     store.clear();
     completedIds.clear();

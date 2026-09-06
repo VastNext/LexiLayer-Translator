@@ -32,7 +32,13 @@ export class DynamicPageObserver {
   }
 
   start(): void {
-    this.observer.observe(this.root, { childList: true, characterData: true, subtree: true });
+    this.observer.observe(this.root, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['inert', 'hidden', 'aria-hidden', 'aria-expanded'],
+    });
   }
 
   stop(): void {
@@ -46,22 +52,28 @@ export class DynamicPageObserver {
 
   private collect(records: MutationRecord[]): void {
     const rendererSources = new Set(records.flatMap((record) => {
-      if (record.type !== 'childList' || !(record.target instanceof HTMLElement)) return [];
-      const installsWrapper = [...record.addedNodes].some((node) => node instanceof HTMLElement && node.matches('[data-vast-source]'));
-      return installsWrapper ? [record.target] : [];
+      if (record.type !== 'childList' || !(record.target instanceof Element)) return [];
+      const installsWrapper = [...record.addedNodes].some((node) => node instanceof Element && node.matches('[data-vast-source]'));
+      return installsWrapper ? [record.target as HTMLElement] : [];
     }));
     for (const record of records) {
       if (isPluginNode(record.target) || rendererSources.has(record.target as HTMLElement)) continue;
 
-      this.collectInvalidatedSource(record.target);
-      if (record.type !== 'childList') continue;
-
-      for (const node of record.addedNodes) {
-        if (node instanceof Element && !isPluginNode(node)) this.addRoot(node);
+      if (record.type === 'childList' || record.type === 'characterData') {
+        this.collectInvalidatedSource(record.target);
       }
-      for (const node of record.removedNodes) {
-        if (!(node instanceof HTMLElement)) continue;
-        for (const element of [node, ...node.querySelectorAll<HTMLElement>('*')]) this.pendingRemoved.add(element);
+      if (record.type === 'childList') {
+        for (const node of record.addedNodes) {
+          if (node instanceof Element && !isPluginNode(node)) this.addRoot(node);
+        }
+        for (const node of record.removedNodes) {
+          if (!(node instanceof Element)) continue;
+          for (const element of [node as HTMLElement, ...node.querySelectorAll<HTMLElement>('*')]) this.pendingRemoved.add(element);
+        }
+      } else if (record.type === 'attributes') {
+        if (record.target instanceof Element && !isPluginNode(record.target)) {
+          this.addRoot(record.target);
+        }
       }
     }
 
@@ -73,7 +85,7 @@ export class DynamicPageObserver {
 
   private collectInvalidatedSource(node: Node): void {
     if (!this.options.store) return;
-    let element = node instanceof HTMLElement ? node : node.parentElement;
+    let element = node instanceof Element ? node as HTMLElement : node.parentElement;
     while (element && this.root.contains(element)) {
       if (this.options.store.get(element)) {
         this.pendingSources.add(element);
@@ -102,7 +114,11 @@ export class DynamicPageObserver {
     }
     const added = new Set<HTMLElement>();
     for (const root of this.pendingRoots) {
-      for (const element of this.options.scan(root) ?? []) added.add(element);
+      for (const element of this.options.scan(root) ?? []) {
+        if (!this.options.store?.get(element)) {
+          added.add(element);
+        }
+      }
     }
     const removed: ParagraphRecord[] = [];
     for (const element of this.pendingRemoved) {

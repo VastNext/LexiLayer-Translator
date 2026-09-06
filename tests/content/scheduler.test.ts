@@ -256,4 +256,44 @@ describe('ParagraphVisibilityBatchQueue', () => {
     notify([{ target: item.element, isIntersecting: true }]);
     await queue.whenIdle(); await vi.waitFor(() => expect(onDrained).toHaveBeenCalledOnce());
   });
+
+  it('批次失败通过 onFailure 精确通知一次，whenIdle 不再返回失败', async () => {
+    let notify!: (entries: Pick<IntersectionObserverEntry, 'target' | 'isIntersecting'>[]) => void;
+    const failures: Array<{ items: unknown[]; error: unknown }> = [];
+    const queue = new ParagraphVisibilityBatchQueue<{ id: string; sourceText: string; element: HTMLElement }>(async () => {
+      throw new Error('批次失败');
+    }, (callback) => { notify = callback; return { observe: vi.fn(), unobserve: vi.fn(), disconnect: vi.fn() }; }, undefined, (items, error) => failures.push({ items, error }));
+    const item = paragraph('bad');
+    queue.add([item]);
+    notify([{ target: item.element, isIntersecting: true }]);
+
+    await expect(queue.whenIdle()).resolves.toEqual([]);
+    expect(failures).toHaveLength(1);
+    expect(failures[0].items).toEqual([item]);
+    expect(failures[0].error).toEqual(expect.objectContaining({ message: '批次失败' }));
+  });
+
+  it('初始空闲后滚动可见批失败仍会通知 onFailure（回归：不再静默丢失）', async () => {
+    let notify!: (entries: Pick<IntersectionObserverEntry, 'target' | 'isIntersecting'>[]) => void;
+    let shouldFail = false;
+    const failures: Array<{ items: unknown[]; error: unknown }> = [];
+    const queue = new ParagraphVisibilityBatchQueue<{ id: string; sourceText: string; element: HTMLElement }>(async () => {
+      if (shouldFail) throw new Error('晚批失败');
+    }, (callback) => { notify = callback; return { observe: vi.fn(), unobserve: vi.fn(), disconnect: vi.fn() }; }, undefined, (items, error) => failures.push({ items, error }));
+    const first = paragraph('first');
+    const second = paragraph('second');
+    queue.add([first, second]);
+
+    // 初始批只有 first 可见并成功，队列进入空闲。
+    notify([{ target: first.element, isIntersecting: true }, { target: second.element, isIntersecting: false }]);
+    await queue.whenIdle();
+    expect(failures).toHaveLength(0);
+
+    // 滚动后 second 可见且失败：此时已无 whenIdle 接收方，必须仍能通知 onFailure。
+    shouldFail = true;
+    notify([{ target: second.element, isIntersecting: true }]);
+    await vi.waitFor(() => expect(failures).toHaveLength(1));
+    expect(failures[0].items).toEqual([second]);
+    expect(failures[0].error).toEqual(expect.objectContaining({ message: '晚批失败' }));
+  });
 });

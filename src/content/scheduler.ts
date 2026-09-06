@@ -178,8 +178,19 @@ export class ParagraphVisibilityBatchQueue<T extends VisibleParagraph> {
     worker: (items: T[]) => Promise<void>,
     createObserver?: VisibilityObserverFactory,
     private readonly onDrained?: () => void,
+    private readonly onFailure?: (items: T[], error: unknown) => void,
   ) {
-    this.scheduler = new VisibleFirstScheduler(worker, {
+    // 批次失败统一转投 onFailure：滚动后才可见的批到达时 whenIdle 接收方早已消失，
+    // 直接抛给调度器的失败会在空闲收口时被静默丢弃，页面将永远停留在翻译中。
+    // 配置回调时每批恰好通知一次；没有回调则保留原有失败列表语义。
+    this.scheduler = new VisibleFirstScheduler<T[]>(async (items) => {
+      try {
+        await worker(items);
+      } catch (error) {
+        if (!this.onFailure) throw error;
+        this.onFailure(items, error);
+      }
+    }, {
       concurrency: 3,
       maxPending: Number.MAX_SAFE_INTEGER,
       keyOf: (items) => items.map((item) => `${item.id}:${item.sourceText}`).join(','),

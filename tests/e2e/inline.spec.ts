@@ -357,3 +357,134 @@ test('用户结构 h2>span>a>span Releases 下钻内联翻译，保持计算样�
   await page.screenshot({ path: evidence('user-release-restored'), fullPage: true });
   await popup.close();
 });
+
+test('手风琴折叠结构：保留 h3/button/aria/事件且 svg 不隐藏，inert 折叠区展开后动态调度与 checkbox 交互保持', async ({ context, server, openExtensionPage }) => {
+  const options = await openExtensionPage('options.html');
+  await configureInlineEngine(options, server);
+  await options.close();
+  const page = await openFixture(context, server.accordionFixtureUrl);
+  const popup = await openPopupForFixture(openExtensionPage, page);
+  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+
+  // 1. 初始折叠状态：h3 与 button 保持原位且未被 hidden
+  await expect(page.locator('#europe-accordion-h3')).toBeVisible();
+  await expect(page.locator('#europe-accordion-button')).toBeVisible();
+  await expect(page.locator('#europe-accordion-button')).toHaveAttribute('aria-expanded', 'false');
+
+  // 2. 译文挂载在 button 内部的文本 span，svg 图标保留
+  const buttonTranslation = page.locator('#europe-accordion-span [data-vast-translator]');
+  await expect(buttonTranslation).toBeVisible();
+  await expect(buttonTranslation).toHaveText('欧洲。');
+  await expect(page.locator('#europe-accordion-span svg')).toBeVisible();
+
+  // 3. inert 折叠区初始未被扫描与翻译（不占位、无 loading、无译文）
+  const region = page.locator('#europe-accordion-region');
+  await expect(region).toHaveAttribute('inert', '');
+  await expect(region.locator('[data-vast-translator]')).toHaveCount(0);
+  await expect(region.locator('[data-vast-state="loading"]')).toHaveCount(0);
+
+  await page.screenshot({ path: evidence('accordion-initial-translated'), fullPage: true });
+
+  // 4. 点击按钮展开折叠区（鼠标点击）
+  await page.locator('#europe-accordion-button').click();
+  await expect(page.locator('#europe-accordion-button')).toHaveAttribute('aria-expanded', 'true');
+  await expect(region).not.toHaveAttribute('inert');
+
+  // 5. 动态观察器自动感知属性变化并重新扫描，展开区域内的城市 label 完成翻译
+  await expect(page.locator('#paris-label [data-vast-translator]')).toHaveText('巴黎。');
+  await expect(page.locator('#london-label [data-vast-translator]')).toHaveText('伦敦。');
+
+  // 6. Checkbox 与 label 关联保持：点击 label 成功勾选 checkbox
+  const parisCheckbox = page.locator('#paris-checkbox');
+  await expect(parisCheckbox).not.toBeChecked();
+  await page.locator('#paris-label').click();
+  await expect(parisCheckbox).toBeChecked();
+
+  // 7. 键盘操作折叠与展开：聚焦按钮按 Enter/Space 键
+  await page.locator('#europe-accordion-button').focus();
+  await page.keyboard.press('Space');
+  await expect(page.locator('#europe-accordion-button')).toHaveAttribute('aria-expanded', 'false');
+  await expect(region).toHaveAttribute('inert', '');
+
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#europe-accordion-button')).toHaveAttribute('aria-expanded', 'true');
+  await expect(region).not.toHaveAttribute('inert');
+
+  await page.screenshot({ path: evidence('accordion-expanded-translated'), fullPage: true });
+
+  // 8. 仅译文模式测试：断言 svg 与 input 必须保持可见与可交互！
+  await clickPopupButton(popup, page, '双语对照');
+  await expect(page.locator('#europe-accordion-span [data-vast-translator]')).toHaveText('欧洲。');
+  await expect(page.locator('#europe-accordion-span [data-vast-source]')).toBeHidden();
+  await expect(page.locator('#europe-accordion-button')).toBeVisible();
+  // 核心断言：仅译文模式下，button 内部的 svg 依然可见
+  await expect(page.locator('#europe-accordion-span svg')).toBeVisible();
+  // 核心断言：仅译文模式下，展开区域内的 input 与 label 保持可见且可点击
+  await expect(page.locator('#paris-label [data-vast-translator]')).toHaveText('巴黎。');
+  await expect(page.locator('#paris-checkbox')).toBeVisible();
+  await page.locator('#london-label').click();
+  await expect(page.locator('#london-checkbox')).toBeChecked();
+
+  // 9. 恢复原文：完整还原原 DOM 与事件
+  await clickPopupButton(popup, page, '显示原文 (Alt + A)');
+  await expect(page.locator('[data-vast-translator]')).toHaveCount(0);
+  await expect(page.locator('[data-vast-inline]')).toHaveCount(0);
+  await expect(page.locator('[data-vast-text-leaf]')).toHaveCount(0);
+  await expect(page.locator('#europe-accordion-span')).toContainText('Europe');
+  await expect(page.locator('#paris-label')).toContainText('Paris');
+  await expect(page.locator('#europe-accordion-span svg')).toBeVisible();
+  await expect(page.locator('#paris-checkbox')).toBeVisible();
+
+  // 恢复后按钮点击展开/折叠依然正常
+  await page.locator('#europe-accordion-button').click();
+  await expect(page.locator('#europe-accordion-button')).toHaveAttribute('aria-expanded', 'false');
+
+  await page.screenshot({ path: evidence('accordion-restored'), fullPage: true });
+  await popup.close();
+});
+
+test('手风琴折叠结构在 Legacy 兼容模式下：h3/button 不被隐藏，svg 保持可见，展开后 checkbox 正常交互', async ({ context, server, openExtensionPage }) => {
+  const options = await openExtensionPage('options.html');
+  await configureInlineEngine(options, server);
+  await options.getByLabel('渲染器模式').selectOption('legacy');
+  await options.getByRole('button', { name: '保存阅读偏好' }).click();
+  await expect(options.getByRole('status')).toHaveText('设置已保存');
+  await options.close();
+
+  const page = await openFixture(context, server.accordionFixtureUrl);
+  const popup = await openPopupForFixture(openExtensionPage, page);
+  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+
+  // 1. Legacy 模式下，因按钮外壳跳过而精准提取了内部文本叶，因此 h3/button 不会被隐藏
+  await expect(page.locator('#europe-accordion-h3')).toBeVisible();
+  await expect(page.locator('#europe-accordion-button')).toBeVisible();
+  await expect(page.locator('#europe-accordion-span svg')).toBeVisible();
+
+  // 2. 点击展开区域
+  await page.locator('#europe-accordion-button').click();
+  await expect(page.locator('#europe-accordion-button')).toHaveAttribute('aria-expanded', 'true');
+
+  // 3. 展开后城市 label 翻译完成，且 label 点击勾选正常
+  await expect(page.locator('#paris-label [data-vast-translator]')).toHaveText('巴黎。');
+  const parisCheckbox = page.locator('#paris-checkbox');
+  await page.locator('#paris-label').click();
+  await expect(parisCheckbox).toBeChecked();
+
+  // 4. 仅译文模式测试：svg 依然可见，checkbox 依然可用
+  await clickPopupButton(popup, page, '双语对照');
+  await expect(page.locator('#europe-accordion-span svg')).toBeVisible();
+  await expect(page.locator('#paris-checkbox')).toBeVisible();
+  await page.locator('#london-label').click();
+  await expect(page.locator('#london-checkbox')).toBeChecked();
+
+  // 5. 恢复原文
+  await clickPopupButton(popup, page, '显示原文 (Alt + A)');
+  await expect(page.locator('[data-vast-translator]')).toHaveCount(0);
+  await expect(page.locator('[data-vast-text-leaf]')).toHaveCount(0);
+  await expect(page.locator('#europe-accordion-span')).toContainText('Europe');
+  await expect(page.locator('#paris-label')).toContainText('Paris');
+  await expect(page.locator('#europe-accordion-span svg')).toBeVisible();
+
+  await page.screenshot({ path: evidence('accordion-legacy-restored'), fullPage: true });
+  await popup.close();
+});

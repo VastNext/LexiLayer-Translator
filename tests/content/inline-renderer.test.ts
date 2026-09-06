@@ -413,4 +413,110 @@ describe('InlineRenderer', () => {
     expect(isUnsafeInlineElement(byId('with-input'))).toBe(true);
     expect(isUnsafeInlineElement(byId('with-custom'))).toBe(true);
   });
+
+  it('手风琴折叠按钮文本容器 span(display:flex) 内部安全挂载，保持 button/aria/事件且 svg 不隐藏', () => {
+    document.body.innerHTML = `
+      <h3 id="europe-h3">
+        <button id="europe-btn" aria-controls="europe-region" aria-expanded="false">
+          <span id="europe-label" style="display:flex">
+            <span id="europe-text" data-vast-text-leaf>Europe</span>
+            <span class="icon"><svg><path d="M0 0" /></svg></span>
+          </span>
+        </button>
+      </h3>
+      <div id="europe-region" role="region" inert style="height:0">
+        <label><input type="checkbox" name="city" value="paris"> <span data-vast-text-leaf>Paris</span></label>
+      </div>`;
+
+    const h3 = document.getElementById('europe-h3') as HTMLElement;
+    const button = document.getElementById('europe-btn') as HTMLButtonElement;
+    const textLeaf = document.getElementById('europe-text') as HTMLElement;
+    const labelSpan = document.getElementById('europe-label') as HTMLElement;
+    const region = document.getElementById('europe-region') as HTMLElement;
+
+    let buttonClicks = 0;
+    button.addEventListener('click', () => {
+      buttonClicks += 1;
+      const expanded = button.getAttribute('aria-expanded') === 'true';
+      button.setAttribute('aria-expanded', String(!expanded));
+      if (!expanded) {
+        region.removeAttribute('inert');
+        region.style.height = 'auto';
+      } else {
+        region.setAttribute('inert', '');
+        region.style.height = '0';
+      }
+    });
+
+    // 安全判定：文本叶为安全容器
+    expect(isUnsafeInlineElement(textLeaf)).toBe(false);
+    expect(renderer.isUnsafe(textLeaf)).toBe(false);
+
+    const paragraph = store.getOrCreate(textLeaf);
+    const token = renderer.beginTask(paragraph);
+
+    // 1. Loading 状态渲染
+    renderer.renderLoading(paragraph);
+    expect(h3.hidden).toBe(false);
+    expect(button.hidden).toBe(false);
+    expect(textLeaf.querySelector('[data-vast-state="loading"]')).not.toBeNull();
+    // 兄弟折叠区不应该出现任何插件节点
+    expect(region.querySelector('[data-vast-translator]')).toBeNull();
+
+    // 2. 双语翻译渲染
+    expect(renderer.renderTranslation(paragraph, '欧洲', {
+      mode: 'bilingual',
+      placement: 'after',
+      ...token,
+    })).toBe(true);
+
+    // h3/button 未被隐藏，svg 图标保留
+    expect(h3.hidden).toBe(false);
+    expect(button.hidden).toBe(false);
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    expect(labelSpan.querySelector('svg')).not.toBeNull();
+
+    const translation = textLeaf.querySelector('[data-vast-translator]') as HTMLElement;
+    expect(translation).not.toBeNull();
+    expect(translation.textContent).toBe('欧洲');
+
+    // 3. 点击译文正常冒泡触发 button click 事件，改变 aria-expanded 并展开折叠区
+    translation.click();
+    expect(buttonClicks).toBe(1);
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+    expect(region.hasAttribute('inert')).toBe(false);
+
+    // 再次点击折叠
+    translation.click();
+    expect(buttonClicks).toBe(2);
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    expect(region.hasAttribute('inert')).toBe(true);
+
+    // 4. 仅译文模式：原文隐藏，但同级 svg 必须保持可见！
+    renderer.renderTranslation(paragraph, '欧洲仅译文', {
+      mode: 'translation-only',
+      placement: 'after',
+      ...token,
+    });
+    expect(h3.hidden).toBe(false);
+    expect(button.hidden).toBe(false);
+    expect(textLeaf.querySelector('[data-vast-source]')).toHaveProperty('hidden', true);
+    expect(textLeaf.querySelector('[data-vast-translator]')?.textContent).toBe('欧洲仅译文');
+    expect(labelSpan.querySelector('svg')).not.toBeNull();
+    expect(labelSpan.querySelector('svg')?.closest('[data-vast-source]')).toBeNull();
+    expect(labelSpan.querySelector('.icon')?.closest('[data-vast-source]')).toBeNull();
+
+    // 5. 恢复原文
+    renderer.restore(paragraph);
+    expect(textLeaf.querySelector('[data-vast-translator]')).toBeNull();
+    expect(textLeaf.querySelector('[data-vast-source]')).toBeNull();
+    expect(textLeaf.textContent?.trim()).toBe('Europe');
+    expect(h3.hidden).toBe(false);
+    expect(button.hidden).toBe(false);
+
+    // 恢复后按钮事件仍有效
+    button.click();
+    expect(buttonClicks).toBe(3);
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+  });
 });

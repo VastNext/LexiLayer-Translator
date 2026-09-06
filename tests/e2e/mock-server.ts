@@ -16,6 +16,7 @@ export interface MockServer {
   networkFixtureUrl: string;
   selectionFixtureUrl: string;
   inlineFixtureUrl: string;
+  accordionFixtureUrl: string;
   adminFixtureUrl: string;
   requests: RecordedRequest[];
   hits: string[];
@@ -63,6 +64,38 @@ function inlineFixtureHtml(): string {
     <div id="grid-many" style="display:grid">Grid <span>a</span><span>b</span></div>
     <p id="interactive">Interactive <a href="/x">link</a> text.</p>
     <p id="event-source">Event bound paragraph.</p>
+  </main></body></html>`;
+}
+
+function accordionFixtureHtml(): string {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Accordion Fixture</title></head><body><main>
+    <h3 id="europe-accordion-h3">
+      <button id="europe-accordion-button" type="button" aria-controls="europe-accordion-region" aria-expanded="false">
+        <span id="europe-accordion-span" style="display:flex">
+          Europe
+          <span class="icon"><svg aria-hidden="true" width="16" height="16"><path d="M1 1"></path></svg></span>
+        </span>
+      </button>
+    </h3>
+    <div id="europe-accordion-region" role="region" inert style="height:0">
+      <label id="paris-label"><input id="paris-checkbox" type="checkbox" name="city" value="paris"> Paris</label>
+      <label id="london-label"><input id="london-checkbox" type="checkbox" name="city" value="london"> London</label>
+    </div>
+    <script>
+      const btn = document.getElementById('europe-accordion-button');
+      const reg = document.getElementById('europe-accordion-region');
+      btn.addEventListener('click', () => {
+        const isExp = btn.getAttribute('aria-expanded') === 'true';
+        btn.setAttribute('aria-expanded', String(!isExp));
+        if (!isExp) {
+          reg.removeAttribute('inert');
+          reg.style.height = 'auto';
+        } else {
+          reg.setAttribute('inert', '');
+          reg.style.height = '0';
+        }
+      });
+    </script>
   </main></body></html>`;
 }
 
@@ -125,6 +158,9 @@ function translateToChinese(text: string): string {
     'Grid ab': '网格布局译文。',
     'Interactive link text.': '交互子树译文。',
     'Event bound paragraph.': '事件段落译文。',
+    'Europe': '欧洲。',
+    'Paris': '巴黎。',
+    'London': '伦敦。',
   };
   const visible = /^Visible paragraph (\d+)$/.exec(text);
   if (visible) return `可见段落 ${visible[1]}`;
@@ -169,6 +205,9 @@ export async function startMockServer(): Promise<MockServer> {
     }
     if (request.method === 'GET' && url.pathname === '/fixture-inline') {
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); response.end(inlineFixtureHtml()); return;
+    }
+    if (request.method === 'GET' && url.pathname === '/fixture-accordion') {
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); response.end(accordionFixtureHtml()); return;
     }
     if (request.method === 'GET' && url.pathname === '/fixture-admin') {
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); response.end(adminFixtureHtml()); return;
@@ -232,6 +271,7 @@ export async function startMockServer(): Promise<MockServer> {
     networkFixtureUrl: `${origin}/fixture-network`,
     selectionFixtureUrl: `${origin}/fixture-selection`,
     inlineFixtureUrl: `${origin}/fixture-inline`,
+    accordionFixtureUrl: `${origin}/fixture-accordion`,
     adminFixtureUrl: `${origin}/fixture-admin`,
     requests,
     hits,

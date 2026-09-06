@@ -16,6 +16,7 @@ export interface ParagraphRecord {
 const EXCLUDED_TEXT_SELECTORS = [
   '[aria-hidden="true"]',
   '[hidden]',
+  '[inert]',
   '.sr-only',
   '.visually-hidden',
   'svg',
@@ -35,6 +36,7 @@ function isTextNodeExcluded(node: Node, root: HTMLElement): boolean {
   for (let current = node.parentElement; current && current !== root.parentElement; current = current.parentElement) {
     if (current.matches('[data-vast-source]')) continue;
     if (current.matches(EXCLUDED_TEXT_SELECTORS)) return true;
+    if ((current as HTMLElement).inert || current.hasAttribute('inert')) return true;
     const style = current.style;
     if (style && (style.display === 'none' || style.visibility === 'hidden')) return true;
   }

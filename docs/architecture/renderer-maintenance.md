@@ -38,11 +38,21 @@ Popup 的按需注入（`src/popup/api.ts` 中接收端不存在时的 `chrome.s
 
 - 译文与状态容器只追加在段落内部原文之后，不向父级 flex/grid 容器新增子项；
 - 原文节点整体移入 `[data-vast-source]` 包装（移动而非克隆），监听器、行内样式与 hidden 状态保留，恢复时原样放回；
-- 单链接标题下钻：当段落为普通非编辑单链接且所有可翻译正文均在其内时（如 `h2 > span > a > span Releases`，伴随 badge/svg/aria-hidden/sr-only 辅助节点），自动下钻到该链接内部的最内安全文本容器挂载，外层标题与链接节点/样式/监听器不换不隐藏，译文保留在链接内部；
+- 辅助与装饰节点安全隔离：
+  - 扫描器（`dom-scanner.ts`）在提取按钮内部或带图标容器的文本时，将直接 `TextNode` 包装为最小安全文本叶（`[data-vast-text-leaf]`）；
+  - 渲染器针对该安全文本叶进行包裹与翻译，不包裹其同级的 svg/img/icon，原子节点相对顺序完全保留；
+  - 仅译文（translation-only）模式下仅隐藏文本叶本身，svg 图标与装饰节点在 DOM 结构和视觉上均保持可见；
+  - 全页恢复（`restore` / `cleanupPage`）时自动解包所有 `[data-vast-text-leaf]` 临时包装，完整恢复原始纯 `TextNode` 与 DOM 身份；
+- 单链接与单折叠按钮标题下钻：
+  - 当段落为普通非编辑单链接且所有可翻译正文均在其内时（如 `h2 > span > a > span Releases`，伴随 badge/svg/aria-hidden/sr-only 辅助节点），自动下钻到该链接内部的最内安全文本容器挂载，外层标题与链接节点/样式/监听器不换不隐藏，译文保留在链接内部；
+  - 当标题为可折叠手风琴按钮结构时（如 `h3 > button aria-controls/aria-expanded > span(display:flex) Europe + svg`），DOM 扫描器主动跳过包含按钮的标题外壳，下钻选出按钮内部的安全文本叶子容器挂载；外层 `h3`、`button`、`id`、`aria-controls`、`aria-expanded` 与点击监听器完整保留，svg 图标在双语与仅译文模式下均不隐藏；
+  - 针对直接包含 input/checkbox 等控件的 label 结构，扫描器将 TextNode 包装为可逆的最小文本叶子 span（`[data-vast-text-leaf]`），挂载与仅译文隐藏仅作用于该文本容器，绝不隐藏 label 外壳或 input 控件；
+  - 具有 `inert` 属性的折叠区初始完全排除（不扫描、不占位、不发起请求）；
+  - `DynamicPageObserver` 监听 `inert`、`hidden`、`aria-expanded` 等可见性相关属性，用户点击展开折叠区后自动感知并触发重新扫描与可见性调度，展开区域内的 checkbox 与 label 关联及交互完全保持；
 - 已渲染宿主被页面追加新节点（动态内容）时，`ParagraphStore.refresh` 会把包装外的游离子节点一并计入原文文本，触发重新翻译并重新包裹；追加的段落元素与宿主同时翻译时与兼容模式行为一致；
 - 以下结构保守回退兼容模式，避免破坏页面交互或布局：
   - 受限内容 / 空元素标签（img、br、select、textarea、table 行类等）；
-  - 多个链接、混合句子中的链接（链接外有正文）、按钮及 `role=button` 自身与子树；
+  - 多个链接、混合句子中的链接（链接外有正文）、复合按钮组及 `role=button` 复杂子树；
   - 表单控件子树（form、fieldset、input、select、textarea、output、progress、meter 等）；
   - 自定义元素（宿主或后代标签名含 `-`，其内部结构与布局未知）；
   - flex/grid 容器且已有多个子项（折叠子项会改变子项数量与布局）。

@@ -212,6 +212,15 @@ describe('service worker 消息编排', () => {
     })).resolves.toEqual({ ok: true, data: [{ id: 'heading', text: '译:🚀 GlanceMD' }] });
   });
 
+  it('批量翻译拒绝同一请求内的重复段 ID', async () => {
+    vi.mocked(dependencies.translate!).mockClear();
+    await expect(send({
+      type: 'translate-batch', taskId: 'dup-ids', engineId: 'google', sourceLanguage: 'auto', targetLanguage: 'zh-Hans',
+      segments: [{ id: 'dup', text: 'first' }, { id: 'dup', text: 'second' }],
+    })).resolves.toEqual({ ok: false, error: '消息格式无效' });
+    expect(dependencies.translate).not.toHaveBeenCalled();
+  });
+
   it('测试引擎和清理缓存均走固定消息', async () => {
     await expect(send({ type: 'test-engine', engineId: 'google' })).resolves.toEqual({ ok: true });
     await expect(send({ type: 'clear-cache' }))

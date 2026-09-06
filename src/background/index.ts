@@ -1,5 +1,6 @@
 import { createTranslationBatches, orderTranslationResults } from './batching';
 import { createCacheKey, IndexedDbCacheStorage, TranslationCache } from './cache';
+import { AiRequestCoordinator, type AiRequestCostSnapshot } from './ai-coordinator';
 import { createProvider, streamProviderSelection } from './provider-registry';
 import type { Provider } from './provider';
 import {
@@ -30,6 +31,7 @@ export interface BackgroundDependencies {
   translate?(provider: Provider, request: TranslationRequest, signal: AbortSignal): Promise<TranslationResult[]>;
   streamSelection?(provider: Provider, text: string, sourceLanguage: string, targetLanguage: string, userInstruction: string | undefined, context: string | undefined, signal: AbortSignal): AsyncIterable<string>;
   clearCache(): Promise<void>;
+  aiMetrics?: { snapshot(): AiRequestCostSnapshot; reset(): void };
 }
 
 interface RuntimeDependencyOptions { cache?: CacheLike; createProvider?: (engine: Engine) => Provider }
@@ -66,9 +68,13 @@ function isOptionsSender(sender: chrome.runtime.MessageSender, extensionId: stri
 function parseSegments(value: unknown): TranslationSegment[] | undefined {
   if (!Array.isArray(value) || value.length < 1 || value.length > 8) return undefined;
   const segments: TranslationSegment[] = [];
+  const seenIds = new Set<string>();
   let characters = 0;
   for (const item of value) {
     if (!isRecord(item) || !hasOnlyKeys(item, ['id', 'text']) || !isSafeId(item.id) || !isSafeString(item.text, 6000)) return undefined;
+    // 同一请求内重复 id 会在结果映射时互相覆盖，必须拒绝
+    if (seenIds.has(item.id)) return undefined;
+    seenIds.add(item.id);
     characters += item.text.length;
     if (characters > 6000) return undefined;
     segments.push({ id: item.id, text: item.text });
@@ -179,9 +185,15 @@ export function createRuntimeDependencies(options: RuntimeDependencyOptions = {}
   const storage = options.cache ? undefined : new IndexedDbCacheStorage();
   const cache = options.cache ?? new TranslationCache(storage!);
   const providerFactory = options.createProvider ?? createProvider;
+  // 自定义 AI 走协调器：缓存 → inflight 去重 → 100ms 合批；Google/Bing 保持原有路径不变。
+  const aiCoordinator = new AiRequestCoordinator({ cache });
   return {
     createProvider: providerFactory,
+    aiMetrics: { snapshot: () => aiCoordinator.snapshot(), reset: () => aiCoordinator.reset() },
     async translate(provider, request, signal) {
+      if (provider.cacheIdentity.engineId.startsWith('custom-')) {
+        return aiCoordinator.translate(provider, request, signal);
+      }
       const results: TranslationResult[] = [];
       for (const segments of createTranslationBatches(request.segments)) {
         if (signal.aborted) throw new Error('任务已取消');

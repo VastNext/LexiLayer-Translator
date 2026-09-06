@@ -185,4 +185,33 @@ describe('DynamicPageObserver', () => {
     expect(store.get(source)).toBeDefined();
     observer.stop();
   });
+
+  it('折叠区移除 inert 属性时触发重新扫描并通知新增段落', async () => {
+    document.body.innerHTML = `
+      <main>
+        <div id="region" inert>
+          <p id="city">Paris</p>
+        </div>
+      </main>`;
+    const region = document.getElementById('region')!;
+    const city = document.getElementById('city')!;
+    const onAdded = vi.fn();
+    const observer = new DynamicPageObserver(document.body, {
+      scan: (root) => {
+        if (root.closest('[inert]') || (root as HTMLElement).inert) return [];
+        return [...root.querySelectorAll<HTMLElement>('p')];
+      },
+      onAdded,
+      debounceMs: 20,
+    });
+    observer.start();
+
+    // 初始状态带 inert，移除 inert 模拟展开手风琴
+    region.removeAttribute('inert');
+    await vi.advanceTimersByTimeAsync(20);
+
+    expect(onAdded).toHaveBeenCalledOnce();
+    expect(onAdded).toHaveBeenCalledWith([city]);
+    observer.stop();
+  });
 });
