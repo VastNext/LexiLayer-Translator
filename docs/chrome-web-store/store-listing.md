@@ -132,13 +132,13 @@ Used to provide user-initiated context-menu actions for translating a page, rest
 中文：
 
 ```text
-当用户在尚未加载 Content Script 的普通网页上点击翻译时，用于按需注入扩展自带的 content.js。扩展不会下载或执行远程代码。
+当用户在尚未加载 Content Script 的普通网页上点击翻译时，用于按需注入扩展自带的内容脚本（content.js、content-inline.js、content-main.js 与两套样式 content.css、content-inline.css）。扩展不会下载或执行远程代码。
 ```
 
 英文：
 
 ```text
-Used to inject the packaged content.js on demand when the user requests translation on a normal webpage where the content script is not yet available. The extension does not download or execute remote code.
+Used to inject the packaged content scripts (content.js, content-inline.js, and content-main.js, plus the two stylesheets content.css and content-inline.css) on demand when the user requests translation on a normal webpage where the content script is not yet available. The extension does not download or execute remote code.
 ```
 
 ### `<all_urls>` Host Permission

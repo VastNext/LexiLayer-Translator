@@ -132,7 +132,7 @@ No account or test credentials are required to review the built-in translation f
 To verify the scripting permission:
 10. Open <PUBLIC_REVIEW_FIXTURE_URL> before installing or reloading the extension.
 11. Install or reload the extension, but do not refresh that already-open tab.
-12. Use the toolbar popup to translate the old tab. The extension uses chrome.scripting.executeScript only to inject the packaged content.js into a normal webpage where the content script is not yet available.
+12. Use the toolbar popup to translate the old tab. The extension uses chrome.scripting.executeScript only to inject the packaged content scripts (`content.js`, `content-inline.js`, and `content-main.js`), plus chrome.scripting.insertCSS for the two packaged stylesheets (`content.css` and `content-inline.css`), into a normal webpage where the content script is not yet available.
 
 Custom AI configuration is optional and is not required to review the core functionality. If a custom service is configured, its API key is stored only in chrome.storage.local and is sent only to the configured service for request authorization.
 
@@ -156,7 +156,7 @@ If the default third-party translation endpoint is temporarily unavailable or ra
 8. 右键点击选中文字，测试“翻译选中内容”菜单。
 9. 打开扩展设置页，查看 Bing 和可选的 OpenAI 兼容自定义服务配置。
 
-验证 `scripting` 权限：先打开审核测试页，再安装或重新加载扩展，但不要刷新已经打开的标签页；随后通过 Popup 翻译该旧标签页。扩展只会向普通网页注入上传包内自带的 `content.js`，不会下载远程代码。
+验证 `scripting` 权限：先打开审核测试页，再安装或重新加载扩展，但不要刷新已经打开的标签页；随后通过 Popup 翻译该旧标签页。扩展只会向普通网页注入上传包内自带的内容脚本（`content.js`、`content-inline.js`、`content-main.js`）与两套样式（`content.css`、`content-inline.css`），不会下载远程代码。
 
 自定义 AI 不是审核核心功能所必需。扩展不要求用户账号，也不连接开发者自营后端。
 
