@@ -289,6 +289,24 @@ describe('scanParagraphElements', () => {
     expect(ids).not.toEqual(expect.arrayContaining(['files-heading', 'language-switch']));
   });
 
+  it('GitHub README 内部的语言切换段落（Markdown body 内部）不翻译', () => {
+    document.body.innerHTML = `<main>
+      <div id="readme">
+        <div class="markdown-body">
+          <p align="center" dir="auto" id="lang-switch-inside">
+            <a href="/VastNext/GlanceMD/blob/main/README.md">简体中文</a> · <b>English</b>
+          </p>
+          <p id="real-content">Real markdown body content</p>
+        </div>
+      </div>
+    </main>`;
+
+    const ids = scanParagraphElements(document, githubRule, 'main-content').map((element) => element.id);
+
+    expect(ids).toEqual(['real-content']);
+    expect(ids).not.toContain('lang-switch-inside');
+  });
+
   it('Reddit 帖子和评论可翻译，但投票、操作区和侧栏不翻译', () => {
     document.body.innerHTML = `
       <main>

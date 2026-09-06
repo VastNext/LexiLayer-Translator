@@ -11,6 +11,8 @@ export const rule: SiteRule = {
     '[aria-label*="repository navigation" i]', '[data-testid="repository-name"]', '[itemprop="name"]',
     '[itemscope][itemtype="https://schema.org/abstract"] > h2:first-child',
     '[itemscope][itemtype="https://schema.org/abstract"] > p[align="center"]',
+    'p[align="center"]:has(> a[href*="README"])',
+    'p[align="center"]:has(> b, > strong):has(> a)',
     '[data-testid="screen-reader-heading"]', '[class*="InternalVisuallyHidden" i]', '[class*="ScreenReaderHeading" i]',
     '[data-testid="latest-commit"]', '[data-testid="latest-commit-html"]', '[data-testid="latest-commit-details"]',
     '[data-testid="latest-commit-details-toggle"]', '[data-testid="author-avatar"]',
