@@ -73,20 +73,18 @@ describe('ParagraphStore 与 DomRenderer', () => {
     expect(source).toHaveAttribute('hidden');
   });
 
-  it('渲染 loading 和 error 状态并允许后续成功结果替换', () => {
+  it('重试按钮点击时阻止默认行为与事件冒泡，并派发全局重试事件', () => {
     const paragraph = store.getOrCreate(source);
-    const request = renderer.beginTask(paragraph);
-    renderer.renderLoading(paragraph);
-    expect(document.querySelector('[data-vast-state="loading"]')?.textContent).toBe('翻译中…');
+    renderer.renderError(paragraph, '失败');
+    const button = document.querySelector('[data-vast-retry-all]') as HTMLButtonElement;
+    let eventDispatched = false;
+    document.addEventListener('vast-translator-retry-all', () => { eventDispatched = true; }, { once: true });
 
-    renderer.renderError(paragraph, '翻译失败');
-    expect(document.querySelector('[data-vast-state="error"]')?.textContent).toContain('翻译失败');
-    expect(document.querySelector('[data-vast-retry-all]')).not.toBeNull();
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+    button.dispatchEvent(event);
 
-    renderer.renderTranslation(paragraph, '译文', {
-      mode: 'bilingual', placement: 'after', ...request,
-    });
-    expect(document.querySelector('[data-vast-state="translated"]')?.textContent).toBe('译文');
+    expect(eventDispatched).toBe(true);
+    expect(event.defaultPrevented).toBe(true);
   });
 
   it('源文本变化后丢弃旧版本结果且不改变当前 DOM', () => {

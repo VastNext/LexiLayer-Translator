@@ -176,7 +176,11 @@ export class InlineRenderer {
     button.textContent = '↻';
     button.title = '重试全部失败段落';
     button.setAttribute('aria-label', '重试全部失败段落');
-    button.addEventListener('click', () => wrapper.ownerDocument.dispatchEvent(new CustomEvent('vast-translator-retry-all')));
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      wrapper.ownerDocument.dispatchEvent(new CustomEvent('vast-translator-retry-all'));
+    });
     wrapper.append(' ', button);
   }
 
