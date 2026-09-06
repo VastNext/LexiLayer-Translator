@@ -135,13 +135,17 @@ describe('文档发布契约', () => {
     expect(packager).toContain('ZIP 第一层必须且只能包含一个 manifest.json');
   });
 
-  it('历史发布说明记录仅译文源文隐藏修复', async () => {
-    const [pkg, notes] = await Promise.all([
-      readFile(resolve('package.json'), 'utf8').then(JSON.parse),
-      readFile(resolve('docs/release-notes/0.7.4.md'), 'utf8'),
-    ]);
-    expect(pkg.version).toBe('0.7.8');
-    expect(notes).toContain('“仅译文”模式显示源文');
-    expect(notes).toContain('高优先级 CSS');
+  it('最新发布说明动态对齐当前版本，历史修复记录保留', async () => {
+    const pkg = JSON.parse(await readFile(resolve('package.json'), 'utf8')) as { version: string };
+    // 动态契约：当前版本必须存在同名发布说明且标题一致，不硬编码具体版本号。
+    const latestNotes = await readFile(resolve(`docs/release-notes/${pkg.version}.md`), 'utf8');
+    expect(latestNotes).toContain(`# 语层翻译（LexiLayer Translator）${pkg.version}`);
+    expect(latestNotes).toMatch(/^## /m);
+    expect(latestNotes).toContain('## ✅ 验证');
+
+    // 历史修复记录不随当前版本变化。
+    const legacyNotes = await readFile(resolve('docs/release-notes/0.7.4.md'), 'utf8');
+    expect(legacyNotes).toContain('“仅译文”模式显示源文');
+    expect(legacyNotes).toContain('高优先级 CSS');
   });
 });

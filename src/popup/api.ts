@@ -17,7 +17,10 @@ interface PopupChromeApi {
     query(queryInfo: chrome.tabs.QueryInfo): Promise<Array<{ id?: number; url?: string; active?: boolean }>>;
     sendMessage(tabId: number, message: unknown): Promise<unknown>;
   };
-  scripting?: { executeScript(injection: { target: { tabId: number }; files: string[] }): Promise<unknown> };
+  scripting?: {
+    executeScript(injection: { target: { tabId: number }; files: string[] }): Promise<unknown>;
+    insertCSS(injection: { target: { tabId: number }; files: string[] }): Promise<unknown>;
+  };
   action?: {
     setBadgeText(details: { tabId: number; text: string }): Promise<void>;
     setBadgeBackgroundColor(details: { tabId: number; color: string }): Promise<void>;
@@ -33,7 +36,7 @@ interface Progress {
 }
 
 export interface PopupConfigResponse {
-  preferences?: { sourceLanguage?: string; targetLanguage: string; displayMode: string; scanScope: 'main-content' | 'whole-page'; translationPosition: 'before' | 'after'; userInstruction: string; selectionContext: boolean; selectionPopupEnabled: boolean; inlineSelectionModifier: 'Control' | 'Alt' | 'Shift' | 'Meta' | 'Off' };
+  preferences?: { sourceLanguage?: string; targetLanguage: string; displayMode: string; scanScope: 'main-content' | 'whole-page'; translationPosition: 'before' | 'after'; userInstruction: string; selectionContext: boolean; selectionPopupEnabled: boolean; inlineSelectionModifier: 'Control' | 'Alt' | 'Shift' | 'Meta' | 'Off'; rendererMode: 'legacy' | 'inline' };
   activeEngineId?: string;
   theme?: Theme;
   availableEngines?: Array<{ id: string; kind: string; name: string; ready: boolean; capabilities: { streaming: boolean } }>;
@@ -86,7 +89,12 @@ export function createPopupApi(api: PopupChromeApi) {
         const text = error instanceof Error ? error.message : String(error);
         if (!/Receiving end does not exist|Could not establish connection/i.test(text) || !api.scripting) throw error;
         try {
-          await api.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
+          // 声明式 content_scripts 常驻注入两套样式与三个脚本；按需注入必须按
+          // manifest 顺序保持一致：先 insertCSS（content.css + content-inline.css）
+          // 再 executeScript（控制器库 → 内联渲染器 → 装配层）。样式缺失会导致
+          // 译文与划词节点无排版，脚本缺一会导致渲染器或装配层未就绪。
+          await api.scripting.insertCSS({ target: { tabId }, files: ['content.css', 'content-inline.css'] });
+          await api.scripting.executeScript({ target: { tabId }, files: ['content.js', 'content-inline.js', 'content-main.js'] });
           return await api.tabs.sendMessage(tabId, message);
         } catch {
           throw new Error('当前页面暂时无法注入翻译脚本，请刷新页面后重试');

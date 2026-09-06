@@ -115,6 +115,17 @@ function view(): HTMLElement {
   return document.querySelector<HTMLElement>('[data-vast-selection-host]')!;
 }
 
+// jsdom 的 Event.isTrusted 不可伪造，捕获 retry 监听器后直接以可信事件对象调用。
+function spyRetryListener(): { listener: () => EventListener | undefined } {
+  let retryListener: EventListener | undefined;
+  const addEventListener = HTMLElement.prototype.addEventListener;
+  vi.spyOn(HTMLElement.prototype, 'addEventListener').mockImplementation(function (this: HTMLElement, type, listener, options) {
+    if (this.dataset?.action === 'retry' && type === 'click') retryListener = listener as EventListener;
+    return addEventListener.call(this, type, listener, options);
+  });
+  return { listener: () => retryListener };
+}
+
 describe('划词翻译控制器', () => {
   let dependencies: ReturnType<typeof createDependencies>;
   let controller: ReturnType<typeof createSelectionController>;
@@ -351,6 +362,35 @@ describe('划词翻译控制器', () => {
     trustedMouseUp();
     language.dispatchEvent(new Event('change', { bubbles: true }));
     expect(dependencies.port.postMessage).toHaveBeenLastCalledWith(expect.objectContaining({ targetLanguage: 'ja' }));
+  });
+
+  it('德语划词 loading 期间准备提示不可复制，英语提示不混入译文', async () => {
+    let root: ShadowRoot | undefined;
+    const original = Element.prototype.attachShadow;
+    vi.spyOn(HTMLElement.prototype, 'attachShadow').mockImplementation(function (this: HTMLElement, options) { root = original.call(this, options); return root; });
+    // 英语环境翻译器：准备提示以英文渲染，也不得混入译文。
+    const englishT: Translator = (key) => ({ preparing: 'Preparing translation…' }[key] ?? key);
+    dependencies.createView = (rect, actions) => new SelectionView(document, rect, actions, englishT);
+    vi.mocked(dependencies.getPublicConfig).mockResolvedValue({ ...(await dependencies.getPublicConfig()), targetLanguage: 'de' });
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
+    register();
+    const retry = spyRetryListener();
+    trustedMouseUp();
+    await vi.waitFor(() => expect(root).toBeDefined());
+    retry.listener()?.({ isTrusted: true } as unknown as MouseEvent);
+    expect(dependencies.port.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'translate-selection', targetLanguage: 'de' }));
+
+    // loading：英文提示可见，但宿主不是 translated，结果为空，复制动作被 controller 门槛拒绝。
+    expect(root!.querySelector('[data-result]')).toHaveTextContent('Preparing translation…');
+    expect(view().dataset.vastState).toBe('loading');
+    (root!.querySelector('[data-action="copy"]') as HTMLButtonElement).click();
+    await Promise.resolve();
+    expect(dependencies.copy).not.toHaveBeenCalled();
+
+    // 流式译文到达：结果只有译文，不含英语提示。
+    dependencies.port.emit({ type: 'selection-chunk', chunk: 'Hallo' });
+    expect(root!.querySelector('[data-result]')?.textContent).toBe('Hallo');
+    expect(view().dataset.vastState).toBe('translated');
   });
 
   it('Escape、外部点击和新选区都会中止并关闭旧浮层', () => {
@@ -661,13 +701,38 @@ describe('划词翻译视图隔离', () => {
     const original = Element.prototype.attachShadow;
     vi.spyOn(HTMLElement.prototype, 'attachShadow').mockImplementation(function (this: HTMLElement, options) { root = original.call(this, options); return root; });
     const translate = vi.fn();
+    const retry = spyRetryListener();
     const view = new SelectionView(document, new DOMRect(10, 10, 20, 20), { translate, copy: vi.fn(), close: vi.fn() });
     view.mount();
     view.open('zh-Hans');
 
-    (root!.querySelector('[data-action="retry"]') as HTMLButtonElement).click();
+    retry.listener()?.({ isTrusted: true } as unknown as MouseEvent);
 
+    expect(translate).toHaveBeenCalledWith('zh-Hans', true, 'google');
     expect(root!.querySelector('[data-result]')).toHaveTextContent('准备翻译…');
+    view.remove();
+  });
+
+  it('准备提示只展示不进入结果：宿主保持 loading，结果为空不可复制', () => {
+    let root: ShadowRoot | undefined;
+    const original = Element.prototype.attachShadow;
+    vi.spyOn(HTMLElement.prototype, 'attachShadow').mockImplementation(function (this: HTMLElement, options) { root = original.call(this, options); return root; });
+    const translate = vi.fn();
+    const retry = spyRetryListener();
+    const view = new SelectionView(document, new DOMRect(10, 10, 20, 20), { translate, copy: vi.fn(), close: vi.fn() });
+    view.mount();
+    view.open('de');
+
+    retry.listener()?.({ isTrusted: true } as unknown as MouseEvent);
+
+    expect(translate).toHaveBeenCalledWith('de', true, 'google');
+    expect(root!.querySelector('[data-result]')).toHaveTextContent('准备翻译…');
+    expect(view.getResult()).toBe('');
+    expect(view.host.dataset.vastState).toBe('loading');
+    view.appendResult('Hallo');
+    expect(view.getResult()).toBe('Hallo');
+    expect(view.getResult()).not.toContain('准备翻译');
+    expect(view.host.dataset.vastState).toBe('translated');
     view.remove();
   });
 

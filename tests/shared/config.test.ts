@@ -124,7 +124,7 @@ describe('migration and normalization', () => {
       readingPreferences: {
         targetLanguage: 'zh-Hans', displayMode: 'translation', userInstruction: '保留术语',
         translationPosition: 'before', scanScope: 'whole-page', selectionContext: false,
-        selectionPopupEnabled: true, inlineSelectionModifier: 'Control',
+        selectionPopupEnabled: true, inlineSelectionModifier: 'Control', rendererMode: 'legacy',
       },
       engines: [
         DEFAULT_SETTINGS.engines[0],
@@ -151,6 +151,48 @@ describe('migration and normalization', () => {
       selectionPopupEnabled: true,
       inlineSelectionModifier: 'Control',
     });
+  });
+
+  it('新安装默认内联渲染器，旧配置与非法值受控回退兼容模式', () => {
+    // 新安装（DEFAULT_SETTINGS）使用内联渲染器。
+    expect(DEFAULT_SETTINGS.readingPreferences.rendererMode).toBe('inline');
+
+    // 旧 v2 配置缺字段 → legacy，避免升级后行为突然变化。
+    const legacyV2 = structuredClone(settings) as Settings;
+    delete (legacyV2.readingPreferences as { rendererMode?: string }).rendererMode;
+    expect(normalizeSettings(legacyV2).readingPreferences.rendererMode).toBe('legacy');
+
+    // 非法值 → legacy，不重置整份设置。
+    const corrupted = structuredClone(settings) as unknown as { readingPreferences: { rendererMode: string }; activeEngineId: string };
+    corrupted.readingPreferences.rendererMode = 'experimental';
+    expect(normalizeSettings(corrupted).readingPreferences.rendererMode).toBe('legacy');
+    expect(normalizeSettings(corrupted).activeEngineId).toBe(settings.activeEngineId);
+
+    // 已保存的 inline 合法值原样保留。
+    const inline = structuredClone(settings);
+    inline.readingPreferences.rendererMode = 'inline';
+    expect(normalizeSettings(inline).readingPreferences.rendererMode).toBe('inline');
+  });
+
+  it('导入配置缺渲染器字段回退兼容模式，显式 inline 值保留', () => {
+    const safe = exportSafeSettings(settings) as SafeSettings & { readingPreferences: { rendererMode?: string } };
+    const legacyImport = structuredClone(safe);
+    delete (legacyImport.readingPreferences as { rendererMode?: string }).rendererMode;
+    expect(importSettings(legacyImport, settings).readingPreferences.rendererMode).toBe('legacy');
+
+    const corruptedImport = structuredClone(safe);
+    (corruptedImport.readingPreferences as { rendererMode: string }).rendererMode = 'auto';
+    expect(importSettings(corruptedImport, settings).readingPreferences.rendererMode).toBe('legacy');
+
+    const inlineImport = structuredClone(safe) as SafeSettings;
+    inlineImport.readingPreferences.rendererMode = 'inline';
+    expect(importSettings(inlineImport, settings).readingPreferences.rendererMode).toBe('inline');
+  });
+
+  it('校验渲染器模式枚举', () => {
+    expect(validateSettings({ ...settings, readingPreferences: { ...settings.readingPreferences, rendererMode: 'canvas' as never } }))
+      .toContain('渲染器模式无效');
+    expect(validateSettings({ ...settings, readingPreferences: { ...settings.readingPreferences, rendererMode: 'legacy' } })).toEqual([]);
   });
 
   it('旧专家默认版本迁移到 VastNext ID，并保留启用状态与底座映射', () => {

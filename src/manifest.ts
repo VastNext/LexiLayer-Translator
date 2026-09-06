@@ -31,7 +31,12 @@ export const manifest = {
   content_scripts: [
     {
       matches: ['<all_urls>'],
-      js: ['content.js'],
+      // 单条目内 js 数组按声明顺序执行：控制器库 → 内联渲染器 → 装配层。
+      // 拆成多个条目时 Chrome 不保证条目间顺序，合并才能锁定注入顺序。
+      js: ['content.js', 'content-inline.js', 'content-main.js'],
+      // 两套样式都是声明式注入的常驻样式：content.css 承载 legacy 渲染器与划词节点，
+      // content-inline.css 承载内联渲染器。按需注入（Popup）必须与这里保持一致。
+      css: ['content.css', 'content-inline.css'],
     },
   ],
   web_accessible_resources: [

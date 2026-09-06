@@ -131,5 +131,9 @@
   "selectionPopupEnabled": { "message": "显示划词悬浮按钮" },
   "inlineSelectionModifier": { "message": "选区内联翻译快捷键" },
   "modifierOff": { "message": "关闭" },
-  "limitedContextHelp": { "message": "发送选区所在段落的有限文本帮助消歧，不翻译上下文本身。" }
+  "limitedContextHelp": { "message": "发送选区所在段落的有限文本帮助消歧，不翻译上下文本身。" },
+  "rendererMode": { "message": "渲染器模式" },
+  "rendererInline": { "message": "内联模式" },
+  "rendererLegacy": { "message": "兼容模式" },
+  "rendererModeHelp": { "message": "内联模式在原文内部渲染译文，不改变页面布局；兼容模式保持旧版行为。修改在下次全新页面翻译时生效。" }
 }

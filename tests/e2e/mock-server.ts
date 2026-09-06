@@ -15,6 +15,7 @@ export interface MockServer {
   batchFixtureUrl: string;
   networkFixtureUrl: string;
   selectionFixtureUrl: string;
+  inlineFixtureUrl: string;
   adminFixtureUrl: string;
   requests: RecordedRequest[];
   hits: string[];
@@ -41,6 +42,28 @@ function batchFixtureHtml(): string {
   ${Array.from({ length: 10 }, (_, index) => `<p id="batch-${index}">Visible paragraph ${index}</p>`).join('')}
   <div style="height:5000px;display:block"></div><p id="offscreen">Offscreen paragraph</p><div id="dynamic"></div>
   </article></main></body></html>`;
+}
+
+function inlineFixtureHtml(): string {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Inline Fixture</title></head><body><main>
+    <p id="plain">Plain paragraph for inline.</p>
+    <h1 id="heading" style="color: rgb(200, 30, 30); font-size: 28px;">Heading with style.</h1>
+    <h2 id="user-release-h2" class="release-header" style="color: rgb(10, 100, 200); font-size: 24px;">
+      <span class="d-flex flex-items-center">
+        <a id="user-release-link" href="/tt-a1i/hive/releases" class="Link--primary">
+          <span id="user-release-title">Releases</span>
+        </a>
+        <span class="Counter" aria-hidden="true">12</span>
+        <svg aria-hidden="true" width="16" height="16"><path d="M1 1"></path></svg>
+        <span class="sr-only">12 releases</span>
+      </span>
+    </h2>
+    <div id="flex-many" style="display:flex">Multi <span>first</span><span>second</span></div>
+    <div id="flex-one" style="display:flex">Single <span>only</span></div>
+    <div id="grid-many" style="display:grid">Grid <span>a</span><span>b</span></div>
+    <p id="interactive">Interactive <a href="/x">link</a> text.</p>
+    <p id="event-source">Event bound paragraph.</p>
+  </main></body></html>`;
 }
 
 function selectionFixtureHtml(): string {
@@ -93,6 +116,15 @@ function translateToChinese(text: string): string {
     'Dynamically added paragraph.': '动态添加的段落。',
     'Changed source paragraph.': '修改后的原文段落。',
     'Offscreen paragraph': '屏幕外段落',
+    'Plain paragraph for inline.': '内联段落译文。',
+    'Heading with style.': '标题译文。',
+    'Releases': '发布版本。',
+    // fixture 中相邻子节点间无空白，textContent 折叠后为 'Multi firstsecond' / 'Grid ab'。
+    'Multi firstsecond': '多子项布局译文。',
+    'Single only': '单子项布局译文。',
+    'Grid ab': '网格布局译文。',
+    'Interactive link text.': '交互子树译文。',
+    'Event bound paragraph.': '事件段落译文。',
   };
   const visible = /^Visible paragraph (\d+)$/.exec(text);
   if (visible) return `可见段落 ${visible[1]}`;
@@ -134,6 +166,9 @@ export async function startMockServer(): Promise<MockServer> {
     }
     if (request.method === 'GET' && url.pathname === '/fixture-selection') {
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); response.end(selectionFixtureHtml()); return;
+    }
+    if (request.method === 'GET' && url.pathname === '/fixture-inline') {
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); response.end(inlineFixtureHtml()); return;
     }
     if (request.method === 'GET' && url.pathname === '/fixture-admin') {
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); response.end(adminFixtureHtml()); return;
@@ -196,6 +231,7 @@ export async function startMockServer(): Promise<MockServer> {
     batchFixtureUrl: `${origin}/fixture-batch`,
     networkFixtureUrl: `${origin}/fixture-network`,
     selectionFixtureUrl: `${origin}/fixture-selection`,
+    inlineFixtureUrl: `${origin}/fixture-inline`,
     adminFixtureUrl: `${origin}/fixture-admin`,
     requests,
     hits,

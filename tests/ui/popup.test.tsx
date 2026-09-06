@@ -8,7 +8,7 @@ afterEach(cleanup);
 const preferences = {
   targetLanguage: 'zh-Hans', displayMode: 'bilingual', scanScope: 'whole-page' as const,
   translationPosition: 'after' as const, userInstruction: '', selectionContext: true,
-  selectionPopupEnabled: true, inlineSelectionModifier: 'Control' as const,
+  selectionPopupEnabled: true, inlineSelectionModifier: 'Control' as const, rendererMode: 'legacy' as const,
 };
 
 function createApi(overrides: Partial<PopupApi> = {}): PopupApi {
@@ -30,6 +30,12 @@ function createApi(overrides: Partial<PopupApi> = {}): PopupApi {
     subscribeProgress: vi.fn(() => () => undefined),
     ...overrides,
   };
+}
+
+// 配置加载门禁：交互前必须等保存控件解锁，避免与 getConfig 竞态。
+async function renderAndAwaitLoaded(api: PopupApi): Promise<void> {
+  render(<PopupApp api={api} />);
+  await waitFor(() => expect(screen.getByLabelText('翻译引擎')).toBeEnabled());
 }
 
 describe('精简 Popup', () => {
@@ -77,8 +83,7 @@ describe('精简 Popup', () => {
 
   it('更改引擎、语言和显示模式时立即保存', async () => {
     const api = createApi();
-    render(<PopupApp api={api} />);
-    await screen.findByLabelText('翻译引擎');
+    await renderAndAwaitLoaded(api);
     await userEvent.selectOptions(screen.getByLabelText('翻译引擎'), 'bing');
     await userEvent.selectOptions(screen.getByLabelText('源语言'), 'en');
     await userEvent.selectOptions(screen.getByLabelText('目标语言'), 'ja');
@@ -87,11 +92,63 @@ describe('精简 Popup', () => {
     expect(api.sendToPage).not.toHaveBeenCalled();
   });
 
+  it('保存偏好时完整回传渲染器模式，不因局部修改丢失字段', async () => {
+    const inlinePreferences = { ...preferences, rendererMode: 'inline' as const };
+    const api = createApi();
+    vi.mocked(api.getConfig).mockResolvedValue({
+      preferences: inlinePreferences, activeEngineId: 'google', theme: 'pearl-reader' as const,
+      availableEngines: [
+        { id: 'google', kind: 'google', name: 'Google', ready: true, capabilities: { streaming: false } },
+        { id: 'bing', kind: 'bing', name: 'Bing', ready: true, capabilities: { streaming: false } },
+      ],
+    });
+    render(<PopupApp api={api} />);
+    await waitFor(() => expect(screen.getByLabelText('翻译引擎')).toBeEnabled());
+    await userEvent.selectOptions(screen.getByLabelText('目标语言'), 'ja');
+    await waitFor(() => expect(api.savePopupState).toHaveBeenCalled());
+    expect(api.savePopupState).toHaveBeenLastCalledWith('google', expect.objectContaining({ rendererMode: 'inline', targetLanguage: 'ja' }));
+  });
+
+  it('getConfig 挂起时保存控件禁用且不发送保存，加载成功后解锁且字段不丢', async () => {
+    let resolveConfig!: (value: Awaited<ReturnType<PopupApi['getConfig']>>) => void;
+    const api = createApi({ getConfig: vi.fn(() => new Promise<Awaited<ReturnType<PopupApi['getConfig']>>>((resolve) => { resolveConfig = resolve; })) });
+    render(<PopupApp api={api} />);
+
+    const target = screen.getByLabelText('目标语言');
+    expect(target).toBeDisabled();
+    expect(screen.getByLabelText('源语言')).toBeDisabled();
+    expect(screen.getByLabelText('翻译引擎')).toBeDisabled();
+    expect(screen.getByRole('button', { name: '双语对照' })).toBeDisabled();
+    // 主翻译按钮同样受配置加载门禁：getConfig 挂起时点击不得发送翻译/恢复命令。
+    expect(screen.getByRole('button', { name: '翻译 (Alt + A)' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: '翻译 (Alt + A)' }));
+    await waitFor(() => expect(api.sendToPage).not.toHaveBeenCalled());
+    expect(api.setTranslationBadge).not.toHaveBeenCalled();
+
+    // 门禁期间即便事件到达处理器也不得写入 fallback 默认值（含 rendererMode: 'legacy'）。
+    fireEvent.change(target, { target: { value: 'ja' } });
+    await waitFor(() => expect(api.savePopupState).not.toHaveBeenCalled());
+    expect(api.savePreferences).not.toHaveBeenCalled();
+
+    resolveConfig({
+      preferences: { ...preferences, rendererMode: 'inline' as const },
+      activeEngineId: 'google', theme: 'pearl-reader' as const,
+      availableEngines: [
+        { id: 'google', kind: 'google', name: 'Google', ready: true, capabilities: { streaming: false } },
+        { id: 'bing', kind: 'bing', name: 'Bing', ready: true, capabilities: { streaming: false } },
+      ],
+    });
+    await waitFor(() => expect(target).toBeEnabled());
+    expect(screen.getByRole('button', { name: '翻译 (Alt + A)' })).toBeEnabled();
+    await userEvent.selectOptions(target, 'ja');
+    await waitFor(() => expect(api.savePopupState).toHaveBeenCalled());
+    expect(api.savePopupState).toHaveBeenLastCalledWith('google', expect.objectContaining({ rendererMode: 'inline', targetLanguage: 'ja' }));
+  });
+
   it('快速连续切换引擎、语言和模式时后续保存继续使用最新引擎', async () => {
     const calls: string[] = [];
     const api = createApi({ savePopupState: vi.fn(async (engineId) => { calls.push(engineId); }) });
-    render(<PopupApp api={api} />);
-    await screen.findByLabelText('翻译引擎');
+    await renderAndAwaitLoaded(api);
 
     fireEvent.change(screen.getByLabelText('翻译引擎'), { target: { value: 'bing' } });
     fireEvent.change(screen.getByLabelText('目标语言'), { target: { value: 'ja' } });
@@ -104,6 +161,7 @@ describe('精简 Popup', () => {
     const api = createApi({ getProgress: vi.fn(async () => ({ status: 'complete', completed: 2, failed: 0, total: 2 })) });
     render(<PopupApp api={api} />);
     await screen.findByRole('button', { name: '显示原文 (Alt + A)' });
+    await waitFor(() => expect(screen.getByLabelText('翻译引擎')).toBeEnabled());
 
     await userEvent.selectOptions(screen.getByLabelText('翻译引擎'), 'bing');
 
@@ -124,7 +182,9 @@ describe('精简 Popup', () => {
   it('已翻译页面切换显示模式后立即重译并保持显示原文按钮', async () => {
     const api = createApi({ getProgress: vi.fn(async () => ({ status: 'complete', completed: 2, failed: 0, total: 2 })) });
     render(<PopupApp api={api} />);
-    await userEvent.click(await screen.findByRole('button', { name: '双语对照' }));
+    await screen.findByRole('button', { name: '显示原文 (Alt + A)' });
+    await waitFor(() => expect(screen.getByRole('button', { name: '双语对照' })).toBeEnabled());
+    await userEvent.click(screen.getByRole('button', { name: '双语对照' }));
 
     await waitFor(() => expect(api.sendToPage).toHaveBeenCalledWith({
       type: 'translate-page', engineId: 'google', scope: 'whole-page', sourceLanguage: 'auto', mode: 'translation-only', targetLanguage: 'zh-Hans',
@@ -137,7 +197,9 @@ describe('精简 Popup', () => {
     let progressListener: ((progress: { status: string; completed: number; failed: number; total: number }) => void) | undefined;
     const api = createApi({ subscribeProgress: vi.fn((listener) => { progressListener = listener; return () => undefined; }) });
     render(<PopupApp api={api} />);
-    await userEvent.click(await screen.findByRole('button', { name: '翻译 (Alt + A)' }));
+    const translateButton = await screen.findByRole('button', { name: '翻译 (Alt + A)' });
+    await waitFor(() => expect(translateButton).toBeEnabled());
+    await userEvent.click(translateButton);
     expect(api.setTranslationBadge).toHaveBeenCalledWith(true);
     expect(api.sendToPage).toHaveBeenCalledWith(expect.objectContaining({ type: 'translate-page', scope: 'whole-page', targetLanguage: 'zh-Hans' }));
     progressListener?.({ status: 'complete', completed: 1, failed: 0, total: 1 });
@@ -165,22 +227,26 @@ describe('精简 Popup', () => {
 });
 
 describe('Popup 消息恢复', () => {
-  it('接收端不存在时注入 content.js 并重试一次', async () => {
+  it('接收端不存在时先注入两套样式再按 manifest 顺序注入三个脚本并重试一次', async () => {
     const sendMessage = vi.fn()
       .mockRejectedValueOnce(new Error('Could not establish connection. Receiving end does not exist.'))
       .mockResolvedValueOnce({ ok: true });
     const executeScript = vi.fn(async () => undefined);
+    const insertCSS = vi.fn(async () => undefined);
     const { createPopupApi } = await import('../../src/popup/api');
     const api = createPopupApi({
       runtime: { id: 'extension-id', sendMessage: vi.fn(), openOptionsPage: vi.fn(), onMessage: { addListener: vi.fn(), removeListener: vi.fn() } },
       tabs: { getCurrent: vi.fn(async () => undefined), query: vi.fn(async () => [{ id: 7, active: true, url: 'https://example.com' }]), sendMessage },
-      scripting: { executeScript },
+      scripting: { executeScript, insertCSS },
       action: { setBadgeText: vi.fn(async () => undefined), setBadgeBackgroundColor: vi.fn(async () => undefined) },
       i18n: { getMessage: vi.fn(() => '') },
     });
 
     await expect(api.sendToPage({ type: 'translate-page' })).resolves.toEqual({ ok: true });
-    expect(executeScript).toHaveBeenCalledWith({ target: { tabId: 7 }, files: ['content.js'] });
+    // 样式必须先于脚本注入，且两套样式与三个脚本按 manifest 声明顺序补全。
+    expect(insertCSS).toHaveBeenCalledWith({ target: { tabId: 7 }, files: ['content.css', 'content-inline.css'] });
+    expect(executeScript).toHaveBeenCalledWith({ target: { tabId: 7 }, files: ['content.js', 'content-inline.js', 'content-main.js'] });
+    expect(insertCSS.mock.invocationCallOrder[0]).toBeLessThan(executeScript.mock.invocationCallOrder[0]);
     expect(sendMessage).toHaveBeenCalledTimes(2);
   });
 

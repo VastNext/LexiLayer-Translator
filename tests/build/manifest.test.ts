@@ -16,7 +16,10 @@ describe('manifest', () => {
     expect(manifest.content_scripts).toEqual([
       expect.objectContaining({
         matches: ['<all_urls>'],
-        js: ['content.js'],
+        // 单条目 js 数组顺序即注入顺序：装配层依赖前两个脚本的全局接口。
+        js: ['content.js', 'content-inline.js', 'content-main.js'],
+        // 两套样式并列声明式注入：legacy 样式与内联样式缺一不可。
+        css: ['content.css', 'content-inline.css'],
       }),
     ]);
     expect(manifest.web_accessible_resources).toEqual([{

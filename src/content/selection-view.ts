@@ -125,14 +125,15 @@ export class SelectionView implements SelectionViewHandle {
   }
 
   setResult(value: string): void {
+    // 准备提示只用于展示：this.result 与 data-vast-state 保持真实译文语义，
+    // 避免 loading 阶段被准备文案误标为 translated 或被复制。
     this.result = value;
     this.host.dataset.vastState = value ? (/失败/.test(value) ? 'error' : 'translated') : 'loading';
     const result = this.shadow.querySelector('[data-result]');
-    if (result) result.textContent = value;
+    if (result) result.textContent = value || this.t('preparing');
   }
 
   appendResult(chunk: string): void {
-    if (this.result === '准备翻译…') this.result = '';
     this.setResult(this.result + chunk);
   }
 
@@ -279,7 +280,7 @@ export class SelectionView implements SelectionViewHandle {
   private requestTranslation(): void {
     const language = (this.shadow.querySelector('[name="target-language"]') as HTMLSelectElement).value;
     const context = this.shadow.querySelector('[name="include-context"]')?.getAttribute('aria-pressed') === 'true';
-    this.setResult(this.t('preparing'));
+    this.setResult('');
     const engineId = (this.shadow.querySelector('[name="engine"]') as HTMLSelectElement).value;
     this.actions.translate(language, context, engineId);
   }

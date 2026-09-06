@@ -69,6 +69,26 @@ function createStatefulApi(settings: OptionsSettings = loaded): OptionsApi {
 }
 
 describe('Options v2 多引擎设置', () => {
+  it('阅读偏好在配置加载完成前禁用，避免编辑被 reload 覆盖', async () => {
+    const api = createApi();
+    let resolveLoad!: (settings: OptionsSettings) => void;
+    vi.mocked(api.load).mockImplementationOnce(() => new Promise<OptionsSettings>((resolve) => { resolveLoad = resolve; }));
+    render(<OptionsApp api={api} />);
+
+    expect(screen.getByLabelText('渲染器模式')).toBeDisabled();
+    expect(screen.getByLabelText('目标语言')).toBeDisabled();
+    expect(screen.getByLabelText('自定义翻译要求')).toBeDisabled();
+    expect(screen.getByRole('button', { name: '保存阅读偏好' })).toBeDisabled();
+
+    // 加载完成前用户无法编辑（disabled 门禁），编辑不会发生也就不会被 reload 用存储值覆盖。
+    resolveLoad(structuredClone(loaded));
+    await waitFor(() => expect(screen.getByLabelText('渲染器模式')).toBeEnabled());
+    expect(screen.getByRole('button', { name: '保存阅读偏好' })).toBeEnabled();
+    await userEvent.selectOptions(screen.getByLabelText('目标语言'), 'ja');
+    await userEvent.click(screen.getByRole('button', { name: '保存阅读偏好' }));
+    await waitFor(() => expect(api.savePreferences).toHaveBeenCalledWith(expect.objectContaining({ targetLanguage: 'ja' })));
+  });
+
   it('提供五张外观主题卡，点击后立即保存并应用到根节点', async () => {
     const api = createApi();
     render(<OptionsApp api={api} />);
@@ -94,7 +114,7 @@ describe('Options v2 多引擎设置', () => {
     expect(screen.getByRole('button', { name: '导出配置' })).toBeInTheDocument();
   });
 
-  it('reload 失败后结束加载、显示错误并允许重试成功', async () => {
+  it('reload 失败后保持 loaded=false 不解锁表单，重试成功后才解锁保存', async () => {
     const api = createApi();
     vi.mocked(api.load)
       .mockRejectedValueOnce(new Error('设置加载失败'))
@@ -103,10 +123,18 @@ describe('Options v2 多引擎设置', () => {
 
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('设置加载失败'));
     expect(screen.getByRole('button', { name: '重试' })).toBeEnabled();
+    // 加载失败时表单与保存保持禁用，防止用默认值解锁编辑后覆盖存储中的真实配置。
+    expect(screen.getByLabelText('渲染器模式')).toBeDisabled();
+    expect(screen.getByLabelText('目标语言')).toBeDisabled();
+    expect(screen.getByRole('button', { name: '保存阅读偏好' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '新增自定义 AI' })).toBeDisabled();
     await userEvent.click(screen.getByRole('button', { name: '重试' }));
 
     expect(await screen.findByRole('group', { name: '工作 AI' })).toBeInTheDocument();
     expect(api.load).toHaveBeenCalledTimes(2);
+    // 重试成功后表单与保存解锁。
+    await waitFor(() => expect(screen.getByLabelText('渲染器模式')).toBeEnabled());
+    expect(screen.getByRole('button', { name: '保存阅读偏好' })).toBeEnabled();
   });
 
   it('内置引擎只显示简洁的内置标识，不展示默认免费或备用说明', async () => {
@@ -136,6 +164,18 @@ describe('Options v2 多引擎设置', () => {
       inlineSelectionModifier: 'Alt',
     }));
     expect(screen.getByText(/发送选区所在段落的有限文本帮助消歧，不翻译上下文本身/)).toBeInTheDocument();
+  });
+
+  it('渲染器模式下拉可选内联/兼容，保存时携带所选值并说明生效时机', async () => {
+    const api = createApi({ ...loaded, readingPreferences: { ...loaded.readingPreferences, rendererMode: 'inline' } });
+    render(<OptionsApp api={api} />);
+    const selector = await screen.findByRole('combobox', { name: '渲染器模式' });
+    expect(selector).toHaveValue('inline');
+    expect(screen.getByText(/修改在下次全新页面翻译时生效/)).toBeInTheDocument();
+
+    await userEvent.selectOptions(selector, 'legacy');
+    await userEvent.click(screen.getByRole('button', { name: '保存阅读偏好' }));
+    expect(api.savePreferences).toHaveBeenCalledWith(expect.objectContaining({ rendererMode: 'legacy' }));
   });
 
   it('测试连接立即显示测试中，成功失败均更新固定 Toast，设置动作按钮使用统一尺寸类', async () => {

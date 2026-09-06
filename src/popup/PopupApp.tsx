@@ -24,7 +24,7 @@ export interface PopupApi {
 const fallbackPreferences: NonNullable<PopupConfigResponse['preferences']> = {
   sourceLanguage: 'auto', targetLanguage: 'zh-Hans', displayMode: 'bilingual', scanScope: 'whole-page' as const,
   translationPosition: 'after' as const, userInstruction: '', selectionContext: true,
-  selectionPopupEnabled: true, inlineSelectionModifier: 'Control' as const,
+  selectionPopupEnabled: true, inlineSelectionModifier: 'Control' as const, rendererMode: 'legacy' as const,
 };
 
 export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: Translator }) {
@@ -37,6 +37,9 @@ export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: T
   const [status, setStatus] = useState(t('ready'));
   const [busy, setBusy] = useState(false);
   const [pageActive, setPageActive] = useState(false);
+  // 配置加载门禁：真实 getConfig 完成前禁止任何保存，防止 fallback 默认值
+  // （含 rendererMode: 'legacy'）覆盖存储中的真实偏好，违反渲染器模式 Options-only。
+  const [configLoaded, setConfigLoaded] = useState(false);
   const [theme, setTheme] = useState<Theme>('pearl-reader');
   const [experts, setExperts] = useState<NonNullable<PopupConfigResponse['experts']>>([]);
   const [activeExpertByEngine, setActiveExpertByEngine] = useState<Record<string, string>>({});
@@ -54,6 +57,7 @@ export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: T
       if (config.availableEngines?.length) setEngines(config.availableEngines);
       setExperts(config.experts?.filter((expert) => expert.enabled) ?? []);
       setActiveExpertByEngine(config.activeExpertByEngine ?? {});
+      setConfigLoaded(true);
     }).catch((error) => setStatus(error instanceof Error ? error.message : t('statusFailed')));
     void api.getProgress().then((progress) => { if (!disposed && progress) applyProgress(progress); }).catch(() => undefined);
     void Promise.resolve(api.subscribeProgress((progress) => applyProgress(progress)))
@@ -90,6 +94,7 @@ export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: T
   }
 
   async function savePreferences(next: typeof preferences, retranslate = false): Promise<void> {
+    if (!configLoaded) return;
     setPreferences(next);
     try {
       await (api.savePopupState ? (selectedExpertId(engineId) !== undefined ? api.savePopupState(engineId, next, selectedExpertId(engineId)) : api.savePopupState(engineId, next)) : api.savePreferences?.(next));
@@ -99,6 +104,7 @@ export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: T
   }
 
   async function changeEngine(nextEngineId: string): Promise<void> {
+    if (!configLoaded) return;
     setEngineId(nextEngineId);
     try {
       await (api.savePopupState ? (selectedExpertId(nextEngineId) !== undefined ? api.savePopupState(nextEngineId, preferences, selectedExpertId(nextEngineId)) : api.savePopupState(nextEngineId, preferences)) : api.setActiveEngine?.(nextEngineId) ?? Promise.resolve());
@@ -107,6 +113,7 @@ export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: T
   }
 
   async function changeExpert(nextExpertId: string): Promise<void> {
+    if (!configLoaded) return;
     const nextMap = { ...activeExpertByEngine, [engineId]: nextExpertId };
     setActiveExpertByEngine(nextMap);
     try {
@@ -116,6 +123,9 @@ export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: T
   }
 
   async function togglePage(): Promise<void> {
+    // 配置加载门禁：getConfig 完成前不允许发送翻译/恢复命令，避免用
+    // fallback 默认值（含 rendererMode: 'legacy'）发起与存储偏好不符的翻译。
+    if (!configLoaded) return;
     setBusy(true);
     try {
       if (pageActive) {
@@ -140,22 +150,22 @@ export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: T
     </header>
     <div className="popup-controls">
        <div className="language-control">
-      <label><span>{t('sourceLanguage')}</span><select aria-label={t('sourceLanguage')} value={preferences.sourceLanguage ?? 'auto'} onChange={(event) => void savePreferences({ ...preferences, sourceLanguage: event.target.value })}>
+      <label><span>{t('sourceLanguage')}</span><select aria-label={t('sourceLanguage')} disabled={!configLoaded} value={preferences.sourceLanguage ?? 'auto'} onChange={(event) => void savePreferences({ ...preferences, sourceLanguage: event.target.value })}>
         {languageOptions.map((language) => <option key={language.value} value={language.value}>{language.label}</option>)}
       </select></label><span className="language-arrow" aria-hidden="true">→</span>
-      <label><span>{t('targetLanguage')}</span><select aria-label={t('targetLanguage')} value={preferences.targetLanguage} onChange={(event) => void savePreferences({ ...preferences, targetLanguage: event.target.value })}>
+      <label><span>{t('targetLanguage')}</span><select aria-label={t('targetLanguage')} disabled={!configLoaded} value={preferences.targetLanguage} onChange={(event) => void savePreferences({ ...preferences, targetLanguage: event.target.value })}>
         {languageOptions.map((language) => <option key={language.value} value={language.value}>{language.label}</option>)}
       </select></label>
        </div>
-       <label className="engine-control"><span className="engine-label">{t('translationEngine')}</span><select aria-label={t('translationEngine')} value={engineId} onChange={(event) => {
+       <label className="engine-control"><span className="engine-label">{t('translationEngine')}</span><select aria-label={t('translationEngine')} disabled={!configLoaded} value={engineId} onChange={(event) => {
          void changeEngine(event.target.value);
        }}>{engines.map((engine) => <option key={engine.id} value={engine.id} disabled={!engine.ready}>{engineDisplayName(engine as Parameters<typeof engineDisplayName>[0])}</option>)}</select></label>
-       {isAiEngine(engineId, engines.find((engine) => engine.id === engineId)?.kind) && experts.length > 0 && <label className="engine-control expert-control"><span className="engine-label">AI 专家</span><select aria-label="AI 专家" value={activeExpertByEngine[engineId] ?? ''} onChange={(event) => void changeExpert(event.target.value)}><option value="">不使用专家</option>{experts.map((expert) => <option key={expert.id} value={expert.id}>{expert.name}</option>)}</select></label>}
+       {isAiEngine(engineId, engines.find((engine) => engine.id === engineId)?.kind) && experts.length > 0 && <label className="engine-control expert-control"><span className="engine-label">AI 专家</span><select aria-label="AI 专家" disabled={!configLoaded} value={activeExpertByEngine[engineId] ?? ''} onChange={(event) => void changeExpert(event.target.value)}><option value="">不使用专家</option>{experts.map((expert) => <option key={expert.id} value={expert.id}>{expert.name}</option>)}</select></label>}
     </div>
     <p className="status translation-status" role="status"><span className="status-dot" aria-hidden="true" />{status}</p>
     <div className="primary-actions">
-      <button className="mode-icon" aria-label={preferences.displayMode === 'bilingual' ? t('bilingual') : t('translationOnly')} title={t('modeToggleHelp')} onClick={() => void savePreferences({ ...preferences, displayMode: preferences.displayMode === 'bilingual' ? 'translation' : 'bilingual' }, true)}>{preferences.displayMode === 'bilingual' ? '◫' : '▣'}</button>
-      <button className="primary primary--wide" disabled={busy} aria-busy={busy} onClick={() => void togglePage()}>{busy ? t('statusTranslating') : pageActive ? t('showOriginal') : t('translateShortcut')}</button>
+      <button className="mode-icon" aria-label={preferences.displayMode === 'bilingual' ? t('bilingual') : t('translationOnly')} title={t('modeToggleHelp')} disabled={!configLoaded} onClick={() => void savePreferences({ ...preferences, displayMode: preferences.displayMode === 'bilingual' ? 'translation' : 'bilingual' }, true)}>{preferences.displayMode === 'bilingual' ? '◫' : '▣'}</button>
+      <button className="primary primary--wide" disabled={busy || !configLoaded} aria-busy={busy} onClick={() => void togglePage()}>{busy ? t('statusTranslating') : pageActive ? t('showOriginal') : t('translateShortcut')}</button>
     </div>
   </main>;
 }

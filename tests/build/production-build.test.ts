@@ -63,7 +63,10 @@ describe('生产构建', () => {
 
     const manifest = JSON.parse(readFileSync(resolve(outputDirectory, 'manifest.json'), 'utf8')) as BuiltManifest;
     const resources = manifest.web_accessible_resources?.[0]?.resources ?? [];
-    const contentBundle = readFileSync(resolve(outputDirectory, 'content.js'), 'utf8');
+    // 站点规则 chunk 由装配层 content-main.js 按需加载；content.js 是纯控制器库。
+    const contentBundles = ['content.js', 'content-inline.js', 'content-main.js']
+      .map((file) => readFileSync(resolve(outputDirectory, file), 'utf8'));
+    const mainBundle = contentBundles[2] ?? '';
     const siteIds = [
       'google-search', 'bing-search', 'github', 'youtube',
       'reddit', 'x', 'stackoverflow', 'substack',
@@ -75,9 +78,11 @@ describe('生产构建', () => {
       expect(resources).toContain(pattern);
       expect(existsSync(resolve(outputDirectory, pattern))).toBe(true);
     }
-    expect(contentBundle).toContain('rules/');
-    expect(contentBundle).not.toContain('import.meta');
-    expect(contentBundle).not.toMatch(/^\s*import\b/m);
+    expect(mainBundle).toContain('rules/');
+    for (const bundle of contentBundles) {
+      expect(bundle).not.toContain('import.meta');
+      expect(bundle).not.toMatch(/^\s*import\b/m);
+    }
     expect(resources).toContain('experts.json');
     expect(existsSync(resolve(outputDirectory, 'experts.json'))).toBe(true);
     expect(existsSync(resolve(outputDirectory, 'EXPERTS-NOTICE.txt'))).toBe(true);

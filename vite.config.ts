@@ -41,6 +41,40 @@ function buildClassicContentScript(): Plugin {
             formats: ['iife'],
             name: 'LexiLayerContent',
             fileName: () => 'content.js',
+            // index.ts 导入 content.css，这里固定输出名为 content.css，
+            // 与 manifest content_scripts 声明一致，供发行校验遍历。
+            cssFileName: 'content',
+          },
+          outDir: resolve(import.meta.dirname, 'dist'),
+        },
+      });
+      // 内联渲染器独立构建为 content-inline.js + content-inline.css，
+      // 通过 manifest 单一 content_scripts 条目按序加载，保持 content.js 体积预算。
+      await build({
+        configFile: false,
+        build: {
+          emptyOutDir: false,
+          lib: {
+            entry: resolve(import.meta.dirname, 'src/content/inline-renderer.ts'),
+            formats: ['iife'],
+            name: 'LexiLayerInlineRenderer',
+            fileName: () => 'content-inline.js',
+            cssFileName: 'content-inline',
+          },
+          outDir: resolve(import.meta.dirname, 'dist'),
+        },
+      });
+      // 装配层独立构建为 content-main.js：运行时依赖与启动路由通过 content.js
+      // 的 iife 全局最小接口接入，content.js 本体保持纯控制器库以守住预算。
+      await build({
+        configFile: false,
+        build: {
+          emptyOutDir: false,
+          lib: {
+            entry: resolve(import.meta.dirname, 'src/content/main.ts'),
+            formats: ['iife'],
+            name: 'LexiLayerContentMain',
+            fileName: () => 'content-main.js',
           },
           outDir: resolve(import.meta.dirname, 'dist'),
         },

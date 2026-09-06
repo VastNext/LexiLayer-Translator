@@ -90,6 +90,7 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
     const generation = ++reloadGeneration.current;
     setLoaded(false);
     setLoadFailed(false);
+    let succeeded = false;
     try {
       const value = await api.load();
       if (generation !== reloadGeneration.current) return;
@@ -102,13 +103,16 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
       const keys = await Promise.all(customEngines.map(async (engine) => engine.hasApiKey ? api.getEngineApiKey(engine.id) : ''));
       if (generation !== reloadGeneration.current) return;
       setDrafts(loadedDrafts.map((draft, index) => ({ ...draft, apiKey: keys[index] })));
+      succeeded = true;
       if (message) setStatus(message);
     } catch (error) {
       if (generation !== reloadGeneration.current) return;
       setLoadFailed(true);
       setStatus(error instanceof Error ? error.message : t('statusSaveFailed'));
     } finally {
-      if (generation === reloadGeneration.current) setLoaded(true);
+      // 只有加载成功才解锁表单与保存：失败时保持 loaded=false，
+      // 避免用默认值解锁编辑后覆盖存储中的真实配置。
+      if (generation === reloadGeneration.current && succeeded) setLoaded(true);
     }
   }
 
@@ -381,19 +385,20 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
     </section>
 
     <section id="reading-preferences" className="section" aria-labelledby="reading-title"><div className="section-header"><h2 id="reading-title">{t('optionsReadingPreferences')}</h2><span className="section-index">03 / READ</span></div><div className="grid">
-      <label className="field">{t('targetLanguage')}<select aria-label={t('targetLanguage')} value={settings.readingPreferences.targetLanguage} onChange={(event) => updatePreferences('targetLanguage', event.target.value)}>{languageOptions.map((language) => <option key={language.value} value={language.value}>{language.label}</option>)}</select></label>
-      <label className="field">{t('defaultMode')}<select aria-label={t('defaultMode')} value={settings.readingPreferences.displayMode} onChange={(event) => updatePreferences('displayMode', event.target.value as ReadingPreferences['displayMode'])}><option value="bilingual">{t('bilingual')}</option><option value="translation">{t('translationOnly')}</option></select></label>
-      <label className="field">{t('translationPosition')}<select aria-label={t('translationPosition')} value={settings.readingPreferences.translationPosition} onChange={(event) => updatePreferences('translationPosition', event.target.value as ReadingPreferences['translationPosition'])}><option value="after">{t('positionAfter')}</option><option value="before">{t('positionBefore')}</option></select></label>
-      <label className="field">{t('defaultScope')}<select aria-label={t('defaultScope')} value={settings.readingPreferences.scanScope} onChange={(event) => updatePreferences('scanScope', event.target.value as ReadingPreferences['scanScope'])}><option value="main-content">{t('mainContent')}</option><option value="whole-page">{t('wholePage')}</option></select></label>
-      <label className="field field--wide">{t('customInstruction')}<textarea aria-label={t('customInstruction')} value={settings.readingPreferences.userInstruction} onChange={(event) => updatePreferences('userInstruction', event.target.value)} /><small>{t('instructionCustomOnly')}</small></label>
+      <label className="field">{t('targetLanguage')}<select aria-label={t('targetLanguage')} disabled={!loaded} value={settings.readingPreferences.targetLanguage} onChange={(event) => updatePreferences('targetLanguage', event.target.value)}>{languageOptions.map((language) => <option key={language.value} value={language.value}>{language.label}</option>)}</select></label>
+      <label className="field">{t('defaultMode')}<select aria-label={t('defaultMode')} disabled={!loaded} value={settings.readingPreferences.displayMode} onChange={(event) => updatePreferences('displayMode', event.target.value as ReadingPreferences['displayMode'])}><option value="bilingual">{t('bilingual')}</option><option value="translation">{t('translationOnly')}</option></select></label>
+      <label className="field">{t('translationPosition')}<select aria-label={t('translationPosition')} disabled={!loaded} value={settings.readingPreferences.translationPosition} onChange={(event) => updatePreferences('translationPosition', event.target.value as ReadingPreferences['translationPosition'])}><option value="after">{t('positionAfter')}</option><option value="before">{t('positionBefore')}</option></select></label>
+      <label className="field">{t('defaultScope')}<select aria-label={t('defaultScope')} disabled={!loaded} value={settings.readingPreferences.scanScope} onChange={(event) => updatePreferences('scanScope', event.target.value as ReadingPreferences['scanScope'])}><option value="main-content">{t('mainContent')}</option><option value="whole-page">{t('wholePage')}</option></select></label>
+      <label className="field">{t('rendererMode')}<select aria-label={t('rendererMode')} disabled={!loaded} value={settings.readingPreferences.rendererMode} onChange={(event) => updatePreferences('rendererMode', event.target.value as ReadingPreferences['rendererMode'])}><option value="inline">{t('rendererInline')}</option><option value="legacy">{t('rendererLegacy')}</option></select><small>{t('rendererModeHelp')}</small></label>
+      <label className="field field--wide">{t('customInstruction')}<textarea aria-label={t('customInstruction')} disabled={!loaded} value={settings.readingPreferences.userInstruction} onChange={(event) => updatePreferences('userInstruction', event.target.value)} /><small>{t('instructionCustomOnly')}</small></label>
     </div></section>
 
     <section id="selection-preferences" className="section" aria-label={t('selectionPreferences')}><div className="section-header"><h2>{t('selectionPreferences')}</h2><span className="section-index">04 / SELECT</span></div><div className="grid">
-      <label className="field check-field"><input aria-label={t('limitedContext')} type="checkbox" checked={settings.readingPreferences.selectionContext} onChange={(event) => updatePreferences('selectionContext', event.target.checked)} /> {t('limitedContextLabel')}</label>
-      <label className="field check-field"><input aria-label={t('selectionPopupEnabled')} type="checkbox" checked={settings.readingPreferences.selectionPopupEnabled} onChange={(event) => updatePreferences('selectionPopupEnabled', event.target.checked)} /> {t('selectionPopupEnabled')}</label>
-      <label className="field">{t('inlineSelectionModifier')}<select aria-label={t('inlineSelectionModifier')} value={settings.readingPreferences.inlineSelectionModifier} onChange={(event) => updatePreferences('inlineSelectionModifier', event.target.value as ReadingPreferences['inlineSelectionModifier'])}><option value="Control">Ctrl</option><option value="Alt">Alt</option><option value="Shift">Shift</option><option value="Meta">{typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform) ? 'Command' : 'Win / Command'}</option><option value="Off">{t('modifierOff')}</option></select></label>
+      <label className="field check-field"><input aria-label={t('limitedContext')} type="checkbox" disabled={!loaded} checked={settings.readingPreferences.selectionContext} onChange={(event) => updatePreferences('selectionContext', event.target.checked)} /> {t('limitedContextLabel')}</label>
+      <label className="field check-field"><input aria-label={t('selectionPopupEnabled')} type="checkbox" disabled={!loaded} checked={settings.readingPreferences.selectionPopupEnabled} onChange={(event) => updatePreferences('selectionPopupEnabled', event.target.checked)} /> {t('selectionPopupEnabled')}</label>
+      <label className="field">{t('inlineSelectionModifier')}<select aria-label={t('inlineSelectionModifier')} disabled={!loaded} value={settings.readingPreferences.inlineSelectionModifier} onChange={(event) => updatePreferences('inlineSelectionModifier', event.target.value as ReadingPreferences['inlineSelectionModifier'])}><option value="Control">Ctrl</option><option value="Alt">Alt</option><option value="Shift">Shift</option><option value="Meta">{typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform) ? 'Command' : 'Win / Command'}</option><option value="Off">{t('modifierOff')}</option></select></label>
       <p className="field field--wide context-help">{t('limitedContextHelp')}</p>
-    </div><div className="actions actions--primary"><button className="primary options-action" onClick={() => void act(() => api.savePreferences(settings.readingPreferences), t('statusSaved'))}>{t('savePreferences')}</button></div></section>
+    </div><div className="actions actions--primary"><button className="primary options-action" disabled={!loaded} onClick={() => void act(() => api.savePreferences(settings.readingPreferences), t('statusSaved'))}>{t('savePreferences')}</button></div></section>
 
     <section id="appearance-theme" className="section theme-section" aria-label={t('appearanceTheme')}><div className="section-header"><div><h2>{t('appearanceTheme')}</h2><p className="section-copy">{t('themeDescription')}</p></div><span className="section-index">05 / THEME</span></div>
       <div className="theme-grid">{themeChoices.map((theme) => <button key={theme.id} className={`theme-choice ${settings.theme === theme.id ? 'selected' : ''}`} aria-pressed={settings.theme === theme.id} aria-label={`${theme.name}：${t(theme.descriptionKey)}`} onClick={() => void chooseTheme(theme.id)}>

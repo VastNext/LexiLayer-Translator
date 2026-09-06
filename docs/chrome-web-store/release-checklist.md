@@ -142,6 +142,10 @@ VAST_E2E_PROXY=http://127.0.0.1:7890 npm run e2e:network
 manifest.json
 background.js
 content.js
+content-inline.js
+content-main.js
+content.css
+content-inline.css
 popup.html
 options.html
 icons/
@@ -150,13 +154,15 @@ assets/
 rules/
 ```
 
+三个内容脚本（`content.js`、`content-inline.js`、`content-main.js`）与两套样式（`content.css`、`content-inline.css`）由 manifest 单一 `content_scripts` 条目按序注入，ZIP 中必须全部存在；`scripts/validate-release.mjs` 会从 manifest 遍历校验。
+
 不能多套一层 `dist/`。
 
 Git Bash 示例：
 
 ```bash
 cd dist
-zip -r ../lexilayer-translator-0.7.8-chrome-web-store.zip .
+zip -r ../lexilayer-translator-0.8.1-chrome-web-store.zip .
 ```
 
 正式 GitHub Release 使用 `.github/workflows/release.yml`：推送与 `package.json` 一致的 `vX.Y.Z` 标签后，Action 会从干净检出运行测试、类型检查和构建，生成 ZIP、SHA-256 和 GitHub Release。`workflow_dispatch` 只构建 Artifact，不创建 Release，可用于发布前验证。

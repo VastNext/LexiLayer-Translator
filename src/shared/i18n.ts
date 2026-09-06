@@ -26,6 +26,7 @@ const fallbackMessages: Record<string, string> = {
   statusEngineSaved: '实例已保存', statusEngineUpdated: '引擎状态已更新', statusActiveChanged: '默认引擎已更新', statusOrderSaved: '引擎顺序已保存', statusEngineDeleted: '实例已删除', importApplied: '配置已安全导入',
   translateShortcut: '翻译 (Alt + A)', showOriginal: '显示原文 (Alt + A)', modeToggleHelp: '切换双语对照与仅译文', settingsNavigation: '设置导航', optionsTitle: '翻译设置', appearanceTheme: '外观主题', dataPrivacy: '数据隐私', themeDescription: '五套主题共享相同功能结构，点击后立即保存。', themeSaved: '主题已保存',
   themePearlDescription: '浅蓝珍珠，安静轻盈的默认阅读主题。', themeCommandDescription: '深色命令台，快速且键盘优先。', themeSageDescription: '鼠尾草绿，温暖友好的全球阅读感。', themeEditorialDescription: '奶油紫与衬线标题，内容编辑感更强。', themePrecisionDescription: '高精度蓝，理性、可靠且更方正。',
+  rendererMode: '渲染器模式', rendererInline: '内联模式', rendererLegacy: '兼容模式', rendererModeHelp: '内联模式在原文内部渲染译文，不改变页面布局；兼容模式保持旧版行为。修改在下次全新页面翻译时生效。',
 };
 
 function substitute(message: string, substitutions?: string | string[]): string {

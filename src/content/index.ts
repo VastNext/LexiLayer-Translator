@@ -1,13 +1,14 @@
+// legacy 渲染器与划词节点样式：由本入口导入以触发构建产出 content.css，
+// 供 manifest content_scripts 声明式注入（与 content-inline.css 并列）。
+import './content.css';
 import type { SiteRule } from '../rules/types';
 import type { TranslationRequest, TranslationResult } from '../shared/messages';
-import { DomRenderer, type TranslationMode } from './dom-renderer';
-import { scanParagraphElements, type ScanScope } from './dom-scanner';
-import { DynamicPageObserver } from './dynamic-observer';
+import type { TranslationMode } from './dom-renderer';
+import type { ScanScope } from './dom-scanner';
 import { ParagraphStore, type ParagraphRecord } from './paragraph-store';
-import { matchSiteRule } from './rule-matcher';
-import { registerSelectionController } from './selection-controller';
-import { ParagraphVisibilityBatchQueue, type SchedulerFailure } from './scheduler';
+import type { SchedulerFailure } from './scheduler';
 import { chooseTargetLanguage, normalizeLanguage } from '../shared/languages';
+import type { RendererMode } from '../shared/config';
 
 interface PageCommand {
   type: string;
@@ -19,11 +20,12 @@ interface PageCommand {
   text?: string;
   placement?: 'before' | 'after';
   engineId?: string;
+  rendererMode?: RendererMode;
 }
 
 interface PublicEngine { id: string; kind: string; name: string; ready: boolean; capabilities: { streaming: boolean } }
-interface PublicConfig {
-  preferences: { sourceLanguage?: string; targetLanguage: string; displayMode: string; translationPosition: 'before' | 'after'; scanScope: ScanScope };
+export interface PublicConfig {
+  preferences: { sourceLanguage?: string; targetLanguage: string; displayMode: string; translationPosition: 'before' | 'after'; scanScope: ScanScope; rendererMode: RendererMode };
   activeEngineId: string;
   availableEngines: PublicEngine[];
 }
@@ -53,6 +55,7 @@ export interface ContentControllerDependencies {
   renderTranslation(paragraph: ParagraphRecord, translation: string, options: { mode: TranslationMode; placement?: 'before' | 'after'; taskId: string; expectedVersion: number }): void;
   renderError(paragraph: ParagraphRecord, error: string): void;
   restore(paragraph: ParagraphRecord): void;
+  setRendererMode?(mode: RendererMode): void;
   cleanupPage(): void;
   startObserver(rule: SiteRule, store: ParagraphStore, scope: ScanScope, onChanges: (changes: ObserverChanges) => Promise<void>): void;
   stopObserver(): void;
@@ -102,6 +105,7 @@ export function createContentController(dependencies: ContentControllerDependenc
       placement: command.placement ?? preferences.translationPosition,
       scope: command.scope ?? preferences.scanScope,
       engineId: command.engineId ?? config.activeEngineId,
+      rendererMode: preferences.rendererMode ?? 'legacy',
     };
   }
 
@@ -206,6 +210,8 @@ export function createContentController(dependencies: ContentControllerDependenc
     command = await resolveCommand(command);
     if (currentGeneration !== generation) return;
     lastCommand = { ...lastCommand, ...command, type: 'translate-page' };
+    // 渲染器模式在每次全新页面翻译时读取一次：会话内动态更新与重试固定本次模式。
+    dependencies.setRendererMode?.(command.rendererMode ?? 'legacy');
     for (const paragraph of paragraphs.values()) dependencies.restore(paragraph);
     paragraphs.clear();
     store.clear();
@@ -288,85 +294,4 @@ export function createContentController(dependencies: ContentControllerDependenc
   }
 
   return { register: () => dependencies.addMessageListener(onMessage), onMessage, dispose };
-}
-
-export function createRuntimeDependencies(): ContentControllerDependencies {
-  const renderer = new DomRenderer();
-  let observer: DynamicPageObserver | undefined;
-  const visibilityQueues = new Set<ParagraphVisibilityBatchQueue<ParagraphRecord>>();
-  return {
-    addMessageListener(listener) {
-      chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-        void listener(message).then(sendResponse);
-        return true;
-      });
-    },
-    loadRule: () => matchSiteRule(new URL(location.href)),
-    scan: (rule, scope) => scanParagraphElements(document, rule, scope),
-    async translate(request) {
-      const response = await chrome.runtime.sendMessage({ type: 'translate-batch', ...request }) as { ok: boolean; data?: TranslationResult[]; error?: string };
-      if (!response.ok) throw new Error(response.error ?? '翻译失败');
-      return response.data ?? [];
-    },
-    async cancel(taskId) { await chrome.runtime.sendMessage({ type: 'cancel-task', taskId }); },
-    async getConfig() {
-      const response = await chrome.runtime.sendMessage({ type: 'get-public-config' }) as { data?: PublicConfig };
-       return response.data ?? { preferences: { targetLanguage: 'en', displayMode: 'bilingual', translationPosition: 'after', scanScope: 'main-content' }, activeEngineId: 'google', availableEngines: [] };
-    },
-    getPageLanguage: () => document.documentElement.lang || 'auto',
-    showSelectionText: () => undefined,
-    async schedule(items, worker) {
-      let visibility!: ParagraphVisibilityBatchQueue<ParagraphRecord>;
-      visibility = new ParagraphVisibilityBatchQueue(worker, undefined, () => visibilityQueues.delete(visibility));
-      visibilityQueues.add(visibility);
-      visibility.add(items.flat());
-      return visibility.whenIdle();
-    },
-    hasWaiting: () => [...visibilityQueues].some((queue) => queue.waitingCount > 0),
-    beginRender: (paragraph) => renderer.beginTask(paragraph),
-    renderLoading: (paragraph) => renderer.renderLoading(paragraph),
-    renderTranslation: (paragraph, text, options) => renderer.renderTranslation(paragraph, text, { ...options, placement: options.placement ?? 'after' }),
-    renderError: (paragraph, error) => renderer.renderError(paragraph, error),
-    restore: (paragraph) => renderer.restore(paragraph),
-    cleanupPage() {
-      for (const wrapper of document.querySelectorAll<HTMLElement>('[data-vast-translator]')) wrapper.remove();
-      for (const source of document.querySelectorAll<HTMLElement>('[data-vast-source]')) {
-        source.hidden = false;
-        source.replaceWith(...source.childNodes);
-      }
-      for (const hidden of document.querySelectorAll<HTMLElement>('[data-vast-original-hidden]')) hidden.hidden = false;
-    },
-    startObserver(rule, store, scope, onChanges) {
-      observer?.stop();
-      observer = new DynamicPageObserver(document.body, {
-        debounceMs: 150,
-        scan(root) {
-          return scanParagraphElements(root, rule, scope);
-        },
-        store,
-        onChanges(changes) {
-          for (const paragraph of [...changes.invalidated, ...changes.removed]) {
-            for (const queue of visibilityQueues) queue.remove(paragraph.element);
-          }
-          void onChanges(changes);
-        },
-      });
-      observer.start();
-    },
-    stopObserver() {
-      observer?.stop(); observer = undefined;
-      for (const queue of visibilityQueues) queue.disconnect();
-      visibilityQueues.clear();
-    },
-    report(progress) { void chrome.runtime.sendMessage({ type: 'page-progress', progress }).catch(() => undefined); },
-  };
-}
-
-if (typeof chrome !== 'undefined' && chrome.runtime?.id) {
-  const selection = registerSelectionController();
-  const dependencies = createRuntimeDependencies();
-  dependencies.showSelectionText = (text) => selection.showText(text);
-  const controller = createContentController(dependencies);
-  controller.register();
-  document.addEventListener('vast-translator-retry-all', () => { void controller.onMessage({ type: 'retry-page-translation' }); });
 }

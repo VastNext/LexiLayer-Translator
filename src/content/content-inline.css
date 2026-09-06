@@ -1,0 +1,36 @@
+/* 内联渲染器专属样式：仅作用于带 data-vast-inline 标记的段落内部结构，
+   与 legacy 渲染行为隔离，并通过 manifest content_scripts 真正构建加载。 */
+
+[data-vast-inline] > [data-vast-translator] {
+  white-space: pre-wrap;
+}
+
+[data-vast-inline] > div[data-vast-translator] {
+  display: block;
+}
+
+[data-vast-inline] > span[data-vast-translator] {
+  display: inline;
+}
+
+/* phrasing 宿主（p/h1-h6 等）内部不允许 div，译文 span 以块级行为呈现独立译文行。 */
+[data-vast-inline] > span[data-vast-translator][data-vast-block] {
+  display: block;
+}
+
+[data-vast-inline] > [data-vast-translator][data-vast-state="translated"] {
+  margin-block-start: .2em;
+}
+
+[data-vast-inline] > [data-vast-translator][data-vast-state="error"] {
+  color: #b3261e;
+}
+
+[data-vast-inline] > [data-vast-translator] [data-vast-retry-all] {
+  margin-inline-start: .35em;
+  cursor: pointer;
+}
+
+[data-vast-inline] > [data-vast-source][hidden] {
+  display: none !important;
+}

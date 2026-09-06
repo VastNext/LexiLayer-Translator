@@ -5,7 +5,7 @@
   A browser translator that turns configurable AI prompts into domain-aware translation.
 </p>
 
-当前版本：`0.7.8`。
+当前版本：`0.8.1`。
 
 <p align="center">
   <a href="https://github.com/VastNext/LexiLayer-Translator"><img src="https://img.shields.io/badge/status-MVP-orange.svg" alt="MVP status"></a>
@@ -131,7 +131,7 @@ API Key: 服务要求的值
 ## 🏗️ 技术架构
 
 - `src/background/`：Manifest V3 service worker，负责消息白名单、API Key、请求、重试、批处理、SSE、取消和缓存。
-- `src/content/`：原生 TypeScript content script，负责 DOM 扫描、段落状态、可见优先调度、动态页面、DOM 渲染和划词交互。
+- `src/content/`：原生 TypeScript 内容脚本，负责 DOM 扫描、段落状态、可见优先调度、动态页面、双渲染器和划词交互。构建拆为 `content.js`（控制器库）、`content-inline.js`（内联渲染器与样式）、`content-main.js`（装配层）三个常驻脚本，详见[渲染器维护文档](./docs/architecture/renderer-maintenance.md)。
 - `src/rules/`：通用规则与原创站点规则，按域名按需加载。
 - `src/popup/`：当前页面翻译控制、语言选择、显示模式和进度。
 - `src/options/`：AI 实例、翻译偏好、连接测试、缓存和配置数据管理。
@@ -162,7 +162,7 @@ VAST_E2E_PROXY=http://127.0.0.1:7890 npm run e2e:network
 
 ## 🗺️ 当前状态与路线
 
-当前版本：`0.7.8` · MVP
+当前版本：`0.8.1` · MVP
 
 - ✅ Google / Bing 网页与划词翻译
 - ✅ 多个 OpenAI 兼容 AI 实例
@@ -175,6 +175,18 @@ VAST_E2E_PROXY=http://127.0.0.1:7890 npm run e2e:network
 - ✅ 按 AI 底座保存当前专家选择
 
 当前不包含账号同步、云端配置、PDF 翻译、字幕翻译、术语库管理和自动整站翻译。
+
+## 0.8.0 更新
+
+- 🧩 **双渲染器**：新增内联渲染模式（Options → 渲染器模式）。内联模式在段落内部渲染译文，不向父级 flex/grid 容器新增子项，避免改变页面布局；链接、按钮、表单控件、自定义元素等复杂交互子树保守回退兼容模式。
+- 🎛️ **渲染器选择**：新安装默认内联模式；旧配置与导入的旧配置受控回退兼容模式。切换在下次全新页面翻译时生效，会话内重试保持本次模式。
+- 🔄 修复内联错误提示中的重试按钮被误判为网页交互导致的渲染器归属翻转。
+- 📦 内容脚本拆分为 `content.js` / `content-inline.js` / `content-main.js` 三个常驻脚本，累计体积预算 48KiB。
+
+## 0.8.1 更新
+
+- 🛑 修复仅译文内联模式下，隐藏源文导致动态观察器反复触发重翻、页面文字闪烁的问题。
+- 🧹 扩展自身隐藏的源文仍参与版本判断，同时继续过滤网页原生隐藏文本、图标和译文节点。
 
 ## 0.7.2 更新
 
@@ -231,6 +243,7 @@ VAST_E2E_PROXY=http://127.0.0.1:7890 npm run e2e:network
 - [隐私说明](./PRIVACY.md)
 - [Chrome Web Store 上架文档](./docs/chrome-web-store/README.md)
 - [站点翻译规则维护指南](./docs/rules/README.md)
+- [内容脚本与渲染器维护文档](./docs/architecture/renderer-maintenance.md)
 
 ## 🌐 官方地址
 

@@ -1,11 +1,27 @@
+import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { expect, test } from './fixtures';
 import packageJson from '../../package.json' with { type: 'json' };
 
 const API_KEY = 'e2e-secret-key-not-for-dom';
-const evidence = (name: string) => resolve(import.meta.dirname, `../evidence/e2e-${name}.png`);
-const themeEvidence = (name: string) => resolve(import.meta.dirname, `../evidence/theme-${name}.png`);
+// 证据输出统一写入 test-results，避免覆盖 tests/evidence 下的历史截图。
+const evidenceDir = resolve(import.meta.dirname, '../../test-results/evidence');
+mkdirSync(evidenceDir, { recursive: true });
+const evidence = (name: string) => resolve(evidenceDir, `e2e-${name}.png`);
+const themeEvidence = (name: string) => resolve(evidenceDir, `theme-${name}.png`);
+
+// 既有用例断言基于兼容模式的兄弟节点 wrapper；新安装默认内联，
+// 因此每个翻译用例显式把渲染器模式切回兼容模式。
+async function useLegacyRenderer(options: import('@playwright/test').Page): Promise<void> {
+  // Options 的阅读偏好表单在配置加载完成前就可交互，而加载完成时的
+  // setSettings 会覆盖加载前对表单的修改（空 storage 首次保存时写回 DEFAULT）。
+  // "新增自定义 AI"按钮 disabled={!loaded}，等待它可用即配置已真正加载。
+  await expect(options.getByRole('button', { name: '新增自定义 AI' })).toBeEnabled();
+  await options.getByLabel('渲染器模式').selectOption('legacy');
+  await options.getByRole('button', { name: '保存阅读偏好' }).click();
+  await expect(options.getByRole('status')).toHaveText('设置已保存');
+}
 
 async function addCustomEngine(
   options: import('@playwright/test').Page,
@@ -30,6 +46,8 @@ async function saveConfiguration(options: import('@playwright/test').Page, baseU
   const card = await addCustomEngine(options, baseUrl);
   await card.getByRole('button', { name: '设为默认' }).click();
   await expect(options.getByRole('status')).toHaveText('默认引擎已更新');
+  // 页面翻译用例全部断言兼容模式行为，统一显式切换。
+  await useLegacyRenderer(options);
 }
 
 async function openFixture(context: import('@playwright/test').BrowserContext, url: string) {
@@ -272,6 +290,9 @@ test('Popup 通过真实 Google/Bing clients 完成生产主链路并发送各�
     requests.push({ provider: 'bing', url: request.url(), body: request.postData(), contentType: request.headers()['content-type'] });
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ translations: [{ text: '您好' }] }]) });
   });
+  const options = await openExtensionPage('options.html');
+  await useLegacyRenderer(options);
+  await options.close();
   const page = await openFixture(context, server.networkFixtureUrl);
   const popup = await openExtensionPage('popup.html');
   await page.bringToFront();

@@ -131,5 +131,9 @@
   "selectionPopupEnabled": { "message": "Show selection popup button" },
   "inlineSelectionModifier": { "message": "Inline selection translation shortcut" },
   "modifierOff": { "message": "Off" },
-  "limitedContextHelp": { "message": "Send limited text from the selection's paragraph to help disambiguation; the context itself is not translated." }
+  "limitedContextHelp": { "message": "Send limited text from the selection's paragraph to help disambiguation; the context itself is not translated." },
+  "rendererMode": { "message": "Renderer mode" },
+  "rendererInline": { "message": "Inline mode" },
+  "rendererLegacy": { "message": "Legacy mode" },
+  "rendererModeHelp": { "message": "Inline mode renders translations inside the original element without changing page layout; legacy mode keeps previous behavior. Changes apply on the next full page translation." }
 }
