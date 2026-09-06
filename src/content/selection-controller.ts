@@ -167,19 +167,30 @@ export function createSelectionController(dependencies: SelectionDependencies) {
     const selected = remembered;
     if (!selected || !selected.block.isConnected) return;
     const existing = selected.block.nextElementSibling;
-    if (existing?.hasAttribute('data-vast-inline-selection-translation')) { existing.remove(); return; }
+    if (existing?.hasAttribute('data-vast-inline-selection-translation')) {
+      if (pending) pending = false;
+      existing.remove();
+      return;
+    }
     if (pending) {
       pending = false;
       return;
     }
     pending = true;
+    const placeholder = selected.block.ownerDocument.createElement('div');
+    placeholder.dataset.vastInlineSelectionTranslation = '';
+    placeholder.dataset.vastState = 'loading';
+    placeholder.textContent = '翻译中…';
+    selected.block.after(placeholder);
     const result = await dependencies.translateInline(selected.text, selected.context, config.activeEngineId, config.targetLanguage).catch(() => '');
-    if (!result || !pending || remembered !== selected || !selected.block.isConnected) return;
+    if (!result || !pending || remembered !== selected || !selected.block.isConnected) {
+      pending = false;
+      placeholder.remove();
+      return;
+    }
     pending = false;
-    const translation = selected.block.ownerDocument.createElement('div');
-    translation.dataset.vastInlineSelectionTranslation = '';
-    translation.textContent = result;
-    selected.block.after(translation);
+    placeholder.dataset.vastState = 'translated';
+    placeholder.textContent = result;
   }
 
   function start(language: string, includeContext: boolean, selectedEngineId: string): void {

@@ -531,6 +531,51 @@ describe('划词翻译控制器', () => {
     await vi.waitFor(() => expect(dependencies.translateInline).toHaveBeenCalledOnce());
   });
 
+  it('触发内联翻译后立即显示翻译中占位，完成后替换为译文', async () => {
+    let resolveTranslation!: (value: string) => void;
+    vi.mocked(dependencies.translateInline).mockReturnValue(new Promise((resolve) => { resolveTranslation = resolve; }));
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
+    register(); trustedMouseUp();
+    await vi.waitFor(() => expect(dependencies.getPublicConfig).toHaveBeenCalled());
+    dependencies.selection = null;
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' }));
+    expect(document.querySelector('[data-vast-inline-selection-translation]')).toHaveTextContent('翻译中…');
+
+    resolveTranslation('段后中文译文');
+    await vi.waitFor(() => expect(document.querySelector('[data-vast-inline-selection-translation]')).toHaveTextContent('段后中文译文'));
+  });
+
+  it('重复触发会立即移除翻译中占位，迟到结果不会重新插入', async () => {
+    let resolveTranslation!: (value: string) => void;
+    vi.mocked(dependencies.translateInline).mockReturnValue(new Promise((resolve) => { resolveTranslation = resolve; }));
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
+    register(); trustedMouseUp();
+    await vi.waitFor(() => expect(dependencies.getPublicConfig).toHaveBeenCalled());
+    dependencies.selection = null;
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' }));
+    expect(document.querySelector('[data-vast-inline-selection-translation]')).toHaveTextContent('翻译中…');
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' }));
+    expect(document.querySelector('[data-vast-inline-selection-translation]')).toBeNull();
+
+    resolveTranslation('迟到译文');
+    await Promise.resolve();
+    expect(document.querySelector('[data-vast-inline-selection-translation]')).toBeNull();
+  });
+
+  it('内联翻译失败会清理翻译中占位', async () => {
+    vi.mocked(dependencies.translateInline).mockRejectedValue(new Error('慢接口失败'));
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
+    register(); trustedMouseUp();
+    await vi.waitFor(() => expect(dependencies.getPublicConfig).toHaveBeenCalled());
+    dependencies.selection = null;
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' }));
+    expect(document.querySelector('[data-vast-inline-selection-translation]')).toHaveTextContent('翻译中…');
+    await vi.waitFor(() => expect(document.querySelector('[data-vast-inline-selection-translation]')).toBeNull());
+  });
+
   it('modifier 后按普通快捷键会清零计数，Ctrl+C 不会误触发翻译', async () => {
     vi.mocked(dependencies.getPublicConfig).mockResolvedValue({ ...(await dependencies.getPublicConfig()), inlineSelectionTriggerCount: 2 });
     dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
