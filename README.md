@@ -5,7 +5,7 @@
   A browser translator that turns configurable AI prompts into domain-aware translation.
 </p>
 
-当前版本：`0.9.3`。
+当前版本：`0.10.1`。
 
 <p align="center">
   <a href="https://github.com/VastNext/LexiLayer-Translator"><img src="https://img.shields.io/badge/status-MVP-orange.svg" alt="MVP status"></a>
@@ -162,7 +162,7 @@ VAST_E2E_PROXY=http://127.0.0.1:7890 npm run e2e:network
 
 ## 🗺️ 当前状态与路线
 
-当前版本：`0.9.3` · MVP
+当前版本：`0.10.1` · MVP
 
 - ✅ Google / Bing 网页与划词翻译
 - ✅ 多个 OpenAI 兼容 AI 实例
@@ -175,6 +175,19 @@ VAST_E2E_PROXY=http://127.0.0.1:7890 npm run e2e:network
 - ✅ 按 AI 底座保存当前专家选择
 
 当前不包含账号同步、云端配置、PDF 翻译、字幕翻译、术语库管理和自动整站翻译。
+
+## 0.10.1 更新
+
+- 🛑 彻底修复包含子段落（如 `p`）的表格单元格 `td` 或多层容器被同时扫描导致的父子重复翻译问题。
+- ⏳ 增加页面内容脚本与后台通信超时熔断机制（95 秒），避免网络挂起或异常时页面一直停留在“翻译中…”且没有重试按钮。
+
+## 0.10.0 更新
+
+- 自定义 AI 在缓存过滤后使用最多 100ms 的合批窗口，合并相同文本的进行中请求；保留每批 8 段／6000 字符限制，Google/Bing 不增加等待。
+- 折叠按钮和复选框标签只处理安全文本叶，保留图标与控件；`inert` 折叠区不提前插入占位，展开后重新扫描。
+- 滚动后发出的批次失败时及时显示错误和重试入口。
+- 成本统计仅为后台内存中的缓存、去重和 provider 调用计数，不是实际 HTTP 次数或计费 Token。
+- 维护说明：[AI 请求成本控制](./docs/architecture/ai-request-cost.md)。
 
 ## 0.8.0 更新
 

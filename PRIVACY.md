@@ -1,6 +1,6 @@
 # 语层翻译隐私说明
 
-生效版本：0.9.3
+生效版本：0.10.1
 
 ## 数据处理原则
 
@@ -34,6 +34,7 @@ Google 是默认引擎，请求发送到 `https://translate.googleapis.com/trans
 - AI 专家开关、自定义专家提示词和每个 AI 底座的当前专家选择：保存在 `chrome.storage.local`。专家提示词只会在用户选择自定义 AI 翻译时发送给该 AI 服务。
 - 翻译缓存：保存在扩展 IndexedDB 中，默认保留 30 天，最多 5000 条，并按最近访问时间淘汰。
 - 页面进度：按标签页与 frame 保存在 `chrome.storage.session`，仅保留于当前浏览器会话，不写入 `chrome.storage.sync` 或 `chrome.storage.local`。
+- AI 成本调试统计：仅在扩展后台内存中累计请求、缓存和去重等计数，不保存待译正文、译文、页面 URL、API Key 或提示词，不上传到分析服务器；后台重启后清零。统计不是供应商账单，不支持的 Token 用量不作估算冒充实测。
 
 用户可以在 Options 中清理翻译缓存；卸载扩展会由 Chrome 清除扩展本地数据。
 

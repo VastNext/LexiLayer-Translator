@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { scanParagraphElements, type ScanMetrics } from '../../src/content/dom-scanner';
+import { scanParagraphElements, unwrapAllTextLeaves, type ScanMetrics } from '../../src/content/dom-scanner';
 import type { SiteRule } from '../../src/rules/types';
 import { rule as githubRule } from '../../src/rules/sites/github';
 import { rule as googleSearchRule } from '../../src/rules/sites/google-search';
@@ -340,6 +340,21 @@ describe('scanParagraphElements', () => {
     expect(ids).toEqual(['shreddit-title', 'shreddit-body', 'shreddit-comment-body']);
   });
 
+  it('包含语义段落后代的容器节点不被重复扫描为候选（父子去重）', () => {
+    document.body.innerHTML = `
+      <table><tbody><tr><td id="container-td">
+        <p id="p1">First paragraph</p>
+        <p id="p2">Second paragraph</p>
+      </td></tr></tbody></table>`;
+
+    const elements = scanParagraphElements(document, rule, 'main-content');
+    const ids = elements.map((el) => el.id);
+
+    expect(ids).toContain('p1');
+    expect(ids).toContain('p2');
+    expect(ids).not.toContain('container-td');
+  });
+
   it('Google 搜索的广告、工具栏和分页不翻译，搜索结果正文保留', () => {
     document.body.innerHTML = `
       <main>
@@ -463,6 +478,7 @@ describe('scanParagraphElements', () => {
   it.each([
     ['hidden', '<section hidden><p id="target">隐藏</p></section>'],
     ['aria-hidden', '<section aria-hidden="true"><p id="target">隐藏</p></section>'],
+    ['inert', '<section inert><p id="target">隐藏</p></section>'],
     ['display none', '<section style="display:none"><p id="target">隐藏</p></section>'],
     ['visibility hidden', '<section style="visibility:hidden"><p id="target">隐藏</p></section>'],
   ])('排除具有 %s 的隐藏祖先', (_, markup) => {
@@ -470,5 +486,63 @@ describe('scanParagraphElements', () => {
     const elements = scanParagraphElements(document, rule, 'main-content');
 
     expect(elements.map((element) => element.id)).toEqual(['visible']);
+  });
+
+  it.each(['whole-page', 'main-content'] as const)('手风琴折叠标题：选出安全 button 内部文本 span 而非 h3 整体，且排除 inert 折叠区内容：%s', (scope) => {
+    document.body.innerHTML = `
+      <main>
+        <h3 id="europe-h3">
+          <button id="europe-btn" aria-controls="europe-region" aria-expanded="false">
+            <span id="europe-label" style="display:flex">
+              Europe
+              <span class="icon"><svg><path d="M0 0" /></svg></span>
+            </span>
+          </button>
+        </h3>
+        <div id="europe-region" role="region" inert style="height:0">
+          <label id="paris-label"><input type="checkbox" name="city" value="paris"> Paris</label>
+          <label id="london-label"><input type="checkbox" name="city" value="london"> London</label>
+        </div>
+      </main>`;
+
+    const elements = scanParagraphElements(document, rule, scope);
+    const texts = elements.map((element) => element.textContent?.replace(/\s+/g, ' ').trim());
+
+    // 关键断言：选出 button 内部的 Europe 最小文本容器，绝不包含 h3/label 整体，且排除 inert 折叠区内容
+    expect(texts).toEqual(['Europe']);
+    expect(elements[0].matches('[data-vast-text-leaf]')).toBe(true);
+    expect(elements.map((el) => el.id)).not.toContain('europe-h3');
+    expect(elements.map((el) => el.id)).not.toContain('paris-label');
+    expect(elements.map((el) => el.id)).not.toContain('london-label');
+  });
+
+  it('展开折叠区（移除 inert）后局部扫描直接 label+input：提取 label 内部安全文本叶而非 label 整体', () => {
+    document.body.innerHTML = `
+      <main>
+        <div id="europe-region" role="region" style="height:auto">
+          <label id="paris-label"><input id="paris-input" type="checkbox" name="city" value="paris"> Paris</label>
+          <label id="london-label"><input id="london-input" type="checkbox" name="city" value="london"> London</label>
+        </div>
+      </main>`;
+
+    const region = document.getElementById('europe-region')!;
+    const elements = scanParagraphElements(region, rule, 'main-content');
+    const texts = elements.map((element) => element.textContent?.replace(/\s+/g, ' ').trim());
+
+    expect(texts).toEqual(['Paris', 'London']);
+    expect(elements.map((el) => el.tagName)).not.toContain('LABEL');
+    expect(elements.map((el) => el.id)).not.toContain('paris-label');
+    expect(elements.map((el) => el.id)).not.toContain('london-label');
+  });
+
+  it('unwrapAllTextLeaves 完整还原被临时包装的文本叶为纯文本节点', () => {
+    document.body.innerHTML = '<button><span>Hello <svg></svg></span></button>';
+    const elements = scanParagraphElements(document, rule, 'whole-page');
+    expect(elements[0].matches('[data-vast-text-leaf]')).toBe(true);
+    expect(document.querySelectorAll('[data-vast-text-leaf]')).toHaveLength(1);
+
+    unwrapAllTextLeaves(document);
+    expect(document.querySelectorAll('[data-vast-text-leaf]')).toHaveLength(0);
+    expect(document.querySelector('button > span')?.innerHTML).toBe('Hello <svg></svg>');
   });
 });

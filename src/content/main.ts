@@ -1,7 +1,7 @@
 import type { TranslationResult } from '../shared/messages';
 import { DomRenderer } from './dom-renderer';
 import type { InlineRenderer } from './inline-renderer';
-import { scanParagraphElements } from './dom-scanner';
+import { scanParagraphElements, unwrapAllTextLeaves } from './dom-scanner';
 import { DynamicPageObserver } from './dynamic-observer';
 import type { ParagraphRecord } from './paragraph-store';
 import { matchSiteRule } from './rule-matcher';
@@ -46,9 +46,20 @@ export function createRuntimeDependencies(): ContentControllerDependencies {
     loadRule: () => matchSiteRule(new URL(location.href)),
     scan: (rule, scope) => scanParagraphElements(document, rule, scope),
     async translate(request) {
-      const response = await chrome.runtime.sendMessage({ type: 'translate-batch', ...request }) as { ok: boolean; data?: TranslationResult[]; error?: string };
-      if (!response.ok) throw new Error(response.error ?? '翻译失败');
-      return response.data ?? [];
+      let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutTimer = setTimeout(() => {
+          reject(new Error('翻译请求超时，请检查网络或配置后重试'));
+        }, 95_000);
+      });
+      try {
+        const responsePromise = chrome.runtime.sendMessage({ type: 'translate-batch', ...request }) as Promise<{ ok: boolean; data?: TranslationResult[]; error?: string }>;
+        const response = await Promise.race([responsePromise, timeoutPromise]);
+        if (!response.ok) throw new Error(response.error ?? '翻译失败');
+        return response.data ?? [];
+      } finally {
+        if (timeoutTimer !== undefined) clearTimeout(timeoutTimer);
+      }
     },
     async cancel(taskId) { await chrome.runtime.sendMessage({ type: 'cancel-task', taskId }); },
     async getConfig() {
@@ -57,9 +68,9 @@ export function createRuntimeDependencies(): ContentControllerDependencies {
     },
     getPageLanguage: () => document.documentElement.lang || 'auto',
     showSelectionText: () => undefined,
-    async schedule(items, worker) {
+    async schedule(items, worker, onFailure) {
       let visibility!: ParagraphVisibilityBatchQueue<ParagraphRecord>;
-      visibility = new ParagraphVisibilityBatchQueue(worker, undefined, () => visibilityQueues.delete(visibility));
+      visibility = new ParagraphVisibilityBatchQueue(worker, undefined, () => visibilityQueues.delete(visibility), onFailure);
       visibilityQueues.add(visibility);
       visibility.add(items.flat());
       return visibility.whenIdle();
@@ -103,6 +114,7 @@ export function createRuntimeDependencies(): ContentControllerDependencies {
       }
       for (const hidden of document.querySelectorAll<HTMLElement>('[data-vast-original-hidden]')) hidden.hidden = false;
       for (const inline of document.querySelectorAll<HTMLElement>('[data-vast-inline]')) delete inline.dataset.vastInline;
+      unwrapAllTextLeaves(document);
     },
     startObserver(rule, store, scope, onChanges) {
       observer?.stop();
@@ -116,7 +128,9 @@ export function createRuntimeDependencies(): ContentControllerDependencies {
           for (const paragraph of [...changes.invalidated, ...changes.removed]) {
             for (const queue of visibilityQueues) queue.remove(paragraph.element);
           }
-          void onChanges(changes);
+          Promise.resolve(onChanges(changes)).catch(() => {
+            console.error('语层翻译: 动态页面变更处理失败');
+          });
         },
       });
       observer.start();
