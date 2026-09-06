@@ -9,6 +9,7 @@ tests/evidence/task13-*
 error.log
 .env
 .env.*
+.ebuilder.state.json
 research/private-reference/
 release/
 
