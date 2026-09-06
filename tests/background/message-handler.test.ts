@@ -205,6 +205,13 @@ describe('service worker 消息编排', () => {
     expect(await Promise.race([translation, Promise.resolve('pending')])).toBe('pending');
   });
 
+  it('批量翻译允许包含 emoji 和品牌名的短标题', async () => {
+    await expect(send({
+      type: 'translate-batch', taskId: 'emoji-title', engineId: 'google', sourceLanguage: 'auto', targetLanguage: 'zh-Hans',
+      segments: [{ id: 'heading', text: '🚀 GlanceMD' }],
+    })).resolves.toEqual({ ok: true, data: [{ id: 'heading', text: '译:🚀 GlanceMD' }] });
+  });
+
   it('测试引擎和清理缓存均走固定消息', async () => {
     await expect(send({ type: 'test-engine', engineId: 'google' })).resolves.toEqual({ ok: true });
     await expect(send({ type: 'clear-cache' }))

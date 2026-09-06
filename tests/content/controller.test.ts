@@ -55,6 +55,40 @@ describe('网页翻译控制器', () => {
     expect(vi.mocked(dependencies.translate).mock.calls.map(([request]) => request.segments.length)).toEqual([8, 2]);
   });
 
+  it('emoji 和品牌名标题作为独立段落正常进入翻译请求', async () => {
+    document.body.innerHTML = '<main><h1>🚀 GlanceMD</h1></main>';
+    vi.mocked(dependencies.scan).mockReturnValue([...document.querySelectorAll('h1')] as HTMLElement[]);
+
+    await dependencies.listeners[0]({ type: 'translate-page' });
+
+    expect(dependencies.translate).toHaveBeenCalledWith(expect.objectContaining({
+      segments: [{ id: expect.any(String), text: '🚀 GlanceMD' }],
+    }));
+    expect(dependencies.renderError).not.toHaveBeenCalled();
+  });
+
+  it('忽略扫描结果中的空文本段落，避免后台返回消息格式无效', async () => {
+    document.body.innerHTML = '<main><h1>🚀 GlanceMD</h1><p></p></main>';
+    vi.mocked(dependencies.scan).mockReturnValue([...document.querySelectorAll('h1, p')] as HTMLElement[]);
+
+    await dependencies.listeners[0]({ type: 'translate-page' });
+
+    expect(dependencies.translate).toHaveBeenCalledWith(expect.objectContaining({
+      segments: [{ id: expect.any(String), text: '🚀 GlanceMD' }],
+    }));
+  });
+
+  it('动态加入的空节点不进入翻译队列，避免异步页面返回消息格式无效', async () => {
+    await dependencies.listeners[0]({ type: 'translate-page' });
+    const observer = vi.mocked(dependencies.startObserver).mock.calls[0][3];
+    const empty = document.createElement('h3');
+
+    await observer({ added: [empty], invalidated: [] });
+
+    expect(dependencies.renderLoading).not.toHaveBeenCalledWith(expect.objectContaining({ element: empty }));
+    expect(dependencies.translate).toHaveBeenCalledTimes(1);
+  });
+
   it('字符边界按 6000 字符切批且不拆段', async () => {
     document.body.innerHTML = `<main><p>${'a'.repeat(4000)}</p><p>${'b'.repeat(2000)}</p><p>c</p></main>`;
     vi.mocked(dependencies.scan).mockReturnValue([...document.querySelectorAll('p')] as HTMLElement[]);

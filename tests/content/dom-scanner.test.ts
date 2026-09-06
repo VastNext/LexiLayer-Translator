@@ -340,6 +340,18 @@ describe('scanParagraphElements', () => {
     expect(ids).not.toEqual(expect.arrayContaining(['ad', 'search-button', 'page']));
   });
 
+  it('跳过超过单段翻译上限的容器，避免同批正常标题收到消息格式错误', () => {
+    document.body.innerHTML = `<main>
+      <h1 id="short-heading">🚀 GlanceMD</h1>
+      <table><tbody><tr><td id="oversized">${'x'.repeat(6001)}</td></tr></tbody></table>
+    </main>`;
+
+    const ids = scanParagraphElements(document, rule, 'main-content').map((element) => element.id);
+
+    expect(ids).toContain('short-heading');
+    expect(ids).not.toContain('oversized');
+  });
+
   it('Bing 搜索保留结果正文，排除侧栏、广告、统计和分页', () => {
     document.body.innerHTML = `<main>
       <div id="b_tween"><span id="stats">12 results</span></div>

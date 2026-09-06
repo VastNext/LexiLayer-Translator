@@ -183,7 +183,10 @@ export function createContentController(dependencies: ContentControllerDependenc
         dependencies.restore(paragraph);
         changed.push(store.refresh(paragraph.element));
       }
-      for (const element of added) changed.push(store.getOrCreate(element));
+      for (const element of added) {
+        const paragraph = store.getOrCreate(element);
+        if (paragraph.sourceText) changed.push(paragraph);
+      }
       for (const paragraph of changed) { paragraphs.set(paragraph.id, paragraph); dependencies.renderLoading(paragraph); }
       if (changed.length) await processParagraphs(changed, currentGeneration, taskId);
       if (currentGeneration === generation) reportCurrent();
@@ -223,6 +226,7 @@ export function createContentController(dependencies: ContentControllerDependenc
     const elements = dependencies.scan(rule, command.scope ?? lastCommand.scope ?? 'main-content');
     for (const element of elements) {
       const paragraph = store.refresh(element);
+      if (!paragraph.sourceText) continue;
       paragraphs.set(paragraph.id, paragraph);
       dependencies.renderLoading(paragraph);
     }

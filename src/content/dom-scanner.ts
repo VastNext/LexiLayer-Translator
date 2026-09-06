@@ -2,6 +2,7 @@ import type { SiteRule } from '../rules/types';
 
 export type ScanScope = 'main-content' | 'whole-page';
 export interface ScanMetrics { normalizedTexts: number; ancestorChecks: number }
+const MAX_TRANSLATABLE_TEXT_LENGTH = 6000;
 
 const paragraphSelector = 'h1, h2, h3, h4, h5, h6, p, li, blockquote, figcaption, td, th';
 const hardExclusions = [
@@ -75,6 +76,10 @@ function hasText(element: Element): element is HTMLElement {
   return element instanceof HTMLElement && Boolean(element.textContent?.trim());
 }
 
+function isWithinTranslationLimit(element: Element): boolean {
+  return (element.textContent?.length ?? 0) <= MAX_TRANSLATABLE_TEXT_LENGTH;
+}
+
 function hasDirectText(element: Element): boolean {
   return Array.from(element.childNodes).some((node) => node.nodeType === node.TEXT_NODE && Boolean(node.textContent?.trim()));
 }
@@ -97,7 +102,7 @@ function textLeafCandidates(root: Element, covered: Set<HTMLElement>, rule: Site
   const candidates = new Set<HTMLElement>();
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
     const parent = node.parentElement;
-    if (parent && hasDirectText(parent)) candidates.add(parent);
+    if (parent && hasDirectText(parent) && isWithinTranslationLimit(parent)) candidates.add(parent);
   }
   const grouped = [...candidates];
   return grouped.filter((candidate) => !grouped.some((ancestor) => ancestor !== candidate && ancestor.contains(candidate) && hasDirectText(ancestor)));
@@ -121,7 +126,7 @@ export function scanParagraphElements(
 
     for (const candidate of candidates) {
       if (candidate.matches('li') && !hasDirectText(candidate)) continue;
-      if (hasText(candidate) && !isExcluded(candidate, rule)) results.add(candidate);
+      if (hasText(candidate) && isWithinTranslationLimit(candidate) && !isExcluded(candidate, rule)) results.add(candidate);
     }
     for (const candidate of textLeafCandidates(scanRoot, results, rule)) results.add(candidate);
   }
@@ -130,7 +135,7 @@ export function scanParagraphElements(
     const hasDirectText = Array.from(candidate.childNodes).some(
       (node) => node.nodeType === node.TEXT_NODE && Boolean(node.textContent?.trim()),
     );
-    if (hasDirectText && hasText(candidate) && !isExcluded(candidate, rule)) results.add(candidate);
+    if (hasDirectText && hasText(candidate) && isWithinTranslationLimit(candidate) && !isExcluded(candidate, rule)) results.add(candidate);
   }
 
   const texts = new Map(Array.from(results, (element) => {
