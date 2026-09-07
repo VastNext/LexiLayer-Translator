@@ -17,10 +17,10 @@ const budgets = {
 // 真实累计：三个 content 脚本按 manifest 顺序常驻于每个网页的同一个隔离世界，
 // 浏览器实际下载并执行的 JS 总量是三者之和（content.css 与 content-inline.css
 // 为独立样式注入，不计入 JS 预算）。
-// 累计预算 48KiB 约等于拆分前 content.js 的 38KiB 上限加上拆分开销与内联渲染器，
-// 防止把旧 content.js 的体积拆散到多个脚本后绕过总量约束。
+// 0.10.7 经用户确认将项目内部累计预算由 48KiB 调整为 52KiB，容纳挂载归属与
+// 任务生命周期修复；各入口上限不变。本预算不是 Chrome Web Store 的限制。
 const contentScripts = ['content.js', 'content-inline.js', 'content-main.js'] as const;
-const contentTotalBudget = 48 * 1024;
+const contentTotalBudget = 52 * 1024;
 
 describe('扩展入口体积预算', () => {
   it('每个注入脚本保持各自的原始体积预算', async () => {
@@ -32,7 +32,7 @@ describe('扩展入口体积预算', () => {
     }
   });
 
-  it('content 相关脚本真实累计不超过 48KiB，避免拆分掩盖总量膨胀', async () => {
+  it('content 相关脚本真实累计不超过 52KiB，避免拆分掩盖总量膨胀', async () => {
     const root = resolve(import.meta.dirname, '../..');
     await build({ root, configFile: resolve(root, 'vite.config.ts'), logLevel: 'silent' });
     const sizes = contentScripts.map((file) => statSync(resolve(root, 'dist', file)).size);

@@ -51,6 +51,32 @@ async function clickPopupButton(
   await button.evaluate((element: HTMLButtonElement) => element.click());
 }
 
+test('内联请求期间角色改变后错误入口可见，真实点击重试成功且保留页面结构', async ({ context, server, openExtensionPage }) => {
+  const options = await openExtensionPage('options.html');
+  await configureInlineEngine(options, server);
+  await options.close();
+  server.setMode('delay');
+  const page = await openFixture(context, server.inlineFixtureUrl);
+  const popup = await openPopupForFixture(openExtensionPage, page);
+  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+  await expect(page.locator('#plain > [data-vast-state="loading"]')).toBeVisible();
+  // role 不在当前观察器属性过滤器内，确保由结果拒绝后的错误回退负责收口。
+  await page.locator('#plain').evaluate((element) => element.setAttribute('role', 'button'));
+  server.setMode('401');
+  server.releaseDelay();
+  const retry = page.locator('#plain + [data-vast-state="error"] [data-vast-retry-all]');
+  await expect(retry).toBeVisible();
+  await expect(page.locator('#plain [data-vast-state="loading"]')).toHaveCount(0);
+  server.setMode('success');
+  await retry.click();
+  await expect(page.locator('#plain [data-vast-state="translated"]')).toHaveText('内联段落译文。');
+  await expect(page.locator('#plain')).toHaveAttribute('role', 'button');
+  await expect(page.locator('[data-vast-state="loading"]')).toHaveCount(0);
+  await expect(page.locator('[data-vast-state="error"]')).toHaveCount(0);
+  await popup.close();
+  await page.close();
+});
+
 test('新安装默认内联渲染器，Options 下拉说明切换在下次全新翻译生效', async ({ openExtensionPage }) => {
   const options = await openExtensionPage('options.html');
   await expect(options.getByLabel('渲染器模式')).toHaveValue('inline');
@@ -485,6 +511,109 @@ test('手风琴折叠结构在 Legacy 兼容模式下：h3/button 不被隐藏�
   await expect(page.locator('#paris-label')).toContainText('Paris');
   await expect(page.locator('#europe-accordion-span svg')).toBeVisible();
 
-  await page.screenshot({ path: evidence('accordion-legacy-restored'), fullPage: true });
+    await page.screenshot({ path: evidence('accordion-legacy-restored'), fullPage: true });
   await popup.close();
+  await page.close();
+});
+
+test('内联模式下段落内部发生深克隆/替换后动态观察器与渲染器协同自愈，无残留 loading 且完成统计真实', async ({ context, server, openExtensionPage }) => {
+  const options = await openExtensionPage('options.html');
+  await configureInlineEngine(options, server);
+  await options.close();
+
+  const page = await openFixture(context, server.inlineFixtureUrl);
+  const popup = await openPopupForFixture(openExtensionPage, page);
+  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+
+  // 1. 首轮翻译完成：断言页面内联译文与 Popup 状态真实同步
+  await expect(page.locator('#plain > [data-vast-translator]')).toHaveText('内联段落译文。');
+  await expect(page.locator('[data-vast-state="loading"]')).toHaveCount(0);
+  await expect(popup.getByRole('button', { name: '显示原文 (Alt + A)' })).toBeVisible();
+
+  // 2. 模拟前端框架对 #plain 内部子树进行深克隆替换，并将克隆的 translator 改为 loading+文字“翻译中…”（精准复现现场问题结构）
+  await page.evaluate(() => {
+    const plain = document.getElementById('plain') as HTMLElement;
+    const cloned = Array.from(plain.childNodes).map((n) => n.cloneNode(true));
+    const translator = cloned.find((node) => node instanceof HTMLElement && node.hasAttribute('data-vast-translator')) as HTMLElement | undefined;
+    if (translator) {
+      translator.dataset.vastState = 'loading';
+      translator.textContent = '翻译中…';
+      translator.id = 'cloned-fake-loading';
+    }
+    plain.replaceChildren(...cloned);
+  });
+
+  // 保留克隆假 loading 节点的 handle 并断言其可见
+  const fakeLoading = page.locator('#cloned-fake-loading');
+  await expect(fakeLoading).toBeVisible();
+  await expect(fakeLoading).toHaveText('翻译中…');
+
+  // 3. 等待动态观察器生效并完成重新调度与翻译：
+  // 必须断言被克隆注入的 fake loading wrapper 彻底断开/被替换！
+  await expect(fakeLoading).toHaveCount(0);
+
+  // 真实 translated 译文呈现，页面无任何 loading 残留，Popup 保持翻译激活态
+  await expect(page.locator('#plain > [data-vast-translator]')).toHaveText('内联段落译文。');
+  await expect(page.locator('[data-vast-state="loading"]')).toHaveCount(0);
+  await expect(page.locator('#plain [data-vast-source]')).toHaveCount(1);
+  await expect(popup.getByRole('button', { name: '显示原文 (Alt + A)' })).toBeVisible();
+
+  // 4. 恢复原文：断言 Popup 回到就绪态且页面干净还原
+  await clickPopupButton(popup, page, '显示原文 (Alt + A)');
+  await expect(page.locator('[data-vast-translator]')).toHaveCount(0);
+  await expect(page.locator('[data-vast-inline]')).toHaveCount(0);
+  await expect(page.locator('#plain')).toHaveText('Plain paragraph for inline.');
+  await expect(popup.getByRole('status')).toHaveText('就绪');
+  await expect(popup.getByRole('button', { name: '翻译 (Alt + A)' })).toBeVisible();
+  await popup.close();
+  await page.close();
+});
+test('内联模式下请求 pending 期间发生内部克隆替换，旧结果释放后被隔离拒绝，新任务正常收敛完成', async ({ context, server, openExtensionPage }) => {
+  const options = await openExtensionPage('options.html');
+  await configureInlineEngine(options, server);
+  await options.close();
+
+  // 设置服务端延迟模式，模拟首轮请求处于 pending 飞行中
+  server.setMode('delay');
+
+  const page = await openFixture(context, server.inlineFixtureUrl);
+  const popup = await openPopupForFixture(openExtensionPage, page);
+  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+
+  // 验证处于 loading 状态
+  await expect(page.locator('#plain [data-vast-state="loading"]')).toBeVisible();
+
+  // 在首轮请求 pending 期间，模拟前端框架对 #plain 内部进行深克隆重置
+  await page.evaluate(() => {
+    const plain = document.getElementById('plain') as HTMLElement;
+    const cloned = Array.from(plain.childNodes).map((n) => n.cloneNode(true));
+    const loadingNode = cloned.find((node) => node instanceof HTMLElement && node.hasAttribute('data-vast-translator')) as HTMLElement | undefined;
+    if (loadingNode) {
+      loadingNode.id = 'stale-pending-loading';
+    }
+    plain.replaceChildren(...cloned);
+  });
+
+  const staleLoading = page.locator('#stale-pending-loading');
+  await expect(staleLoading).toBeVisible();
+
+  // 切回正常模式并释放首轮 pending 延迟请求
+  server.setMode('success');
+  server.releaseDelay();
+
+  // 旧请求返回时因挂载脱离被严格拒绝，observer/controller 自愈调度新任务，
+  // 旧 loading 节点被清理断开，新译文正常到达并收敛到完成态
+  await expect(staleLoading).toHaveCount(0);
+  await expect(page.locator('#plain > [data-vast-translator]')).toHaveText('内联段落译文。');
+  await expect(page.locator('[data-vast-state="loading"]')).toHaveCount(0);
+  await expect(popup.getByRole('button', { name: '显示原文 (Alt + A)' })).toBeVisible();
+
+  // 恢复原文
+  await clickPopupButton(popup, page, '显示原文 (Alt + A)');
+  await expect(page.locator('[data-vast-translator]')).toHaveCount(0);
+  await expect(page.locator('#plain')).toHaveText('Plain paragraph for inline.');
+  await expect(popup.getByRole('status')).toHaveText('就绪');
+  await expect(popup.getByRole('button', { name: '翻译 (Alt + A)' })).toBeVisible();
+  await popup.close();
+  await page.close();
 });

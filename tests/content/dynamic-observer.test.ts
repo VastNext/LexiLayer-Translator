@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DynamicPageObserver } from '../../src/content/dynamic-observer';
-import { ParagraphStore } from '../../src/content/paragraph-store';
+import { ParagraphStore, type ParagraphRecord } from '../../src/content/paragraph-store';
 import { DomRenderer } from '../../src/content/dom-renderer';
 
 describe('DynamicPageObserver', () => {
@@ -357,6 +357,357 @@ describe('DynamicPageObserver', () => {
     expect(document.querySelectorAll('[data-vast-state="error"]')).toHaveLength(1);
     expect(clone.nextElementSibling?.textContent).toContain('翻译失败');
     expect(clone.textContent).toBe('Hello');
+    observer.stop();
+  });
+
+  it('段落内部结构变动且原文文本不变时，识别挂载失效并通知 onInvalidated', async () => {
+    document.body.innerHTML = '<main><h2 id="heading"><span>Title</span></h2></main>';
+    const heading = document.getElementById('heading') as HTMLElement;
+    const store = new ParagraphStore();
+    const paragraph = store.getOrCreate(heading);
+    paragraph.sourceWrapper = document.createElement('span'); // 模拟已内联挂载
+    const initialVersion = paragraph.version;
+
+    const onInvalidated = vi.fn();
+    const observer = new DynamicPageObserver(document.body, {
+      scan: vi.fn(),
+      store,
+      onInvalidated,
+      debounceMs: 20,
+    });
+    observer.start();
+
+    // 页面内部重构：替换 span 为 strong，文本 'Title' 保持完全一致！
+    const strong = document.createElement('strong');
+    strong.textContent = 'Title';
+    heading.replaceChildren(strong);
+
+    await vi.advanceTimersByTimeAsync(20);
+
+    expect(onInvalidated).toHaveBeenCalledOnce();
+    expect(paragraph.version).toBeGreaterThan(initialVersion);
+    observer.stop();
+  });
+
+  it('深克隆产生无主 [data-vast-source] 和 [data-vast-translator] 时，安全还原原节点（保留事件与子节点）并识别失效', async () => {
+    document.body.innerHTML = '<main><h2 id="heading"><span class="title">Title</span></h2></main>';
+    const heading = document.getElementById('heading') as HTMLElement;
+    const store = new ParagraphStore();
+    const paragraph = store.getOrCreate(heading);
+
+    // 模拟之前渲染过的插件结构被框架 deepclone 放回 DOM
+    const fakeSource = document.createElement('span');
+    fakeSource.dataset.vastSource = '';
+    const strong = document.createElement('strong');
+    strong.textContent = 'Title';
+    let clicked = false;
+    strong.addEventListener('click', () => { clicked = true; });
+    fakeSource.append(strong);
+
+    const fakeLoading = document.createElement('span');
+    fakeLoading.dataset.vastTranslator = '';
+    fakeLoading.dataset.vastState = 'loading';
+    fakeLoading.textContent = '翻译中…';
+
+    heading.replaceChildren(fakeSource, fakeLoading);
+
+    const onInvalidated = vi.fn();
+    const observer = new DynamicPageObserver(document.body, {
+      scan: vi.fn(),
+      store,
+      onInvalidated,
+      debounceMs: 20,
+    });
+    observer.start();
+
+    // 触发一次 micro-mutation 或者直接由 observer 响应当前 DOM 结构变更
+    heading.append(document.createComment('trigger'));
+    await vi.advanceTimersByTimeAsync(20);
+
+    // 验证：无主的 [data-vast-source] 已经被安全解包还原，无主的 [data-vast-translator] 已经被移除
+    expect(heading.querySelector('[data-vast-translator]')).toBeNull();
+    expect(heading.querySelector('[data-vast-source]')).toBeNull();
+    // 关键：保留了原节点和其事件监听器，而非 textContent 重写！
+    expect(heading.querySelector('strong')).toBe(strong);
+    strong.click();
+    expect(clicked).toBe(true);
+
+    expect(onInvalidated).toHaveBeenCalledWith(paragraph);
+    observer.stop();
+  });
+
+  it('网站克隆已有包含 [data-vast-source] 的子树并替换回段落：观察器不因 addedNodes 含 data-vast-source 而忽略，精准识别失效并重译', async () => {
+    document.body.innerHTML = '<main><h2 id="heading">Original Title</h2></main>';
+    const heading = document.getElementById('heading') as HTMLElement;
+    const store = new ParagraphStore();
+    const paragraph = store.getOrCreate(heading);
+
+    // 插件首先正常完成挂载
+    const realSource = document.createElement('span');
+    realSource.dataset.vastSource = '';
+    realSource.textContent = 'Original Title';
+    const realTranslator = document.createElement('span');
+    realTranslator.dataset.vastTranslator = '';
+    realTranslator.dataset.vastState = 'translated';
+    realTranslator.textContent = '原始标题译文';
+    heading.replaceChildren(realSource, realTranslator);
+    paragraph.sourceWrapper = realSource;
+    paragraph.wrapper = realTranslator;
+
+    const onInvalidated = vi.fn();
+    const observer = new DynamicPageObserver(document.body, {
+      scan: vi.fn(),
+      store,
+      onInvalidated,
+      debounceMs: 20,
+    });
+    observer.start();
+
+    // 模拟前端框架对整个 heading 内部进行 cloneNode(true) 重建替换（addedNodes 包含克隆的 data-vast-source）
+    const clonedSource = realSource.cloneNode(true) as HTMLElement;
+    const clonedTranslator = realTranslator.cloneNode(true) as HTMLElement;
+    heading.replaceChildren(clonedSource, clonedTranslator);
+
+    await vi.advanceTimersByTimeAsync(20);
+
+    // 观察器绝不漏检：即便 addedNodes 含有 [data-vast-source]，也必须识别出克隆失效并通知失效
+    expect(onInvalidated).toHaveBeenCalledOnce();
+    expect(onInvalidated).toHaveBeenCalledWith(paragraph);
+    // 克隆的无主标记已被安全还原
+    expect(heading.querySelector('[data-vast-source]')).toBeNull();
+    expect(heading.querySelector('[data-vast-translator]')).toBeNull();
+    expect(heading.textContent).toBe('Original Title');
+
+    observer.stop();
+  });
+
+  it('插件自身正常内联渲染不会触发失效通知，验证零自观察循环', async () => {
+    document.body.innerHTML = '<main><p id="source">Hello world</p></main>';
+    const source = document.getElementById('source') as HTMLElement;
+    const store = new ParagraphStore();
+    const paragraph = store.getOrCreate(source);
+
+    const onInvalidated = vi.fn();
+    const observer = new DynamicPageObserver(document.body, {
+      scan: vi.fn(),
+      store,
+      onInvalidated,
+      debounceMs: 20,
+    });
+    observer.start();
+
+    // 模拟 InlineRenderer 正常安装 sourceWrapper 和 translator
+    const sourceWrapper = document.createElement('span');
+    sourceWrapper.dataset.vastSource = '';
+    sourceWrapper.append(...source.childNodes);
+    source.append(sourceWrapper);
+    paragraph.sourceWrapper = sourceWrapper;
+
+    const translatorWrapper = document.createElement('span');
+    translatorWrapper.dataset.vastTranslator = '';
+    translatorWrapper.dataset.vastState = 'loading';
+    translatorWrapper.textContent = '翻译中…';
+    sourceWrapper.after(translatorWrapper);
+    paragraph.wrapper = translatorWrapper;
+
+    // 推进多轮定时器，验证不会触发任何失效回调
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(onInvalidated).not.toHaveBeenCalled();
+    expect(paragraph.version).toBe(1);
+
+    observer.stop();
+  });
+
+  it('同文且规范化空白相同但 DOM 发生结构替换时，挂载结构失效仍触发 onInvalidated', async () => {
+    document.body.innerHTML = '<main><h2 id="heading">Hello\n   World</h2></main>';
+    const heading = document.getElementById('heading') as HTMLElement;
+    const store = new ParagraphStore();
+    const paragraph = store.getOrCreate(heading);
+    const initialVersion = paragraph.version;
+
+    // 模拟已内联挂载
+    const sourceWrapper = document.createElement('span');
+    sourceWrapper.dataset.vastSource = '';
+    sourceWrapper.textContent = 'Hello World';
+    heading.replaceChildren(sourceWrapper);
+    paragraph.sourceWrapper = sourceWrapper;
+
+    const onInvalidated = vi.fn();
+    const observer = new DynamicPageObserver(document.body, {
+      scan: vi.fn(),
+      store,
+      onInvalidated,
+      debounceMs: 20,
+    });
+    observer.start();
+
+    // 页面结构替换：内部替换为 strong + span，规范化文字依然为 'Hello World'
+    const strong = document.createElement('strong');
+    strong.textContent = 'Hello ';
+    const span = document.createElement('span');
+    span.textContent = 'World';
+    heading.replaceChildren(strong, span);
+
+    await vi.advanceTimersByTimeAsync(20);
+
+    // 挂载脱离被捕获，必须触发失效通知并递增版本
+    expect(onInvalidated).toHaveBeenCalledOnce();
+    expect(paragraph.version).toBeGreaterThan(initialVersion);
+    observer.stop();
+  });
+
+  it('仅译文模式正常切换 hidden 与正常 restore 过程零自观察循环', async () => {
+    document.body.innerHTML = '<main><p id="source">Original text</p></main>';
+    const source = document.getElementById('source') as HTMLElement;
+    const store = new ParagraphStore();
+    const paragraph = store.getOrCreate(source);
+
+    const onInvalidated = vi.fn();
+    const observer = new DynamicPageObserver(document.body, {
+      scan: vi.fn(),
+      store,
+      onInvalidated,
+      debounceMs: 20,
+    });
+    observer.start();
+
+    // 1. 模拟插件正常构建 sourceWrapper 并隐藏
+    const sourceWrapper = document.createElement('span');
+    sourceWrapper.dataset.vastSource = '';
+    sourceWrapper.append(...source.childNodes);
+    sourceWrapper.hidden = true;
+    source.append(sourceWrapper);
+    paragraph.sourceWrapper = sourceWrapper;
+
+    await vi.advanceTimersByTimeAsync(40);
+    expect(onInvalidated).not.toHaveBeenCalled();
+
+    // 2. 模拟正常 restore 操作
+    sourceWrapper.hidden = false;
+    sourceWrapper.replaceWith(...sourceWrapper.childNodes);
+    paragraph.sourceWrapper = undefined;
+
+    await vi.advanceTimersByTimeAsync(40);
+    expect(onInvalidated).not.toHaveBeenCalled();
+    expect(paragraph.version).toBe(1);
+
+    observer.stop();
+  });
+
+  it('Legacy 模式外部相邻 wrapper 正常渲染后零自循环重译', async () => {
+    document.body.innerHTML = '<main><p id="source">Legacy paragraph</p></main>';
+    const source = document.getElementById('source') as HTMLElement;
+    const store = new ParagraphStore();
+    const paragraph = store.getOrCreate(source);
+    paragraph.rendererKind = 'legacy';
+
+    const onInvalidated = vi.fn();
+    const observer = new DynamicPageObserver(document.body, {
+      scan: vi.fn(),
+      store,
+      onInvalidated,
+      debounceMs: 20,
+    });
+    observer.start();
+
+    // 模拟 Legacy 外部兄弟 wrapper 渲染
+    const legacyWrapper = document.createElement('div');
+    legacyWrapper.dataset.vastTranslator = '';
+    legacyWrapper.dataset.vastState = 'translated';
+    legacyWrapper.textContent = '译文';
+    source.after(legacyWrapper);
+    paragraph.wrapper = legacyWrapper;
+
+    // 推进多轮定时器，验证 Legacy 兄弟节点绝不会因为不是 source 的子节点而被误判挂载失效
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(onInvalidated).not.toHaveBeenCalled();
+    expect(paragraph.version).toBe(1);
+
+    observer.stop();
+  });
+
+  it('flush 触发失效时保留段落 wrapper / sourceWrapper 引用，由 controller.restore 负责精准清理与解包', async () => {
+    document.body.innerHTML = '<main><p id="source">Text</p></main>';
+    const source = document.getElementById('source') as HTMLElement;
+    const store = new ParagraphStore();
+    const paragraph = store.getOrCreate(source);
+    paragraph.rendererKind = 'legacy';
+
+    // 模拟 Legacy 外部兄弟 wrapper
+    const legacyWrapper = document.createElement('div');
+    legacyWrapper.dataset.vastTranslator = '';
+    source.after(legacyWrapper);
+    paragraph.wrapper = legacyWrapper;
+
+    let invalidatedParagraph: ParagraphRecord | undefined;
+    const observer = new DynamicPageObserver(document.body, {
+      scan: vi.fn(),
+      store,
+      onInvalidated: (p) => { invalidatedParagraph = p; },
+      debounceMs: 20,
+    });
+    observer.start();
+
+    // 文本变更触发失效
+    source.firstChild!.textContent = 'New Text';
+    await vi.advanceTimersByTimeAsync(20);
+
+    expect(invalidatedParagraph).toBe(paragraph);
+    // 关键断言：observer flush 不得提前清空 wrapper 引用，必须保留给 restore
+    expect(invalidatedParagraph?.wrapper).toBe(legacyWrapper);
+
+    // 验证由 restore 清除
+    invalidatedParagraph?.wrapper?.remove();
+    expect(document.querySelector('[data-vast-translator]')).toBeNull();
+
+    observer.stop();
+  });
+
+  it('observer 处理无主子树仅限于当前 target 直接子级，嵌套的子段落合法插件标记不被误伤', async () => {
+    document.body.innerHTML = `
+      <main>
+        <div id="parent-host">
+          <p id="child-para">Child</p>
+        </div>
+      </main>`;
+    const parent = document.getElementById('parent-host') as HTMLElement;
+    const child = document.getElementById('child-para') as HTMLElement;
+    const store = new ParagraphStore();
+
+    // 建立子段落合法挂载
+    const childRecord = store.getOrCreate(child);
+    const childSource = document.createElement('span');
+    childSource.dataset.vastSource = '';
+    childSource.textContent = 'Child';
+    const childTranslator = document.createElement('span');
+    childTranslator.dataset.vastTranslator = '';
+    childTranslator.textContent = '子译文';
+    child.replaceChildren(childSource, childTranslator);
+    childRecord.sourceWrapper = childSource;
+    childRecord.wrapper = childTranslator;
+
+    // 建立父段落记录
+    store.getOrCreate(parent);
+
+    const onInvalidated = vi.fn();
+    const observer = new DynamicPageObserver(document.body, {
+      scan: vi.fn(),
+      store,
+      onInvalidated,
+      debounceMs: 20,
+    });
+    observer.start();
+
+    // 触发父级变化
+    parent.append(document.createComment('trigger'));
+    await vi.advanceTimersByTimeAsync(20);
+
+    // 关键断言：子段落合法的 [data-vast-source] 和 [data-vast-translator] 完好无损，未被误当作父级的无主标记解包或删除！
+    expect(child.querySelector('[data-vast-translator]')?.textContent).toBe('子译文');
+    expect(child.querySelector('[data-vast-source]')?.textContent).toBe('Child');
+
     observer.stop();
   });
 });

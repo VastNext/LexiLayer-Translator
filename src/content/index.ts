@@ -110,13 +110,25 @@ export function createContentController(dependencies: ContentControllerDependenc
     };
   }
 
-  // 提取面向用户的稳定错误消息，避免把英文异常或敏感内容渲染到页面。
   function readableError(error: unknown): string {
     return error instanceof Error && /^[\u3400-\u9fff]/u.test(error.message) ? error.message : '翻译失败，请重试';
   }
 
-  function markFailed(items: ParagraphRecord[], message: string): void {
-    const activeItems = items.filter((paragraph) => paragraphs.has(paragraph.id) && paragraph.element.isConnected);
+  // 校验 token 是否仍是当前任务：taskId 与版本都必须匹配，缺失结果与渲染器拒绝
+  // 均以同一把尺子判断，避免把旧任务的迟到结果/失败误算到新任务头上。
+  function isCurrentToken(paragraph: ParagraphRecord, token: { taskId: string; expectedVersion: number }): boolean {
+    return token.taskId === paragraph.currentTaskId && token.expectedVersion === paragraph.version;
+  }
+
+  function markFailed(items: ParagraphRecord[], message: string, tokens?: Map<string, { taskId: string; expectedVersion: number }>): void {
+    const activeItems = items.filter((paragraph) => {
+      if (!paragraphs.has(paragraph.id) || !paragraph.element.isConnected) return false;
+      if (tokens) {
+        const token = tokens.get(paragraph.id);
+        if (!token || !isCurrentToken(paragraph, token)) return false;
+      } else if (completedIds.has(paragraph.id)) return false;
+      return true;
+    });
     for (const paragraph of activeItems) dependencies.renderError(paragraph, message);
     for (const paragraph of activeItems) { completedIds.delete(paragraph.id); failedIds.add(paragraph.id); }
   }
@@ -149,25 +161,36 @@ export function createContentController(dependencies: ContentControllerDependenc
       const activeBatch = batchParagraphs.filter((paragraph) => paragraphs.has(paragraph.id) && paragraph.element.isConnected);
       if (activeBatch.length === 0) return;
       const tokens = new Map(activeBatch.map((paragraph) => [paragraph.id, dependencies.beginRender(paragraph)]));
-      const results = await dependencies.translate({
-        taskId, engineId: lastCommand.engineId!, sourceLanguage: lastCommand.sourceLanguage ?? 'auto',
-        targetLanguage: lastCommand.targetLanguage!, segments: activeBatch.map((paragraph) => ({ id: paragraph.id, text: paragraph.sourceText })),
-      });
+      let results: TranslationResult[];
+      try {
+        results = await dependencies.translate({
+          taskId, engineId: lastCommand.engineId!, sourceLanguage: lastCommand.sourceLanguage ?? 'auto',
+          targetLanguage: lastCommand.targetLanguage!, segments: activeBatch.map((paragraph) => ({ id: paragraph.id, text: paragraph.sourceText })),
+        });
+      } catch (error) {
+        if (currentGeneration !== generation) return;
+        markFailed(activeBatch, readableError(error), tokens);
+        reportCurrent();
+        return;
+      }
       if (currentGeneration !== generation) return;
       const byId = new Map(results.map((result) => [result.id, result.text]));
       for (const paragraph of activeBatch) {
         if (!paragraphs.has(paragraph.id) || !paragraph.element.isConnected) continue;
+        const token = tokens.get(paragraph.id)!;
+        const isCurrent = isCurrentToken(paragraph, token);
         const text = byId.get(paragraph.id);
-        if (text === undefined) {
+        // 缺失结果或渲染器拒绝时统一收口：stale token 静默忽略（由接管它的新任务收口），
+        // 当前 token 被拒说明挂载已失效，必须明确错误收口，不得永久停留在 loading/translating。
+        const accepted = text !== undefined && dependencies.renderTranslation(paragraph, text, { mode: lastCommand.mode!, placement: lastCommand.placement, ...token });
+        if (!accepted) {
+          if (!isCurrent) continue;
           dependencies.renderError(paragraph, '翻译失败，请重试');
           completedIds.delete(paragraph.id);
           failedIds.add(paragraph.id);
           failed += 1;
           continue;
         }
-        // 渲染器拒绝（元素已移除或版本/task 已失效）的迟到结果不计完成也不计失败，
-        // 段落状态由接管它的新任务收口，避免进度虚高。
-        if (!dependencies.renderTranslation(paragraph, text, { mode: lastCommand.mode!, placement: lastCommand.placement, ...tokens.get(paragraph.id)! })) continue;
         failedIds.delete(paragraph.id);
         completedIds.add(paragraph.id);
         completed += 1;

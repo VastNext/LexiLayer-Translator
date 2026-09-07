@@ -35,6 +35,39 @@ describe('双渲染器调度层', () => {
   const safeParagraph = () => store.getOrCreate(document.querySelector('#safe') as HTMLElement);
   const interactiveParagraph = () => store.getOrCreate(document.querySelector('#interactive') as HTMLElement);
 
+  it.each(['button', 'role', 'editable'])('内联请求期间变为 %s 时错误回退可见且重试有效', (change) => {
+    dependencies.setRendererMode?.('inline');
+    const paragraph = safeParagraph();
+    dependencies.renderLoading(paragraph);
+    const oldLoading = paragraph.wrapper!;
+    const button = document.createElement('button');
+    const clicked = vi.fn();
+    button.addEventListener('click', clicked);
+    if (change === 'button') paragraph.sourceWrapper!.append(button);
+    else if (change === 'role') paragraph.element.setAttribute('role', 'button');
+    else Object.defineProperty(paragraph.element, 'isContentEditable', { configurable: true, value: true });
+    const retry = vi.fn();
+    document.addEventListener('vast-translator-retry-all', retry);
+    try {
+      dependencies.renderError(paragraph, '翻译失败，请重试');
+      expect(oldLoading.isConnected).toBe(false);
+      expect(paragraph.rendererKind).toBe('legacy');
+      expect(paragraph.wrapper).toHaveAttribute('data-vast-state', 'error');
+      expect(paragraph.wrapper!.isConnected).toBe(true);
+      expect(paragraph.element.textContent).toBe('Safe paragraph');
+      expect(document.querySelector('[data-vast-state="loading"]')).toBeNull();
+      paragraph.wrapper!.querySelector<HTMLButtonElement>('[data-vast-retry-all]')!.click();
+      expect(retry).toHaveBeenCalledOnce();
+      if (change === 'button') {
+        expect(paragraph.element.contains(button)).toBe(true);
+        button.click();
+        expect(clicked).toHaveBeenCalledOnce();
+      }
+    } finally {
+      document.removeEventListener('vast-translator-retry-all', retry);
+    }
+  });
+
   it('默认（未声明模式）走 legacy 渲染器', () => {
     const paragraph = safeParagraph();
     dependencies.renderLoading(paragraph);
@@ -219,5 +252,49 @@ describe('双渲染器调度层', () => {
     expect(h2.querySelector('[data-vast-translator]')).toBeNull();
     expect(h2.textContent?.trim()).toBe('Releases');
     expect(paragraph.rendererKind).toBeUndefined();
+  });
+
+  it('用户真实时序：先 beginRender 后发生内部替换，旧 token 迟到被拒绝，经 restore 与新任务重新渲染成功完成', () => {
+    dependencies.setRendererMode?.('inline');
+    const paragraph = safeParagraph();
+    dependencies.renderLoading(paragraph);
+    expect(paragraph.rendererKind).toBe('inline');
+    expect(paragraph.element.querySelector('[data-vast-state="loading"]')).not.toBeNull();
+
+    // 1. 真实时序：在替换发生前已生成首轮请求的 token
+    const staleToken = dependencies.beginRender(paragraph);
+
+    // 2. 模拟前端框架在请求飞行期间进行深克隆重置，原 loading 和 source 节点被克隆放入 DOM，旧引用脱离
+    const clonedChildren = Array.from(paragraph.element.childNodes).map((node) => node.cloneNode(true));
+    paragraph.element.replaceChildren(...clonedChildren);
+
+    // 3. 旧请求迟到返回：因挂载脱离，renderTranslation 必须严格拒绝旧结果（返回 false）
+    const staleAccepted = dependencies.renderTranslation(paragraph, '旧译文', { mode: 'bilingual', placement: 'after', ...staleToken });
+    expect(staleAccepted).toBe(false);
+
+    // 4. 模拟 observer/controller 的失效处理链：restore 解包清理后刷新 store 发起新任务
+    dependencies.restore(paragraph);
+    const freshParagraph = store.refresh(paragraph.element);
+
+    // 5. 新任务发起：重新 renderLoading 并生成 freshToken
+    dependencies.renderLoading(freshParagraph);
+    const freshToken = dependencies.beginRender(freshParagraph);
+
+    // 6. 新任务成功返回：renderTranslation 正确挂载并返回 true，完成收口
+    const freshAccepted = dependencies.renderTranslation(freshParagraph, '新译文安全到达', { mode: 'bilingual', placement: 'after', ...freshToken });
+    expect(freshAccepted).toBe(true);
+
+    // 7. 断言 DOM 状态最终完全收敛：无残留 loading，最新译文正确显示且连通
+    expect(paragraph.element.querySelector('[data-vast-state="loading"]')).toBeNull();
+    const liveTranslator = paragraph.element.querySelector('[data-vast-state="translated"]') as HTMLElement;
+    expect(liveTranslator).not.toBeNull();
+    expect(liveTranslator.textContent).toBe('新译文安全到达');
+    expect(liveTranslator.isConnected).toBe(true);
+
+    // 8. 最终 restore：干净还原原节点
+    dependencies.restore(freshParagraph);
+    expect(paragraph.element.querySelector('[data-vast-translator]')).toBeNull();
+    expect(paragraph.element.querySelector('[data-vast-source]')).toBeNull();
+    expect(paragraph.element.textContent).toBe('Safe paragraph');
   });
 });

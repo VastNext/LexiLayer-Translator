@@ -90,6 +90,12 @@ export function createRuntimeDependencies(): ContentControllerDependencies {
       return accepted;
     },
     renderError: (paragraph, error) => {
+      const inline = inlineRenderer();
+      if (paragraph.rendererKind === 'inline' && inline?.isUnsafe(paragraph.element)) {
+        // 页面已改变交互结构：先还原内部包装，再由兼容渲染器显示可重试错误。
+        inline.restore(paragraph);
+        paragraph.rendererKind = 'legacy';
+      }
       const [renderer, kind] = rendererFor(paragraph);
       renderer.renderError(paragraph, error);
       paragraph.rendererKind = kind;

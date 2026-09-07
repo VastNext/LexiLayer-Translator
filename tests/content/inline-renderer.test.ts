@@ -519,4 +519,357 @@ describe('InlineRenderer', () => {
     expect(buttonClicks).toBe(3);
     expect(button.getAttribute('aria-expanded')).toBe('true');
   });
+
+  it('挂载后内部被深克隆/替换导致缓存 sourceWrapper 脱离：renderTranslation 重新校验并拒绝或更新挂载，不向脱离节点渲染', () => {
+    const paragraph = store.getOrCreate(source);
+    const token = renderer.beginTask(paragraph);
+    renderer.renderLoading(paragraph);
+
+    const initialSourceWrapper = paragraph.sourceWrapper!;
+    expect(initialSourceWrapper.isConnected).toBe(true);
+
+    // 模拟页面框架（如 React/Vue）对 source 内部进行深克隆重置
+    const clonedChildren = Array.from(source.childNodes).map((node) => node.cloneNode(true));
+    source.replaceChildren(...clonedChildren);
+
+    // 此时旧的 sourceWrapper 已经脱离 DOM
+    expect(initialSourceWrapper.isConnected).toBe(false);
+
+    // 渲染翻译结果：旧 sourceWrapper 脱离，renderTranslation 严格拒绝旧结果
+    const accepted = renderer.renderTranslation(paragraph, '你好世界', {
+      mode: 'bilingual',
+      placement: 'after',
+      ...token,
+    });
+
+    expect(accepted).toBe(false);
+  });
+
+  it('深克隆产生多余无主 [data-vast-source] 和 [data-vast-translator] 时，restore 安全解包还原并保留当前节点身份与事件', () => {
+    document.body.innerHTML = '<main><h2 id="heading"><span class="title">Title</span></h2></main>';
+    const heading = document.getElementById('heading') as HTMLElement;
+
+    const paragraph = store.getOrCreate(heading);
+    renderer.renderLoading(paragraph);
+
+    // 模拟框架 deepclone 并替换
+    const cloned = heading.cloneNode(true) as HTMLElement;
+    heading.replaceWith(cloned);
+    const newParagraph = store.getOrCreate(cloned);
+
+    // 在当前克隆真实节点上绑定事件（模拟业务框架重渲染或组件挂载）
+    const clonedTitle = cloned.querySelector('.title') as HTMLElement;
+    let clicked = false;
+    clonedTitle.addEventListener('click', () => { clicked = true; });
+
+    renderer.restore(newParagraph);
+
+    // 关键断言：无损解包后，保留了当前节点的真实 DOM 身份与事件监听器
+    expect(cloned.querySelector('.title')).toBe(clonedTitle);
+    clonedTitle.click();
+    expect(clicked).toBe(true);
+
+    expect(cloned.querySelector('[data-vast-translator]')).toBeNull();
+    expect(cloned.querySelector('[data-vast-source]')).toBeNull();
+    expect(cloned.hasAttribute('data-vast-inline')).toBe(false);
+  });
+
+  it('外层宿主仍连接但内部下钻 target/source 脱离时，迟到结果严格拒绝（返回 false）', () => {
+    document.body.innerHTML = `
+      <main>
+        <h2 id="h2-host">
+          <a id="link-target" href="/doc">
+            <span id="text-leaf">Documentation</span>
+          </a>
+        </h2>
+      </main>`;
+    const h2 = document.getElementById('h2-host') as HTMLElement;
+    const link = document.getElementById('link-target') as HTMLElement;
+    const paragraph = store.getOrCreate(h2);
+    const token = renderer.beginTask(paragraph);
+    renderer.renderLoading(paragraph);
+
+    expect(paragraph.targetElement).toBe(document.getElementById('text-leaf'));
+
+    // 外层 h2 仍连在 DOM 中，但内部的链接被页面替换/破坏成不安全结构（例如变成多链接）
+    link.replaceWith(
+      Object.assign(document.createElement('a'), { href: '/1', textContent: 'Doc 1' }),
+      ' and ',
+      Object.assign(document.createElement('a'), { href: '/2', textContent: 'Doc 2' }),
+    );
+    expect(h2.isConnected).toBe(true);
+
+    // 迟到请求到达：内部 target 脱离且宿主已不安全，renderTranslation 必须拒绝返回 false
+    const accepted = renderer.renderTranslation(paragraph, '文档', {
+      mode: 'bilingual',
+      placement: 'after',
+      ...token,
+    });
+    expect(accepted).toBe(false);
+  });
+
+  it('仅译文模式下发生 deepclone：restore 安全清除克隆 hidden 属性，当前节点完全可见且解包保留身份与事件', () => {
+    document.body.innerHTML = '<main><p id="p-host"><span class="label">Clickable</span></p></main>';
+    const p = document.getElementById('p-host') as HTMLElement;
+
+    const paragraph = store.getOrCreate(p);
+    const token = renderer.beginTask(paragraph);
+    renderer.renderTranslation(paragraph, '可点击', {
+      mode: 'translation-only',
+      placement: 'after',
+      ...token,
+    });
+
+    // 验证在仅译文模式下，原始 source 确实被 hidden
+    expect(p.querySelector('[data-vast-source]')).toHaveProperty('hidden', true);
+
+    // 模拟框架 deepclone
+    const cloned = p.cloneNode(true) as HTMLElement;
+    p.replaceWith(cloned);
+    const clonedParagraph = store.getOrCreate(cloned);
+
+    // 在当前克隆节点上注册监听器
+    const clonedLabel = cloned.querySelector('.label') as HTMLElement;
+    let clickCount = 0;
+    clonedLabel.addEventListener('click', () => { clickCount += 1; });
+
+    // restore 克隆节点
+    renderer.restore(clonedParagraph);
+
+    // 关键断言：克隆出来的 hidden 状态必须被彻底清理，解包保留当前节点身份与事件
+    expect(cloned.querySelector('[data-vast-translator]')).toBeNull();
+    expect(cloned.querySelector('[data-vast-source]')).toBeNull();
+    expect(cloned.hidden).toBe(false);
+    expect(cloned.textContent).toBe('Clickable');
+
+    expect(cloned.querySelector('.label')).toBe(clonedLabel);
+    clonedLabel.click();
+    expect(clickCount).toBe(1);
+  });
+
+  it('error 状态下发生 deepclone：restore 安全移除克隆的重试按钮与 error 容器', () => {
+    document.body.innerHTML = '<main><h3 id="h3-err">Error Text</h3></main>';
+    const h3 = document.getElementById('h3-err') as HTMLElement;
+    const paragraph = store.getOrCreate(h3);
+    renderer.renderError(paragraph, '翻译失败');
+
+    expect(h3.querySelector('[data-vast-retry-all]')).not.toBeNull();
+
+    // 模拟 deepclone
+    const cloned = h3.cloneNode(true) as HTMLElement;
+    h3.replaceWith(cloned);
+    const clonedParagraph = store.getOrCreate(cloned);
+
+    renderer.restore(clonedParagraph);
+
+    expect(cloned.querySelector('[data-vast-retry-all]')).toBeNull();
+    expect(cloned.querySelector('[data-vast-translator]')).toBeNull();
+    expect(cloned.textContent).toBe('Error Text');
+  });
+
+  it('source 内嵌真实 p 与 phrasing 块级结构：deepclone 还原完整保留语义 p 标签与解包节点身份事件', () => {
+    document.body.innerHTML = `
+      <main>
+        <div id="div-host">
+          <p id="inner-p" class="content">Paragraph in div <strong id="inner-strong">bold</strong></p>
+        </div>
+      </main>`;
+    const div = document.getElementById('div-host') as HTMLElement;
+
+    const paragraph = store.getOrCreate(div);
+    const token = renderer.beginTask(paragraph);
+    renderer.renderTranslation(paragraph, 'div 中的段落', {
+      mode: 'bilingual',
+      placement: 'after',
+      ...token,
+    });
+
+    // 模拟 deepclone
+    const cloned = div.cloneNode(true) as HTMLElement;
+    div.replaceWith(cloned);
+    const clonedParagraph = store.getOrCreate(cloned);
+
+    // 在当前克隆节点上注册监听器
+    const clonedStrong = cloned.querySelector('#inner-strong') as HTMLElement;
+    let strongClicked = false;
+    clonedStrong.addEventListener('click', () => { strongClicked = true; });
+
+    renderer.restore(clonedParagraph);
+
+    // 验证：语义 p 标签完好无损，strong 节点身份与监听器完好保留（replaceWith 无损解包）
+    expect(cloned.querySelector('#inner-p')).not.toBeNull();
+    expect(cloned.querySelector('#inner-strong')).toBe(clonedStrong);
+    clonedStrong.click();
+    expect(strongClicked).toBe(true);
+  });
+
+  it('sourceWrapper 内部动态插入 input/button 时，resolveInlineMountTarget 严格检查并判定不安全', () => {
+    document.body.innerHTML = '<main><p id="source-host"><span>Text</span></p></main>';
+    const host = document.getElementById('source-host') as HTMLElement;
+    const paragraph = store.getOrCreate(host);
+    renderer.renderLoading(paragraph);
+
+    const sourceWrapper = paragraph.sourceWrapper!;
+    expect(sourceWrapper).not.toBeNull();
+    expect(isUnsafeInlineElement(host)).toBe(false);
+
+    // 页面向 sourceWrapper 内部动态插入表单控件
+    sourceWrapper.append(document.createElement('input'));
+
+    // 安全检查绝不能忽略 sourceWrapper 内部，必须识别出不安全
+    expect(isUnsafeInlineElement(host)).toBe(true);
+    expect(renderer.isUnsafe(host)).toBe(true);
+  });
+
+  it('renderTranslation 在已挂载 source 脱离 DOM 时不自动重建包装写旧结果，直接返回 false', () => {
+    const paragraph = store.getOrCreate(source);
+    const token = renderer.beginTask(paragraph);
+    renderer.renderLoading(paragraph);
+
+    const oldSourceWrapper = paragraph.sourceWrapper!;
+    // 模拟脱离
+    oldSourceWrapper.remove();
+
+    // renderTranslation 不做自动修复写旧结果，直接拒绝
+    const accepted = renderer.renderTranslation(paragraph, '旧译文', {
+      mode: 'bilingual',
+      placement: 'after',
+      ...token,
+    });
+    expect(accepted).toBe(false);
+  });
+
+  it('restore 面对旧 record 且下钻 target 被克隆替换的场景，必须干净清理 DOM 里的 live target 与克隆标记', () => {
+    document.body.innerHTML = `
+      <main>
+        <h2 id="drill-h2">
+          <a id="drill-link" href="/releases">
+            <span id="drill-title">Releases</span>
+          </a>
+        </h2>
+      </main>`;
+    const h2 = document.getElementById('drill-h2') as HTMLElement;
+    const link = document.getElementById('drill-link') as HTMLElement;
+    const titleSpan = document.getElementById('drill-title') as HTMLElement;
+
+    const oldRecord = store.getOrCreate(h2);
+    const token = renderer.beginTask(oldRecord);
+    renderer.renderTranslation(oldRecord, '发布版本', {
+      mode: 'bilingual',
+      placement: 'after',
+      ...token,
+    });
+
+    // 此时下钻挂载在 titleSpan
+    expect(oldRecord.targetElement).toBe(titleSpan);
+    expect(titleSpan.querySelector('[data-vast-translator]')).not.toBeNull();
+
+    // 模拟框架仅对内部 link/titleSpan 进行了 deepclone 替换，旧 targetElement 脱离但 oldRecord 仍保留其旧引用
+    const clonedLink = link.cloneNode(true) as HTMLElement;
+    link.replaceWith(clonedLink);
+
+    expect(oldRecord.targetElement?.isConnected).toBe(false);
+    expect(h2.querySelector('[data-vast-translator]')).not.toBeNull();
+
+    // 直接对持有旧 detached targetElement 引用的 oldRecord 调用 restore
+    renderer.restore(oldRecord);
+
+    // 关键断言：当前留在 DOM 里的 live target 内部克隆标记必须被彻底清理还原
+    expect(h2.querySelector('[data-vast-translator]')).toBeNull();
+    expect(h2.querySelector('[data-vast-source]')).toBeNull();
+    expect(h2.hasAttribute('data-vast-inline')).toBe(false);
+    expect(h2.textContent?.trim()).toBe('Releases');
+  });
+
+  it('cleanupUnownedPluginNodes 限定在直接子级，内部嵌套的其他合法段落 record 绝不被误解包或误删', () => {
+    document.body.innerHTML = `
+      <main>
+        <div id="parent-host">
+          <p id="child-para">Child text</p>
+        </div>
+      </main>`;
+    const parent = document.getElementById('parent-host') as HTMLElement;
+    const child = document.getElementById('child-para') as HTMLElement;
+
+    // 先为子段落建立合法内联挂载
+    const childRecord = store.getOrCreate(child);
+    const childToken = renderer.beginTask(childRecord);
+    renderer.renderTranslation(childRecord, '子段落译文', {
+      mode: 'bilingual',
+      placement: 'after',
+      ...childToken,
+    });
+
+    expect(child.querySelector('[data-vast-translator]')).not.toBeNull();
+    expect(child.querySelector('[data-vast-source]')).not.toBeNull();
+
+    // 为父容器建立段落并进行挂载/清理
+    const parentRecord = store.getOrCreate(parent);
+    renderer.renderLoading(parentRecord);
+
+    // 关键断言：父级的 cleanupUnownedPluginNodes 仅作用于直接子级，子段落合法的 [data-vast-source] 与译文必须完好无损！
+    expect(child.querySelector('[data-vast-translator]')?.textContent).toBe('子段落译文');
+    expect(child.querySelector('[data-vast-source]')?.textContent).toBe('Child text');
+
+    // 恢复父级时同样不得误伤子段落
+    renderer.restore(parentRecord);
+    expect(child.querySelector('[data-vast-translator]')?.textContent).toBe('子段落译文');
+    expect(child.querySelector('[data-vast-source]')?.textContent).toBe('Child text');
+  });
+
+  it('computedStyle flex 单子级状态链 loading -> translated / error 正常流转，业务多子级与动态新增多子级坚决判定 unsafe', () => {
+    document.body.innerHTML = `
+      <main>
+        <div id="flex-single" style="display: flex;">
+          <span>Single item</span>
+        </div>
+        <div id="flex-multi" style="display: flex;">
+          <span>First item</span>
+          <span>Second item</span>
+        </div>
+      </main>`;
+    const single = document.getElementById('flex-single') as HTMLElement;
+    const multi = document.getElementById('flex-multi') as HTMLElement;
+
+    // 1. 业务多子级：初始即判定为 unsafe
+    expect(isUnsafeInlineElement(multi)).toBe(true);
+    expect(renderer.isUnsafe(multi)).toBe(true);
+
+    // 2. flex 单子级：初始判定为 safe
+    expect(isUnsafeInlineElement(single)).toBe(false);
+    expect(renderer.isUnsafe(single)).toBe(false);
+
+    // 3. loading 阶段安装 [data-vast-source] 与 [data-vast-translator]，不因插件自身多子级而误判 unsafe
+    const paragraph = store.getOrCreate(single);
+    renderer.renderLoading(paragraph);
+    expect(renderer.isUnsafe(single)).toBe(false);
+    expect(single.querySelector('[data-vast-state="loading"]')).not.toBeNull();
+
+    // 4. 成功流转到 translated 状态
+    const token = renderer.beginTask(paragraph);
+    const accepted = renderer.renderTranslation(paragraph, '单项译文', {
+      mode: 'bilingual',
+      placement: 'after',
+      ...token,
+    });
+    expect(accepted).toBe(true);
+    expect(single.querySelector('[data-vast-translator]')?.textContent).toBe('单项译文');
+    expect(renderer.isUnsafe(single)).toBe(false);
+
+    // 5. error 状态（包含重试按钮）也不改变判定
+    renderer.renderError(paragraph, '失败');
+    expect(single.querySelector('[data-vast-state="error"]')).not.toBeNull();
+    expect(renderer.isUnsafe(single)).toBe(false);
+
+    // 6. 恢复干净
+    renderer.restore(paragraph);
+    expect(renderer.isUnsafe(single)).toBe(false);
+
+    // 7. 关键回归：若在 sourceWrapper 内部动态新增业务多子级，必须立刻精准判定为 unsafe！
+    renderer.renderLoading(paragraph);
+    const sourceWrapper = paragraph.sourceWrapper!;
+    sourceWrapper.append(document.createElement('span')); // 动态注入第二个业务子级
+    expect(renderer.isUnsafe(single)).toBe(true);
+    expect(isUnsafeInlineElement(single)).toBe(true);
+  });
 });

@@ -18,6 +18,7 @@ function createDependencies(): ContentControllerDependencies & {
   listeners: Array<(message: unknown) => Promise<unknown>>;
 } {
   const listeners: Array<(message: unknown) => Promise<unknown>> = [];
+  let renderTaskSeq = 0;
   return {
     listeners,
     addMessageListener: (listener) => listeners.push(listener),
@@ -35,8 +36,15 @@ function createDependencies(): ContentControllerDependencies & {
     }),
     hasWaiting: vi.fn(() => false),
     renderLoading: vi.fn(),
-    beginRender: vi.fn((paragraph) => ({ taskId: `render:${paragraph.id}`, expectedVersion: paragraph.version })),
-    renderTranslation: vi.fn(() => true),
+    // mock 与真实渲染器一致：beginRender 真实落写 currentTaskId，且每次调用 taskId 唯一，
+    // 供控制器按 taskId+version 双重校验迟到结果；不得为适配 mock 而弱化校验。
+    beginRender: vi.fn((paragraph) => {
+      const taskId = `render:${paragraph.id}:${++renderTaskSeq}`;
+      paragraph.currentTaskId = taskId;
+      return { taskId, expectedVersion: paragraph.version };
+    }),
+    // 模拟真实渲染器：只接受与当前任务 token 完全匹配的结果（taskId + version 双重校验）。
+    renderTranslation: vi.fn((paragraph, _text, options) => options.taskId === paragraph.currentTaskId && options.expectedVersion === paragraph.version),
     renderError: vi.fn(),
     restore: vi.fn(),
     setRendererMode: vi.fn(),
@@ -171,7 +179,7 @@ describe('网页翻译控制器', () => {
     expect(dependencies.renderTranslation).toHaveBeenCalledWith(
       expect.anything(),
       '译:Hello world',
-      expect.objectContaining({ mode: 'translation-only', taskId: 'render:paragraph-1', expectedVersion: 1 }),
+      expect.objectContaining({ mode: 'translation-only', taskId: 'render:paragraph-1:1', expectedVersion: 1 }),
     );
     expect(dependencies.report).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'complete', completed: 1, total: 1 }));
   });
@@ -230,13 +238,14 @@ describe('网页翻译控制器', () => {
     expect(dependencies.renderTranslation).toHaveBeenCalledWith(paragraph, 'late', expect.objectContaining({ expectedVersion: 1 }));
   });
 
-  it('渲染器拒绝（元素已移除或版本/task 失效）的迟到结果不计完成', async () => {
+  it('渲染器拒绝当前 token（挂载失效）时明确错误收口，不永久停留在 translating', async () => {
     vi.mocked(dependencies.renderTranslation).mockReturnValue(false);
     await dependencies.listeners[0]({ type: 'translate-page' });
     expect(dependencies.renderTranslation).toHaveBeenCalledOnce();
-    // 未采纳的译文不得计入完成，避免进度虚高；因段落未完成，状态保持 translating。
-    expect(dependencies.report).toHaveBeenLastCalledWith({ status: 'translating', completed: 0, failed: 0, total: 1, engineId: 'google' });
-    expect(dependencies.renderError).not.toHaveBeenCalled();
+    // 当前 token 被拒绝说明挂载已失效：必须明确渲染错误并计入失败，
+    // 段落不得永久停留在 loading/translating。
+    expect(dependencies.renderError).toHaveBeenCalledOnce();
+    expect(dependencies.report).toHaveBeenLastCalledWith({ status: 'error', completed: 0, failed: 1, total: 1, engineId: 'google' });
   });
 
   it('源节点被 observer 替换后晚到的旧批失败不污染 failedIds 且新节点成功完成', async () => {
@@ -1070,5 +1079,93 @@ describe('运行时可见性接线', () => {
 
     // detached 元素与已移除 record 不会进入渲染 loading
     expect(dependencies.renderLoading).not.toHaveBeenCalledWith(detachedRecord);
+  });
+
+  it('renderTranslation 拒绝（如挂载失效或脱离 DOM）时不增加完成计数，避免进度虚假 39/39 完成', async () => {
+    const dependencies = createDependencies();
+    document.body.innerHTML = '<main><p id="p1">text1</p><p id="p2">text2</p></main>';
+    vi.mocked(dependencies.scan).mockReturnValue([...document.querySelectorAll('p')] as HTMLElement[]);
+    vi.mocked(dependencies.translate).mockImplementation(async ({ segments }) =>
+      segments.map((s) => ({ id: s.id, text: `译:${s.text}` })),
+    );
+    // 模拟第一个成功，第二个因脱离 DOM 或挂载失效被渲染器拒绝
+    vi.mocked(dependencies.renderTranslation).mockImplementation((paragraph) => {
+      return paragraph.element.id === 'p1';
+    });
+
+    const controller = createContentController(dependencies);
+    await controller.onMessage({ type: 'translate-page' });
+
+    // p2 被渲染器拒绝，不计入完成，总计 2 个，只有 1 个完成
+    expect(dependencies.report).toHaveBeenLastCalledWith(expect.objectContaining({
+      completed: 1,
+      total: 2,
+    }));
+  });
+
+  it('内联段落请求飞行期间发生内部替换：新请求先收敛，旧请求迟到被 token 校验拒绝，最终 1/1 真实完成', async () => {
+    const dependencies = createDependencies();
+    document.body.innerHTML = '<main><h2 id="heading">Original Title</h2></main>';
+    const heading = document.getElementById('heading') as HTMLElement;
+    vi.mocked(dependencies.scan).mockReturnValue([heading]);
+
+    // 两个 deferred 明确 token：首轮（旧）与失效后的新任务（新）都挂起，
+    // 时序为「新请求先 resolve、旧请求后 resolve」，与真实网络乱序一致。
+    let resolveFirstTranslate!: (value: Array<{ id: string; text: string }>) => void;
+    let resolveSecondTranslate!: (value: Array<{ id: string; text: string }>) => void;
+    let translateCount = 0;
+
+    vi.mocked(dependencies.translate).mockImplementation(async () => {
+      translateCount += 1;
+      if (translateCount === 1) {
+        return new Promise((resolve) => {
+          resolveFirstTranslate = resolve;
+        });
+      }
+      return new Promise((resolve) => {
+        resolveSecondTranslate = resolve;
+      });
+    });
+
+    let observerHandler!: (changes: { added: HTMLElement[]; invalidated: unknown[]; removed: unknown[] }) => Promise<void>;
+    dependencies.startObserver = vi.fn((_rule, _store, _scope, handler) => {
+      observerHandler = handler as typeof observerHandler;
+    });
+
+    const controller = createContentController(dependencies);
+    const pendingTranslate = controller.onMessage({ type: 'translate-page' });
+
+    // 等待首轮翻译开始
+    await vi.waitFor(() => expect(dependencies.translate).toHaveBeenCalledTimes(1));
+    const initialRecord = vi.mocked(dependencies.renderLoading).mock.calls[0][0];
+
+    // 模拟内部替换：observer 捕获失效并通知控制器 → 新任务调度（第二次 translate 挂起）
+    const observerPromise = observerHandler({
+      added: [],
+      invalidated: [initialRecord],
+      removed: [],
+    });
+    await vi.waitFor(() => expect(dependencies.translate).toHaveBeenCalledTimes(2));
+
+    // 新请求先返回（新 token 被当前任务接受）
+    resolveSecondTranslate([{ id: initialRecord.id, text: '新译文' }]);
+    await observerPromise;
+
+    // 旧请求迟到返回（旧 token 与当前任务不匹配，被 renderTranslation mock 拒绝，不污染）
+    resolveFirstTranslate([{ id: initialRecord.id, text: '旧译文' }]);
+    await pendingTranslate;
+
+    // 最终进度真实收敛为 1/1 完成，绝不永久停留在 translating 或虚报完成
+    await vi.waitFor(() => expect(dependencies.report).toHaveBeenLastCalledWith(expect.objectContaining({
+      status: 'complete',
+      completed: 1,
+      failed: 0,
+      total: 1,
+    })));
+    // 旧译文确实迟到到达渲染器，但被 token 校验拒绝（返回 false），不得被采纳渲染
+    const staleCall = vi.mocked(dependencies.renderTranslation).mock.calls.find(([, text]) => text === '旧译文');
+    expect(staleCall).toBeDefined();
+    const staleIndex = vi.mocked(dependencies.renderTranslation).mock.calls.indexOf(staleCall!);
+    expect(vi.mocked(dependencies.renderTranslation).mock.results[staleIndex].value).toBe(false);
   });
 });

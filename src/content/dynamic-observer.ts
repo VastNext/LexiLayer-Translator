@@ -10,12 +10,15 @@ export interface DynamicObserverOptions {
   onChanges?: (changes: { added: HTMLElement[]; invalidated: ParagraphRecord[]; removed: ParagraphRecord[] }) => void;
 }
 
-function isPluginNode(node: Node): boolean {
-  const element = node.nodeType === Node.ELEMENT_NODE
-    ? node as Element
-    : node.parentElement;
-  return Boolean(element?.closest('[data-vast-translator]'));
-}
+const inlineRenderer = () => (globalThis as { __vastInlineRenderer?: { isUnsafe(el: HTMLElement): boolean; isOwnedMount(node: HTMLElement): boolean } }).__vastInlineRenderer;
+const isPluginNode = (node: Node): boolean => Boolean((node.nodeType === 1 ? node as Element : (node as Node).parentElement)?.closest?.('[data-vast-translator]'));
+const checkIsUnsafe = (element: HTMLElement): boolean => inlineRenderer()?.isUnsafe(element) ?? false;
+const isStalePluginNode = (node: HTMLElement, record: ParagraphRecord): boolean => {
+  if (node === record.sourceWrapper || node === record.wrapper) return false;
+  const owner = node.dataset.vastOwner;
+  if (!owner || owner === record.id) return true;
+  return !inlineRenderer()?.isOwnedMount(node);
+};
 
 export class DynamicPageObserver {
   private readonly pendingRoots = new Set<Element>();
@@ -51,29 +54,28 @@ export class DynamicPageObserver {
   }
 
   private collect(records: MutationRecord[]): void {
-    const rendererSources = new Set(records.flatMap((record) => {
-      if (record.type !== 'childList' || !(record.target instanceof Element)) return [];
-      const installsWrapper = [...record.addedNodes].some((node) => node instanceof Element && node.matches('[data-vast-source]'));
-      return installsWrapper ? [record.target as HTMLElement] : [];
-    }));
+    const ownTargets = new Set<Element>();
     for (const record of records) {
-      if (isPluginNode(record.target) || rendererSources.has(record.target as HTMLElement)) continue;
-
+      if (record.type !== 'childList' || record.target.nodeType !== 1) continue;
+      const target = record.target as HTMLElement;
+      const mount = this.options.store?.get(target);
+      if ([...record.addedNodes].some((node) => node === mount?.sourceWrapper || node === mount?.wrapper)) ownTargets.add(target);
+    }
+    for (const record of records) {
+      if (isPluginNode(record.target) || ownTargets.has(record.target as Element)) continue;
       if (record.type === 'childList' || record.type === 'characterData') {
         this.collectInvalidatedSource(record.target);
       }
       if (record.type === 'childList') {
         for (const node of record.addedNodes) {
-          if (node instanceof Element && !isPluginNode(node)) this.addRoot(node);
+          if (node.nodeType === 1 && !isPluginNode(node)) this.addRoot(node as HTMLElement);
         }
         for (const node of record.removedNodes) {
-          if (!(node instanceof Element)) continue;
-          for (const element of [node as HTMLElement, ...node.querySelectorAll<HTMLElement>('*')]) this.pendingRemoved.add(element);
+          if (node.nodeType !== 1) continue;
+          for (const element of [node as HTMLElement, ...(node as HTMLElement).querySelectorAll<HTMLElement>('*')]) this.pendingRemoved.add(element);
         }
       } else if (record.type === 'attributes') {
-        if (record.target instanceof Element && !isPluginNode(record.target)) {
-          this.addRoot(record.target);
-        }
+        if (record.target.nodeType === 1) this.addRoot(record.target as HTMLElement);
       }
     }
 
@@ -84,13 +86,9 @@ export class DynamicPageObserver {
   }
 
   private collectInvalidatedSource(node: Node): void {
-    if (!this.options.store) return;
-    let element = node instanceof Element ? node as HTMLElement : node.parentElement;
+    let element = node.nodeType === 1 ? node as HTMLElement : node.parentElement;
     while (element && this.root.contains(element)) {
-      if (this.options.store.get(element)) {
-        this.pendingSources.add(element);
-        return;
-      }
+      if (this.options.store?.get(element)) { this.pendingSources.add(element); return; }
       element = element.parentElement;
     }
   }
@@ -108,9 +106,41 @@ export class DynamicPageObserver {
 
     const invalidated: ParagraphRecord[] = [];
     for (const source of this.pendingSources) {
-      const version = this.options.store!.get(source)?.version;
+      if (!source.isConnected) continue;
+      const record = this.options.store?.get(source);
+      if (!record) continue;
+
+      const prevVersion = record.version;
+      let mountInvalidated = false;
+
+      for (const node of source.querySelectorAll<HTMLElement>('[data-vast-source], [data-vast-translator]')) {
+        if (!isStalePluginNode(node, record)) continue;
+        let nested = false;
+        for (let parent = node.parentElement; parent && parent !== source; parent = parent.parentElement) {
+          if (this.options.store?.get(parent) && this.options.store!.get(parent) !== record) { nested = true; break; }
+        }
+        if (nested) continue;
+        mountInvalidated = true;
+        if (node.dataset.vastSource !== undefined) { node.hidden = false; node.replaceWith(...node.childNodes); }
+        else node.remove();
+      }
+
+      if (record.rendererKind === 'inline' || record.sourceWrapper !== undefined || record.targetElement !== undefined) {
+        mountInvalidated = mountInvalidated
+          || checkIsUnsafe(source)
+          || [record.sourceWrapper, record.wrapper, record.targetElement].some((n) => !!n && (!n.isConnected || !source.contains(n)));
+      } else if (record.rendererKind === 'legacy') {
+        const wrapper = record.wrapper;
+        mountInvalidated = mountInvalidated || (wrapper !== undefined && (!wrapper.isConnected || wrapper.parentElement !== source.parentElement));
+      }
+
       const paragraph = this.options.store!.refresh(source);
-      if (paragraph.version !== version) invalidated.push(paragraph);
+      if (paragraph.version !== prevVersion || mountInvalidated) {
+        if (paragraph.version === prevVersion) {
+          paragraph.version += 1;
+        }
+        invalidated.push(paragraph);
+      }
     }
     const added = new Set<HTMLElement>();
     for (const root of this.pendingRoots) {
@@ -124,9 +154,6 @@ export class DynamicPageObserver {
     for (const element of this.pendingRemoved) {
       if (element.isConnected) continue;
       const record = this.options.store?.get(element);
-      // 段落被移除（含 replaceWith 克隆替换）时，其相邻 loading/error wrapper
-      // 成为孤儿节点（legacy 外部渲染尤甚）；store.delete 会清空 wrapper 引用，
-      // 这里先摘除 DOM 防止永久残留。
       record?.wrapper?.remove();
       const paragraph = this.options.store?.delete(element);
       if (paragraph) removed.push(paragraph);
