@@ -5,7 +5,7 @@
   A browser translator that turns configurable AI prompts into domain-aware translation.
 </p>
 
-当前版本：`0.10.3`。
+当前版本：`0.10.4`。
 
 <p align="center">
   <a href="https://github.com/VastNext/LexiLayer-Translator"><img src="https://img.shields.io/badge/status-MVP-orange.svg" alt="MVP status"></a>
@@ -162,7 +162,7 @@ VAST_E2E_PROXY=http://127.0.0.1:7890 npm run e2e:network
 
 ## 🗺️ 当前状态与路线
 
-当前版本：`0.10.3` · MVP
+当前版本：`0.10.4` · MVP
 
 - ✅ Google / Bing 网页与划词翻译
 - ✅ 多个 OpenAI 兼容 AI 实例
@@ -175,6 +175,10 @@ VAST_E2E_PROXY=http://127.0.0.1:7890 npm run e2e:network
 - ✅ 按 AI 底座保存当前专家选择
 
 当前不包含账号同步、云端配置、PDF 翻译、字幕翻译、术语库管理和自动整站翻译。
+
+## 0.10.4 更新
+
+- ⚡ 将内容脚本单批翻译的通信超时保护从 95 秒调整为更符合人机交互习惯的 30 秒；遇网络挂起或异常时 30 秒内主动报错并展示 ↻ 重试按钮，消除长达 1.5 分钟的盲等假死体验。
 
 ## 0.10.3 更新
 

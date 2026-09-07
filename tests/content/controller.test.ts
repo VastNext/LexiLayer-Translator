@@ -691,6 +691,35 @@ describe('运行时可见性接线', () => {
     }
   });
 
+  it('前端 translate 请求在 30 秒超时后立即触发错误状态并展示重试按钮', async () => {
+    vi.useFakeTimers();
+    const chrome = installChromeRuntime(async () => new Promise<never>(() => undefined));
+    const io = fakeIntersectionObserver();
+    try {
+      document.body.innerHTML = '<main><p id="p-timeout">Waiting forever</p></main>';
+      const controller = createContentController(createRuntimeDependencies());
+      const pending = controller.onMessage({ type: 'translate-page' });
+      await vi.advanceTimersByTimeAsync(10);
+      io.notify([{ target: io.observed[0], isIntersecting: true }]);
+
+      // 29.9 秒时依然在等待
+      await vi.advanceTimersByTimeAsync(29_900);
+      expect(document.querySelector('[data-vast-state="loading"]')).not.toBeNull();
+      expect(document.querySelector('[data-vast-state="error"]')).toBeNull();
+
+      // 到达 30 秒超时熔断：立即报错并渲染重试按钮
+      await vi.advanceTimersByTimeAsync(200);
+      await pending;
+      expect(document.querySelector('[data-vast-state="error"]')).not.toBeNull();
+      expect(document.querySelector('button[data-vast-retry-all]')).not.toBeNull();
+      expect(chrome.progressCalls().at(-1)).toMatchObject({ status: 'error', failed: 1 });
+    } finally {
+      vi.useRealTimers();
+      io.restore();
+      chrome.restoreChrome();
+    }
+  });
+
   it('恢复会话后旧批次失败不渲染错误也不污染新任务', async () => {
     let release!: (value: unknown) => void;
     let hang = true;
