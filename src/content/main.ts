@@ -50,7 +50,7 @@ export function createRuntimeDependencies(): ContentControllerDependencies {
       const timeoutPromise = new Promise<never>((_, reject) => {
         timeoutTimer = setTimeout(() => {
           reject(new Error('翻译请求超时，请检查网络或配置后重试'));
-        }, 30_000);
+        }, 15_000);
       });
       try {
         const responsePromise = chrome.runtime.sendMessage({ type: 'translate-batch', ...request }) as Promise<{ ok: boolean; data?: TranslationResult[]; error?: string }>;

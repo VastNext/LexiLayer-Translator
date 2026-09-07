@@ -340,6 +340,39 @@ describe('scanParagraphElements', () => {
     expect(ids).toEqual(['shreddit-title', 'shreddit-body', 'shreddit-comment-body']);
   });
 
+  it('代码块标签栏、包管理器选项卡与终端工具栏不进入翻译候选', () => {
+    document.body.innerHTML = `
+      <main>
+        <p id="p-content">Here is how to run the CLI:</p>
+        <div class="JKwH5a_root">
+          <div role="tablist" class="JKwH5a_tabTriggers">
+            <button role="tab" id="tab-pnpm"><span>pnpm</span></button>
+            <button role="tab" id="tab-yarn"><span>yarn</span></button>
+          </div>
+          <div role="tabpanel">
+            <div data-geist-code-block>
+              <div data-section="tabs">
+                <span id="tab-header">Terminal</span>
+                <button data-testid="copy/button" id="copy-btn">Copy</button>
+              </div>
+              <div data-section="content">
+                <pre><code>pnpm dlx turbo unlink</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>`;
+
+    const elements = scanParagraphElements(document, rule, 'main-content');
+    const ids = elements.map((el) => el.id);
+
+    expect(ids).toEqual(['p-content']);
+    expect(ids).not.toContain('tab-pnpm');
+    expect(ids).not.toContain('tab-yarn');
+    expect(ids).not.toContain('tab-header');
+    expect(ids).not.toContain('copy-btn');
+  });
+
   it('包含语义段落后代的容器节点不被重复扫描为候选（父子去重）', () => {
     document.body.innerHTML = `
       <table><tbody><tr><td id="container-td">

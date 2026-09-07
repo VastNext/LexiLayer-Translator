@@ -691,7 +691,7 @@ describe('运行时可见性接线', () => {
     }
   });
 
-  it('前端 translate 请求在 30 秒超时后立即触发错误状态并展示重试按钮', async () => {
+  it('前端 translate 请求在 15 秒超时后立即触发错误状态并展示重试按钮', async () => {
     vi.useFakeTimers();
     const chrome = installChromeRuntime(async () => new Promise<never>(() => undefined));
     const io = fakeIntersectionObserver();
@@ -702,12 +702,12 @@ describe('运行时可见性接线', () => {
       await vi.advanceTimersByTimeAsync(10);
       io.notify([{ target: io.observed[0], isIntersecting: true }]);
 
-      // 29.9 秒时依然在等待
-      await vi.advanceTimersByTimeAsync(29_900);
+      // 14.9 秒时依然在等待
+      await vi.advanceTimersByTimeAsync(14_900);
       expect(document.querySelector('[data-vast-state="loading"]')).not.toBeNull();
       expect(document.querySelector('[data-vast-state="error"]')).toBeNull();
 
-      // 到达 30 秒超时熔断：立即报错并渲染重试按钮
+      // 到达 15 秒超时熔断：立即报错并渲染重试按钮
       await vi.advanceTimersByTimeAsync(200);
       await pending;
       expect(document.querySelector('[data-vast-state="error"]')).not.toBeNull();
