@@ -214,4 +214,149 @@ describe('DynamicPageObserver', () => {
     expect(onAdded).toHaveBeenCalledWith([city]);
     observer.stop();
   });
+
+  it('legacy loading 相邻 wrapper 在 source 被 replaceWith 后摘除且新节点独立跟踪', async () => {
+    document.body.innerHTML = '<main><p id="source">Hello</p></main>';
+    const source = document.querySelector('#source') as HTMLElement;
+    const store = new ParagraphStore();
+    const renderer = new DomRenderer();
+    const paragraph = store.getOrCreate(source);
+    renderer.renderLoading(paragraph);
+    // legacy 外部渲染：loading wrapper 是 source 的相邻兄弟节点。
+    expect(paragraph.wrapper!.dataset.vastState).toBe('loading');
+    expect(paragraph.wrapper!.parentElement).toBe(source.parentElement);
+
+    const onChanges = vi.fn();
+    const observer = new DynamicPageObserver(document.body, {
+      scan: (root) => root.matches('p') ? [root as HTMLElement] : [],
+      store,
+      onChanges,
+      debounceMs: 20,
+    });
+    observer.start();
+
+    const clone = source.cloneNode(true) as HTMLElement;
+    source.replaceWith(clone);
+    await vi.advanceTimersByTimeAsync(20);
+
+    // 旧 loading wrapper 不得残留为永久孤儿节点。
+    expect(document.querySelector('[data-vast-translator]')).toBeNull();
+    // 原记录已删除；observer 只上报新节点，不为其建记录。
+    expect(store.get(source)).toBeUndefined();
+    expect(store.get(clone)).toBeUndefined();
+    expect(onChanges).toHaveBeenCalledOnce();
+    expect(onChanges).toHaveBeenCalledWith({
+      added: [clone],
+      invalidated: [],
+      removed: [paragraph],
+    });
+
+    // 控制器侧为新节点独立建立记录并渲染 loading，不继承旧状态。
+    const cloneRecord = store.getOrCreate(clone);
+    expect(cloneRecord.id).not.toBe(paragraph.id);
+    expect(cloneRecord.wrapper).toBeUndefined();
+    renderer.renderLoading(cloneRecord);
+    expect(clone.hasAttribute('data-vast-translator')).toBe(false);
+    expect(document.querySelectorAll('[data-vast-translator]')).toHaveLength(1);
+    expect(cloneRecord.wrapper!.dataset.vastState).toBe('loading');
+    expect(cloneRecord.wrapper!.parentElement).toBe(clone.parentElement);
+    observer.stop();
+  });
+
+  it('source 直接移除时其相邻 loading wrapper 一并从 DOM 摘除', async () => {
+    document.body.innerHTML = '<main><p id="source">Hello</p></main>';
+    const source = document.querySelector('#source') as HTMLElement;
+    const store = new ParagraphStore();
+    const renderer = new DomRenderer();
+    const paragraph = store.getOrCreate(source);
+    renderer.renderLoading(paragraph);
+    expect(document.querySelector('[data-vast-translator]')).not.toBeNull();
+
+    const onRemoved = vi.fn();
+    const observer = new DynamicPageObserver(document.body, {
+      scan: vi.fn(),
+      store,
+      onRemoved,
+      debounceMs: 20,
+    });
+    observer.start();
+    source.remove();
+    await vi.advanceTimersByTimeAsync(20);
+
+    expect(onRemoved).toHaveBeenCalledWith(paragraph);
+    expect(store.get(source)).toBeUndefined();
+    expect(document.querySelector('[data-vast-translator]')).toBeNull();
+    observer.stop();
+  });
+
+  it('source 被替换后晚到的原请求成功不渲染到新节点', async () => {
+    document.body.innerHTML = '<main><p id="source">Hello</p></main>';
+    const source = document.querySelector('#source') as HTMLElement;
+    const store = new ParagraphStore();
+    const renderer = new DomRenderer();
+    const paragraph = store.getOrCreate(source);
+    renderer.renderLoading(paragraph);
+    const staleToken = renderer.beginTask(paragraph);
+
+    const observer = new DynamicPageObserver(document.body, {
+      scan: (root) => root.matches('p') ? [root as HTMLElement] : [],
+      store,
+      onChanges: vi.fn(),
+      debounceMs: 20,
+    });
+    observer.start();
+    const clone = source.cloneNode(true) as HTMLElement;
+    source.replaceWith(clone);
+    await vi.advanceTimersByTimeAsync(20);
+
+    // 晚到的原请求结果：旧元素已断开，渲染器拒绝且不落到新节点。
+    expect(renderer.renderTranslation(paragraph, '迟到的译文', { mode: 'bilingual', placement: 'after', ...staleToken })).toBe(false);
+    expect(document.querySelector('[data-vast-state="translated"]')).toBeNull();
+    expect(clone.textContent).toBe('Hello');
+
+    // 新节点正常翻译不受旧请求污染。
+    const cloneRecord = store.getOrCreate(clone);
+    renderer.renderLoading(cloneRecord);
+    const freshToken = renderer.beginTask(cloneRecord);
+    expect(renderer.renderTranslation(cloneRecord, '新译文', { mode: 'bilingual', placement: 'after', ...freshToken })).toBe(true);
+    expect(document.querySelectorAll('[data-vast-state="translated"]')).toHaveLength(1);
+    expect(clone.nextElementSibling?.textContent).toBe('新译文');
+    expect(clone.textContent).toBe('Hello');
+    observer.stop();
+  });
+
+  it('source 被替换后晚到的原请求失败不渲染错误到新节点', async () => {
+    document.body.innerHTML = '<main><p id="source">Hello</p></main>';
+    const source = document.querySelector('#source') as HTMLElement;
+    const store = new ParagraphStore();
+    const renderer = new DomRenderer();
+    const paragraph = store.getOrCreate(source);
+    renderer.renderLoading(paragraph);
+
+    const observer = new DynamicPageObserver(document.body, {
+      scan: (root) => root.matches('p') ? [root as HTMLElement] : [],
+      store,
+      onChanges: vi.fn(),
+      debounceMs: 20,
+    });
+    observer.start();
+    const clone = source.cloneNode(true) as HTMLElement;
+    source.replaceWith(clone);
+    await vi.advanceTimersByTimeAsync(20);
+
+    // 晚到的原请求失败：旧元素断开后 renderError 只产生脱离文档的 wrapper。
+    renderer.renderError(paragraph, '翻译失败');
+    expect(document.querySelector('[data-vast-state="error"]')).toBeNull();
+    expect(document.querySelector('[data-vast-translator]')).toBeNull();
+    expect(clone.textContent).toBe('Hello');
+
+    // 新节点的失败独立渲染，不受旧请求影响。
+    const cloneRecord = store.getOrCreate(clone);
+    renderer.renderLoading(cloneRecord);
+    renderer.renderError(cloneRecord, '翻译失败');
+    expect(document.querySelectorAll('[data-vast-state="error"]')).toHaveLength(1);
+    expect(clone.nextElementSibling?.textContent).toContain('翻译失败');
+    expect(clone.textContent).toBe('Hello');
+    observer.stop();
+  });
 });

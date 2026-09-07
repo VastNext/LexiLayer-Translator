@@ -169,7 +169,7 @@ function translateToChinese(text: string): string {
 
 export async function startMockServer(): Promise<MockServer> {
   let mode: ApiMode = 'success';
-  let releaseDelay: (() => void) | undefined;
+  const pendingDelays: Array<() => void> = [];
   let activeRequests = 0;
   let maxConcurrency = 0;
   const requests: RecordedRequest[] = [];
@@ -229,7 +229,7 @@ export async function startMockServer(): Promise<MockServer> {
     maxConcurrency = Math.max(maxConcurrency, activeRequests);
     response.once('finish', () => { activeRequests -= 1; });
 
-    if (mode === 'delay') await new Promise<void>((resolve) => { releaseDelay = resolve; });
+    if (mode === 'delay') await new Promise<void>((resolve) => { pendingDelays.push(resolve); });
     if (mode === '401' || mode === '429' || mode === '500') {
       const status = Number(mode);
       response.writeHead(status, { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json', ...(status === 429 ? { 'Retry-After': '0' } : {}) });
@@ -277,7 +277,7 @@ export async function startMockServer(): Promise<MockServer> {
     hits,
     maxConcurrency: () => maxConcurrency,
     setMode(nextMode) { mode = nextMode; },
-    releaseDelay() { releaseDelay?.(); releaseDelay = undefined; },
+    releaseDelay() { for (const resolve of pendingDelays.splice(0)) resolve(); },
     close: () => new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())),
   };
 }

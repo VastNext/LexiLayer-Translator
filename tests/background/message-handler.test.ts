@@ -371,6 +371,20 @@ describe('service worker 消息编排', () => {
     expect(chromeApi.storage.session?.set).toHaveBeenCalledWith({ pageProgress: { '5:0': { status: 'partial', completed: 2, failed: 1, total: 3 } } });
   });
 
+  it('Popup 不存在时捕获进度广播拒绝并保留已存储进度', async () => {
+    const broadcast = Promise.reject(new Error('Could not establish connection. Receiving end does not exist.'));
+    // 测试自身兜住拒绝，再单独确认生产路径确实注册了拒绝处理，避免 mock 掩盖问题。
+    void broadcast.catch(() => undefined);
+    const catchBroadcast = vi.spyOn(broadcast, 'catch');
+    vi.mocked(chromeApi.runtime.sendMessage).mockReturnValueOnce(broadcast);
+    const page = { id: 'extension-id', tab: { id: 5 } as chrome.tabs.Tab, frameId: 0, documentId: 'doc' };
+    const progress = { status: 'complete', completed: 2, failed: 0, total: 2 };
+    await expect(send({ type: 'page-progress', progress }, page)).resolves.toEqual({ ok: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(catchBroadcast).toHaveBeenCalledWith(expect.any(Function));
+    await expect(send({ type: 'get-page-progress', tabId: 5, frameId: 0 })).resolves.toEqual({ ok: true, data: progress });
+  });
+
   it.each(['translating', 'complete', 'partial', 'error'] as const)('页面进度 %s 时按 tab 显示绿色勾 Badge', async (status) => {
     const page = { id: 'extension-id', tab: { id: 6 } as chrome.tabs.Tab, frameId: 0, documentId: 'doc' };
 

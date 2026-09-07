@@ -87,6 +87,7 @@ export function createRuntimeDependencies(): ContentControllerDependencies {
       const [renderer, kind] = rendererFor(paragraph);
       const accepted = renderer.renderTranslation(paragraph, text, { ...options, placement: options.placement ?? 'after' });
       if (accepted) paragraph.rendererKind = kind;
+      return accepted;
     },
     renderError: (paragraph, error) => {
       const [renderer, kind] = rendererFor(paragraph);

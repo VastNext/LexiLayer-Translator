@@ -36,7 +36,7 @@ function createDependencies(): ContentControllerDependencies & {
     hasWaiting: vi.fn(() => false),
     renderLoading: vi.fn(),
     beginRender: vi.fn((paragraph) => ({ taskId: `render:${paragraph.id}`, expectedVersion: paragraph.version })),
-    renderTranslation: vi.fn(),
+    renderTranslation: vi.fn(() => true),
     renderError: vi.fn(),
     restore: vi.fn(),
     setRendererMode: vi.fn(),
@@ -228,6 +228,250 @@ describe('网页翻译控制器', () => {
     resolve([{ id: paragraph.id, text: 'late' }]);
     await pending;
     expect(dependencies.renderTranslation).toHaveBeenCalledWith(paragraph, 'late', expect.objectContaining({ expectedVersion: 1 }));
+  });
+
+  it('渲染器拒绝（元素已移除或版本/task 失效）的迟到结果不计完成', async () => {
+    vi.mocked(dependencies.renderTranslation).mockReturnValue(false);
+    await dependencies.listeners[0]({ type: 'translate-page' });
+    expect(dependencies.renderTranslation).toHaveBeenCalledOnce();
+    // 未采纳的译文不得计入完成，避免进度虚高；因段落未完成，状态保持 translating。
+    expect(dependencies.report).toHaveBeenLastCalledWith({ status: 'translating', completed: 0, failed: 0, total: 1, engineId: 'google' });
+    expect(dependencies.renderError).not.toHaveBeenCalled();
+  });
+
+  it('源节点被 observer 替换后晚到的旧批失败不污染 failedIds 且新节点成功完成', async () => {
+    let rejectFirstTranslate!: (error: Error) => void;
+    let translateCall = 0;
+
+    vi.mocked(dependencies.translate).mockImplementation(async (request) => {
+      translateCall += 1;
+      if (translateCall === 1) {
+        return new Promise((_, reject) => {
+          rejectFirstTranslate = reject;
+        });
+      }
+      return request.segments.map((segment) => ({ id: segment.id, text: `译:${segment.text}` }));
+    });
+
+    const pendingTranslate = dependencies.listeners[0]({ type: 'translate-page' });
+    await vi.waitFor(() => expect(dependencies.translate).toHaveBeenCalledTimes(1));
+
+    const initialRecord = vi.mocked(dependencies.renderLoading).mock.calls[0][0];
+    const initialElement = initialRecord.element;
+    const observer = vi.mocked(dependencies.startObserver).mock.calls[0][3];
+
+    // 模拟 DOM 替换：旧节点断开，新克隆节点挂载
+    const clone = document.createElement('p');
+    clone.textContent = 'hello cloned';
+    initialElement.remove();
+    document.body.append(clone);
+
+    await observer({
+      removed: [initialRecord],
+      added: [clone],
+      invalidated: [],
+    });
+
+    // 旧请求在后台失败（例如网络异常或服务端报错）
+    rejectFirstTranslate(new Error('旧请求失败'));
+    await pendingTranslate.catch(() => undefined);
+
+    // 等待新节点的翻译完成
+    await vi.waitFor(() => expect(dependencies.translate).toHaveBeenCalledTimes(2));
+
+    // 旧节点不应被调用 renderError，也不应污染 failedIds
+    expect(dependencies.renderError).not.toHaveBeenCalledWith(initialRecord, expect.any(String));
+    // 最终进度应由新节点成功收口：1 成功，0 失败，总计 1
+    expect(dependencies.report).toHaveBeenLastCalledWith(expect.objectContaining({
+      status: 'complete',
+      completed: 1,
+      failed: 0,
+      total: 1,
+    }));
+  });
+
+  it('源节点被 observer 替换后晚到的旧批成功不计入完成且不污染新节点', async () => {
+    let resolveFirstTranslate!: (value: Array<{ id: string; text: string }>) => void;
+    let translateCall = 0;
+
+    vi.mocked(dependencies.translate).mockImplementation(async (request) => {
+      translateCall += 1;
+      if (translateCall === 1) {
+        return new Promise((resolve) => {
+          resolveFirstTranslate = resolve;
+        });
+      }
+      return request.segments.map((segment) => ({ id: segment.id, text: `新译:${segment.text}` }));
+    });
+
+    const pendingTranslate = dependencies.listeners[0]({ type: 'translate-page' });
+    await vi.waitFor(() => expect(dependencies.translate).toHaveBeenCalledTimes(1));
+
+    const initialRecord = vi.mocked(dependencies.renderLoading).mock.calls[0][0];
+    const initialElement = initialRecord.element;
+    const observer = vi.mocked(dependencies.startObserver).mock.calls[0][3];
+
+    // 模拟 DOM 替换
+    const clone = document.createElement('p');
+    clone.textContent = 'hello cloned 2';
+    initialElement.remove();
+    document.body.append(clone);
+
+    await observer({
+      removed: [initialRecord],
+      added: [clone],
+      invalidated: [],
+    });
+
+    // 旧请求迟到返回
+    resolveFirstTranslate([{ id: initialRecord.id, text: '旧译文' }]);
+    await pendingTranslate;
+
+    // 等待新节点翻译完成
+    await vi.waitFor(() => expect(dependencies.translate).toHaveBeenCalledTimes(2));
+
+    // 最终进度严格为新节点的 1 个完成
+    expect(dependencies.report).toHaveBeenLastCalledWith(expect.objectContaining({
+      status: 'complete',
+      completed: 1,
+      failed: 0,
+      total: 1,
+    }));
+  });
+
+  it('observer 发现动态新增节点在异步请求挂起期间立即上报 translating', async () => {
+    let resolveSecondTranslate!: (value: Array<{ id: string; text: string }>) => void;
+    let translateCount = 0;
+
+    vi.mocked(dependencies.translate).mockImplementation(async (request) => {
+      translateCount += 1;
+      if (translateCount === 1) {
+        return request.segments.map((segment) => ({ id: segment.id, text: `译:${segment.text}` }));
+      }
+      return new Promise((resolve) => {
+        resolveSecondTranslate = resolve;
+      });
+    });
+
+    // 初始页面翻译完成
+    await dependencies.listeners[0]({ type: 'translate-page' });
+    expect(dependencies.report).toHaveBeenLastCalledWith(expect.objectContaining({
+      status: 'complete',
+      completed: 1,
+      total: 1,
+    }));
+
+    // observer 发现新增节点
+    const observer = vi.mocked(dependencies.startObserver).mock.calls[0][3];
+    const dynamicElement = document.createElement('p');
+    dynamicElement.textContent = 'deferred dynamic';
+    document.body.append(dynamicElement);
+
+    const pendingObserver = observer({
+      added: [dynamicElement],
+      invalidated: [],
+    });
+
+    // 在 translate 挂起未完成阶段，因新增节点进入 paragraphs，应立即上报 translating (1, 0, total: 2)
+    await vi.waitFor(() => expect(dependencies.translate).toHaveBeenCalledTimes(2));
+    expect(dependencies.report).toHaveBeenLastCalledWith(expect.objectContaining({
+      status: 'translating',
+      completed: 1,
+      failed: 0,
+      total: 2,
+    }));
+
+    // 释放第二批 translate 结果
+    const dynamicRecord = vi.mocked(dependencies.renderLoading).mock.calls.at(-1)![0];
+    resolveSecondTranslate([{ id: dynamicRecord.id, text: '译:deferred dynamic' }]);
+    await pendingObserver;
+
+    // 最终收敛为 complete (2, 0, total: 2)
+    expect(dependencies.report).toHaveBeenLastCalledWith(expect.objectContaining({
+      status: 'complete',
+      completed: 2,
+      failed: 0,
+      total: 2,
+    }));
+  });
+
+  it('批次在调度等待期间元素若全部断开连接则不发送空 translate 请求', async () => {
+    let queuedWorker!: (items: unknown[]) => Promise<void>;
+    vi.mocked(dependencies.schedule).mockImplementation(async (_batches, worker) => {
+      queuedWorker = worker as (items: unknown[]) => Promise<void>;
+      return [];
+    });
+
+    await dependencies.listeners[0]({ type: 'translate-page' });
+    const initialRecord = vi.mocked(dependencies.renderLoading).mock.calls[0][0];
+
+    // 在 worker 真正执行前，该元素断开连接
+    initialRecord.element.remove();
+
+    // 执行排队的 worker
+    await queuedWorker([initialRecord]);
+
+    // 此时 activeBatch 为空，不应调用 dependencies.translate
+    expect(dependencies.translate).not.toHaveBeenCalled();
+  });
+
+  it('retry 准备期间失败节点被 DOM 移除时，彻底清理且不发起空重试与幽灵进度', async () => {
+    // 第一次翻译失败
+    vi.mocked(dependencies.translate).mockRejectedValueOnce(new Error('首次失败'));
+    await dependencies.listeners[0]({ type: 'translate-page' });
+    expect(dependencies.report).toHaveBeenLastCalledWith(expect.objectContaining({
+      status: 'error',
+      failed: 1,
+      total: 1,
+    }));
+
+    const failedRecord = vi.mocked(dependencies.renderLoading).mock.calls[0][0];
+
+    // 模拟在 loadRule 异步期间该失败节点被从 DOM 移除
+    let loadRuleDone = false;
+    vi.mocked(dependencies.loadRule).mockImplementation(async () => {
+      if (!loadRuleDone) {
+        loadRuleDone = true;
+        failedRecord.element.remove();
+      }
+      return { id: 'generic', match: () => true, version: 1 };
+    });
+
+    await dependencies.listeners[0]({ type: 'retry-page-translation' });
+
+    // 因失败节点已被移除，不应发起二次 translate
+    expect(dependencies.translate).toHaveBeenCalledTimes(1);
+    // 进度应正确收口（已无活跃段落，status: complete, 0/0）
+    expect(dependencies.report).toHaveBeenLastCalledWith(expect.objectContaining({
+      status: 'complete',
+      completed: 0,
+      failed: 0,
+      total: 0,
+    }));
+
+    // 确认此时 observer 依然注册生效，后续新增节点仍可正常处理翻译
+    const latestObserver = vi.mocked(dependencies.startObserver).mock.calls.at(-1)![3];
+    const postRetryAdded = document.createElement('p');
+    postRetryAdded.textContent = 'post retry dynamic';
+    document.body.append(postRetryAdded);
+
+    vi.mocked(dependencies.translate).mockImplementationOnce(async (request) => {
+      return request.segments.map((segment) => ({ id: segment.id, text: `译:${segment.text}` }));
+    });
+
+    await latestObserver({
+      added: [postRetryAdded],
+      invalidated: [],
+    });
+
+    expect(dependencies.renderLoading).toHaveBeenCalledWith(expect.objectContaining({ sourceText: 'post retry dynamic' }));
+    expect(dependencies.translate).toHaveBeenCalledTimes(2);
+    expect(dependencies.report).toHaveBeenLastCalledWith(expect.objectContaining({
+      status: 'complete',
+      completed: 1,
+      failed: 0,
+      total: 1,
+    }));
   });
 
   it('动态新增和原文失效按当前会话配置重新翻译且受代际保护', async () => {

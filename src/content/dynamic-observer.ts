@@ -123,6 +123,11 @@ export class DynamicPageObserver {
     const removed: ParagraphRecord[] = [];
     for (const element of this.pendingRemoved) {
       if (element.isConnected) continue;
+      const record = this.options.store?.get(element);
+      // 段落被移除（含 replaceWith 克隆替换）时，其相邻 loading/error wrapper
+      // 成为孤儿节点（legacy 外部渲染尤甚）；store.delete 会清空 wrapper 引用，
+      // 这里先摘除 DOM 防止永久残留。
+      record?.wrapper?.remove();
       const paragraph = this.options.store?.delete(element);
       if (paragraph) removed.push(paragraph);
     }

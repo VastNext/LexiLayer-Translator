@@ -661,3 +661,45 @@ for (const mode of ['401', 'invalid-json'] as const) {
     await expect(page.locator('[data-vast-state="loading"]')).toHaveCount(0);
   });
 }
+
+test('源节点在 loading 阶段被 replaceWith 替换后旧 loading 移除且新节点成功翻译', async ({
+  context, server, openExtensionPage,
+}) => {
+  const options = await openExtensionPage('options.html');
+  await saveConfiguration(options, server.baseUrl);
+  await options.close();
+  server.setMode('delay');
+  const page = await openFixture(context, server.fixtureUrl);
+  const popup = await openPopupForFixture(openExtensionPage, page);
+  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+
+  // 验证页面已进入 loading 状态，并精确定位由 legacy 模式附加在 #first 后的 loading wrapper
+  const oldLoading = page.locator('#first + [data-vast-translator][data-vast-state="loading"]');
+  await expect(oldLoading).toBeVisible();
+  // 保留旧 wrapper 的真实 DOM 句柄，用于在源节点被替换后断言该 wrapper 确实被从 DOM 树摘除
+  const oldWrapperHandle = await oldLoading.elementHandle();
+  if (!oldWrapperHandle) throw new Error('未找到源段落的 loading wrapper 句柄');
+
+  // 模拟 SPA / 动态框架对 DOM 节点的 replaceWith 克隆替换
+  await page.locator('#first').evaluate((element) => {
+    const clone = element.cloneNode(true) as HTMLElement;
+    clone.id = 'first-cloned';
+    clone.textContent = 'Changed source paragraph.';
+    element.replaceWith(clone);
+  });
+
+  // 断言旧 wrapper 节点已从 DOM 树断开连接（不再是 isConnected），杜绝孤儿节点残留
+  await expect.poll(() => oldWrapperHandle.evaluate((element) => element.isConnected)).toBe(false);
+  await expect(page.locator('#first')).toHaveCount(0);
+
+  // 切回 success 模式并释放延迟，确保已挂起请求与后续新节点请求均正常返回
+  server.setMode('success');
+  server.releaseDelay();
+
+  // 新节点由动态 observer 拾取并独立翻译成功，页面无任何残留 loading 占位
+  await expect(page.locator('#first-cloned + [data-vast-translator]')).toHaveText('修改后的原文段落。');
+  await expect(page.locator('[data-vast-state="translated"]')).toHaveCount(5);
+  await expect(page.locator('[data-vast-state="loading"]')).toHaveCount(0);
+  await popup.close();
+  await page.close();
+});

@@ -410,7 +410,8 @@ export function createBackgroundController(api: BackgroundChrome, dependencies: 
         const value = await api.storage.session.get('pageProgress'); const stored = isRecord(value.pageProgress) ? value.pageProgress : {};
         await api.storage.session.set({ pageProgress: { ...stored, [key]: progress } });
         await setTranslationBadge(sender.tab.id, status !== 'idle');
-        void api.runtime.sendMessage({ type: 'page-progress', tabId: sender.tab.id, frameId: sender.frameId, progress }); return { ok: true };
+        // Popup 关闭时可能没有接收端；进度已保存，广播失败不影响翻译。
+        void api.runtime.sendMessage({ type: 'page-progress', tabId: sender.tab.id, frameId: sender.frameId, progress }).catch(() => undefined); return { ok: true };
       }
       if (message.type === 'get-page-progress') {
         if (!hasOnlyKeys(message, ['type', 'tabId', 'frameId']) || !Number.isInteger(message.tabId) || !Number.isInteger(message.frameId) || !api.storage.session) return { ok: false, error: '消息格式无效' };

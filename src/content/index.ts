@@ -52,7 +52,7 @@ export interface ContentControllerDependencies {
   hasWaiting(): boolean;
   beginRender(paragraph: ParagraphRecord): { taskId: string; expectedVersion: number };
   renderLoading(paragraph: ParagraphRecord): void;
-  renderTranslation(paragraph: ParagraphRecord, translation: string, options: { mode: TranslationMode; placement?: 'before' | 'after'; taskId: string; expectedVersion: number }): void;
+  renderTranslation(paragraph: ParagraphRecord, translation: string, options: { mode: TranslationMode; placement?: 'before' | 'after'; taskId: string; expectedVersion: number }): boolean;
   renderError(paragraph: ParagraphRecord, error: string): void;
   restore(paragraph: ParagraphRecord): void;
   setRendererMode?(mode: RendererMode): void;
@@ -88,7 +88,8 @@ export function createContentController(dependencies: ContentControllerDependenc
   function reportCurrent(): void {
     const completed = completedIds.size;
     const failed = failedIds.size;
-    report(dependencies.hasWaiting() ? 'translating' : failed ? completed ? 'partial' : 'error' : 'complete', completed, failed);
+    const isTranslating = dependencies.hasWaiting() || (completed + failed < paragraphs.size);
+    report(isTranslating ? 'translating' : failed ? completed ? 'partial' : 'error' : 'complete', completed, failed);
   }
 
   async function resolveCommand(command: PageCommand): Promise<PageCommand> {
@@ -115,8 +116,9 @@ export function createContentController(dependencies: ContentControllerDependenc
   }
 
   function markFailed(items: ParagraphRecord[], message: string): void {
-    for (const paragraph of items) dependencies.renderError(paragraph, message);
-    for (const paragraph of items) { completedIds.delete(paragraph.id); failedIds.add(paragraph.id); }
+    const activeItems = items.filter((paragraph) => paragraphs.has(paragraph.id) && paragraph.element.isConnected);
+    for (const paragraph of activeItems) dependencies.renderError(paragraph, message);
+    for (const paragraph of activeItems) { completedIds.delete(paragraph.id); failedIds.add(paragraph.id); }
   }
 
   // 开启新翻译代际：作废旧队列与旧任务，返回代际号；已被新命令抢占时返回 undefined。
@@ -142,16 +144,19 @@ export function createContentController(dependencies: ContentControllerDependenc
       batch.push(paragraph); characters += paragraph.sourceText.length;
     }
     if (batch.length) batches.push(batch);
-    const failures = await dependencies.schedule(batches, async (paragraphs) => {
+    const failures = await dependencies.schedule(batches, async (batchParagraphs) => {
       if (currentGeneration !== generation) return;
-      const tokens = new Map(paragraphs.map((paragraph) => [paragraph.id, dependencies.beginRender(paragraph)]));
+      const activeBatch = batchParagraphs.filter((paragraph) => paragraphs.has(paragraph.id) && paragraph.element.isConnected);
+      if (activeBatch.length === 0) return;
+      const tokens = new Map(activeBatch.map((paragraph) => [paragraph.id, dependencies.beginRender(paragraph)]));
       const results = await dependencies.translate({
         taskId, engineId: lastCommand.engineId!, sourceLanguage: lastCommand.sourceLanguage ?? 'auto',
-      targetLanguage: lastCommand.targetLanguage!, segments: paragraphs.map((paragraph) => ({ id: paragraph.id, text: paragraph.sourceText })),
+        targetLanguage: lastCommand.targetLanguage!, segments: activeBatch.map((paragraph) => ({ id: paragraph.id, text: paragraph.sourceText })),
       });
       if (currentGeneration !== generation) return;
       const byId = new Map(results.map((result) => [result.id, result.text]));
-      for (const paragraph of paragraphs) {
+      for (const paragraph of activeBatch) {
+        if (!paragraphs.has(paragraph.id) || !paragraph.element.isConnected) continue;
         const text = byId.get(paragraph.id);
         if (text === undefined) {
           dependencies.renderError(paragraph, '翻译失败，请重试');
@@ -160,7 +165,9 @@ export function createContentController(dependencies: ContentControllerDependenc
           failed += 1;
           continue;
         }
-        dependencies.renderTranslation(paragraph, text, { mode: lastCommand.mode!, placement: lastCommand.placement, ...tokens.get(paragraph.id)! });
+        // 渲染器拒绝（元素已移除或版本/task 已失效）的迟到结果不计完成也不计失败，
+        // 段落状态由接管它的新任务收口，避免进度虚高。
+        if (!dependencies.renderTranslation(paragraph, text, { mode: lastCommand.mode!, placement: lastCommand.placement, ...tokens.get(paragraph.id)! })) continue;
         failedIds.delete(paragraph.id);
         completedIds.add(paragraph.id);
         completed += 1;
@@ -197,6 +204,7 @@ export function createContentController(dependencies: ContentControllerDependenc
         if (paragraph.sourceText) changed.push(paragraph);
       }
       for (const paragraph of changed) { paragraphs.set(paragraph.id, paragraph); dependencies.renderLoading(paragraph); }
+      if (currentGeneration === generation) reportCurrent();
       if (changed.length) await processParagraphs(changed, currentGeneration, taskId);
       if (currentGeneration === generation) reportCurrent();
     };
@@ -268,20 +276,40 @@ export function createContentController(dependencies: ContentControllerDependenc
     activeTaskId = taskId;
     const rule = await dependencies.loadRule();
     if (currentGeneration !== generation) return;
-    dependencies.startObserver(rule, store, lastCommand.scope ?? 'main-content', createObserverHandler(currentGeneration, taskId));
-    // 重试前刷新原文，段落文本若已变化则按当前文本重发。
+
+    // 在 await beginSession() 和 await dependencies.loadRule() 期间，可能某些失败节点已被 DOM 移除
+    const activeFailedParagraphs: ParagraphRecord[] = [];
     for (const paragraph of failedParagraphs) {
+      if (!paragraph.element.isConnected || !paragraphs.has(paragraph.id)) {
+        paragraph.wrapper?.remove();
+        paragraphs.delete(paragraph.id);
+        completedIds.delete(paragraph.id);
+        failedIds.delete(paragraph.id);
+        store.delete(paragraph.element);
+      } else {
+        activeFailedParagraphs.push(paragraph);
+      }
+    }
+
+    dependencies.startObserver(rule, store, lastCommand.scope ?? 'main-content', createObserverHandler(currentGeneration, taskId));
+    if (activeFailedParagraphs.length === 0) {
+      reportCurrent();
+      return;
+    }
+
+    // 重试前刷新原文，段落文本若已变化则按当前文本重发。
+    for (const paragraph of activeFailedParagraphs) {
       store.refresh(paragraph.element);
       dependencies.renderLoading(paragraph);
     }
     report('translating', completedIds.size, failedIds.size);
     try {
-      await processParagraphs(failedParagraphs, currentGeneration, taskId);
+      await processParagraphs(activeFailedParagraphs, currentGeneration, taskId);
       if (currentGeneration !== generation) return;
       reportCurrent();
     } catch (error) {
       if (currentGeneration !== generation) return;
-      markFailed(failedParagraphs, readableError(error));
+      markFailed(activeFailedParagraphs, readableError(error));
       reportCurrent();
     }
   }
