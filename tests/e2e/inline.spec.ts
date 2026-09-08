@@ -215,7 +215,7 @@ test('内联翻译保持 heading 计算样式，恢复保留原节点事件，Op
   // Options 切回兼容模式：下一次全新翻译会话生效（不再是会话内改判）。
   const reopened = await openExtensionPage('options.html');
   await reopened.getByLabel('渲染器模式').selectOption('legacy');
-  await reopened.getByRole('button', { name: '保存阅读偏好' }).click();
+  await expect(reopened.getByRole('status')).toHaveText('设置已保存');
   await expect(reopened.getByRole('status')).toHaveText('设置已保存');
   await reopened.close();
   await clickPopupButton(popup, page, '翻译 (Alt + A)');
@@ -473,7 +473,7 @@ test('手风琴折叠结构在 Legacy 兼容模式下：h3/button 不被隐藏�
   const options = await openExtensionPage('options.html');
   await configureInlineEngine(options, server);
   await options.getByLabel('渲染器模式').selectOption('legacy');
-  await options.getByRole('button', { name: '保存阅读偏好' }).click();
+  await expect(options.getByRole('status')).toHaveText('设置已保存');
   await expect(options.getByRole('status')).toHaveText('设置已保存');
   await options.close();
 

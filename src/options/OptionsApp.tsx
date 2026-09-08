@@ -118,9 +118,37 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
 
   useEffect(() => { void reload(); }, [api]);
 
+  // 阅读偏好与划词翻译的防抖自动保存：加载前禁止编辑与保存；连续修改合并为一次写入，
+  // 失败时状态条提示并通过「重试保存」入口手动重新提交，成功后状态恢复。
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+  const loadedRef = useRef(false);
+  loadedRef.current = loaded;
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [retryableSave, setRetryableSave] = useState(false);
+
+  async function flushPreferences(): Promise<void> {
+    if (saveTimer.current !== undefined) { clearTimeout(saveTimer.current); saveTimer.current = undefined; }
+    try {
+      await api.savePreferences(settingsRef.current.readingPreferences);
+      setRetryableSave(false);
+      setStatus(t('statusSaved'));
+    } catch (error) {
+      setRetryableSave(true);
+      setStatus(error instanceof Error ? error.message : t('statusSaveFailed'));
+    }
+  }
+
   const updatePreferences = <K extends keyof ReadingPreferences>(key: K, value: ReadingPreferences[K]) => {
     setSettings((current) => ({ ...current, readingPreferences: { ...current.readingPreferences, [key]: value } }));
+    if (!loadedRef.current) return;
+    if (saveTimer.current !== undefined) clearTimeout(saveTimer.current);
+    setStatus(t('statusSaving'));
+    saveTimer.current = setTimeout(() => { void flushPreferences(); }, 500);
   };
+
+  useEffect(() => () => { if (saveTimer.current !== undefined) clearTimeout(saveTimer.current); }, []);
+
   const updateDraft = <K extends keyof CustomDraft>(id: string, key: K, value: CustomDraft[K]) => {
     setDrafts((current) => current.map((draft) => draft.id === id ? { ...draft, [key]: value } : draft));
   };
@@ -399,7 +427,7 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
        <label className="field">{t('inlineSelectionModifier')}<select aria-label={t('inlineSelectionModifier')} disabled={!loaded} value={settings.readingPreferences.inlineSelectionModifier} onChange={(event) => updatePreferences('inlineSelectionModifier', event.target.value as ReadingPreferences['inlineSelectionModifier'])}><option value="Control">Ctrl</option><option value="Alt">Alt</option><option value="Shift">Shift</option><option value="Meta">{typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform) ? 'Command' : 'Win / Command'}</option><option value="Off">{t('modifierOff')}</option></select></label>
        <label className="field">{t('inlineSelectionTriggerCount')}<select aria-label={t('inlineSelectionTriggerCount')} disabled={!loaded} value={settings.readingPreferences.inlineSelectionTriggerCount} onChange={(event) => updatePreferences('inlineSelectionTriggerCount', Number(event.target.value) as ReadingPreferences['inlineSelectionTriggerCount'])}><option value="1">{t('triggerOnce')}</option><option value="2">{t('triggerTwice')}</option><option value="3">{t('triggerThrice')}</option></select></label>
       <p className="field field--wide context-help">{t('limitedContextHelp')}</p>
-    </div><div className="actions actions--primary"><button className="primary options-action" disabled={!loaded} onClick={() => void act(() => api.savePreferences(settings.readingPreferences), t('statusSaved'))}>{t('savePreferences')}</button></div></section>
+    </div></section>
 
     <section id="appearance-theme" className="section theme-section" aria-label={t('appearanceTheme')}><div className="section-header"><div><h2>{t('appearanceTheme')}</h2><p className="section-copy">{t('themeDescription')}</p></div><span className="section-index">05 / THEME</span></div>
       <div className="theme-grid">{themeChoices.map((theme) => <button key={theme.id} className={`theme-choice ${settings.theme === theme.id ? 'selected' : ''}`} aria-pressed={settings.theme === theme.id} aria-label={`${theme.name}：${t(theme.descriptionKey)}`} onClick={() => void chooseTheme(theme.id)}>
@@ -412,7 +440,7 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
        <div className="actions"><button className="secondary options-action" onClick={() => importInput.current?.click()}>{t('actionImport')}</button>{!exportChoice ? <button className="secondary options-action" onClick={() => setExportChoice(true)}>{t('actionExport')}</button> : <span className="export-choice"><span className="help">是否包含 API Key？</span><button className="primary options-action" onClick={() => void exportFile(true)}>包含 API Key</button><button className="secondary options-action" onClick={() => void exportFile(false)}>不含 API Key</button><button className="secondary options-action" onClick={() => setExportChoice(false)}>取消导出</button></span>}
       {!confirmCache ? <button className="danger options-action" onClick={() => setConfirmCache(true)}>{t('actionClearCache')}</button> : <><span className="help">{t('confirmClear')}</span><button className="danger options-action" onClick={() => void act(async () => { await api.clearCache(); setConfirmCache(false); }, t('cacheCleared'))}>{t('actionConfirmClear')}</button></>}</div>
     </section>
-    <p className="status status-toast" role="status" data-state={statusState}>{status || t('unchanged')} {loadFailed && <button className="secondary options-action" onClick={() => void reload()}>{t('actionRetry')}</button>}</p>
+    <p className="status status-toast" role="status" data-state={statusState}>{status || t('unchanged')} {loadFailed && <button className="secondary options-action" onClick={() => void reload()}>{t('actionRetry')}</button>}{retryableSave && <button className="secondary options-action" onClick={() => void flushPreferences()}>{t('retrySave')}</button>}</p>
     </div>
   </main>;
 }

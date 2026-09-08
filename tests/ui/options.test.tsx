@@ -69,6 +69,19 @@ function createStatefulApi(settings: OptionsSettings = loaded): OptionsApi {
 }
 
 describe('Options v2 多引擎设置', () => {
+  it('自动保存失败显示原因并提供重试保存入口', async () => {
+    const api = createApi();
+    vi.mocked(api.savePreferences).mockRejectedValueOnce(new Error('设置保存失败'));
+    render(<OptionsApp api={api} />);
+    await screen.findByLabelText('目标语言');
+    await userEvent.selectOptions(screen.getByLabelText('目标语言'), 'ja');
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('设置保存失败'));
+    expect(screen.getByRole('button', { name: '重试保存' })).toBeEnabled();
+    await userEvent.click(screen.getByRole('button', { name: '重试保存' }));
+    await waitFor(() => expect(api.savePreferences).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('设置已保存'));
+  });
+
   it('阅读偏好在配置加载完成前禁用，避免编辑被 reload 覆盖', async () => {
     const api = createApi();
     let resolveLoad!: (settings: OptionsSettings) => void;
@@ -78,15 +91,16 @@ describe('Options v2 多引擎设置', () => {
     expect(screen.getByLabelText('渲染器模式')).toBeDisabled();
     expect(screen.getByLabelText('目标语言')).toBeDisabled();
     expect(screen.getByLabelText('自定义翻译要求')).toBeDisabled();
-    expect(screen.getByRole('button', { name: '保存阅读偏好' })).toBeDisabled();
 
     // 加载完成前用户无法编辑（disabled 门禁），编辑不会发生也就不会被 reload 用存储值覆盖。
     resolveLoad(structuredClone(loaded));
     await waitFor(() => expect(screen.getByLabelText('渲染器模式')).toBeEnabled());
-    expect(screen.getByRole('button', { name: '保存阅读偏好' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: '保存阅读偏好' })).not.toBeInTheDocument();
     await userEvent.selectOptions(screen.getByLabelText('目标语言'), 'ja');
-    await userEvent.click(screen.getByRole('button', { name: '保存阅读偏好' }));
+    // 防抖窗口内不立即写入，随后自动保存一次并提示已保存。
+    expect(api.savePreferences).not.toHaveBeenCalled();
     await waitFor(() => expect(api.savePreferences).toHaveBeenCalledWith(expect.objectContaining({ targetLanguage: 'ja' })));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('设置已保存'));
   });
 
   it('提供五张外观主题卡，点击后立即保存并应用到根节点', async () => {
@@ -123,18 +137,16 @@ describe('Options v2 多引擎设置', () => {
 
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('设置加载失败'));
     expect(screen.getByRole('button', { name: '重试' })).toBeEnabled();
-    // 加载失败时表单与保存保持禁用，防止用默认值解锁编辑后覆盖存储中的真实配置。
+    // 加载失败时表单保持禁用，防止用默认值解锁编辑后覆盖存储中的真实配置。
     expect(screen.getByLabelText('渲染器模式')).toBeDisabled();
     expect(screen.getByLabelText('目标语言')).toBeDisabled();
-    expect(screen.getByRole('button', { name: '保存阅读偏好' })).toBeDisabled();
     expect(screen.getByRole('button', { name: '新增自定义 AI' })).toBeDisabled();
     await userEvent.click(screen.getByRole('button', { name: '重试' }));
 
     expect(await screen.findByRole('group', { name: '工作 AI' })).toBeInTheDocument();
     expect(api.load).toHaveBeenCalledTimes(2);
-    // 重试成功后表单与保存解锁。
+    // 重试成功后表单解锁。
     await waitFor(() => expect(screen.getByLabelText('渲染器模式')).toBeEnabled());
-    expect(screen.getByRole('button', { name: '保存阅读偏好' })).toBeEnabled();
   });
 
   it('内置引擎只显示简洁的内置标识，不展示默认免费或备用说明', async () => {
@@ -158,8 +170,8 @@ describe('Options v2 多引擎设置', () => {
     await userEvent.click(popup);
     await userEvent.selectOptions(modifier, 'Alt');
     await userEvent.selectOptions(screen.getByLabelText('触发次数'), '2');
-    await userEvent.click(screen.getByRole('button', { name: '保存阅读偏好' }));
-
+    // 连续修改只触发一次自动保存（防抖合并），携带最终值。
+    await waitFor(() => expect(api.savePreferences).toHaveBeenCalledTimes(1));
     expect(api.savePreferences).toHaveBeenCalledWith(expect.objectContaining({
       selectionPopupEnabled: false,
       inlineSelectionModifier: 'Alt',
@@ -176,8 +188,7 @@ describe('Options v2 多引擎设置', () => {
     expect(screen.getByText(/修改在下次全新页面翻译时生效/)).toBeInTheDocument();
 
     await userEvent.selectOptions(selector, 'legacy');
-    await userEvent.click(screen.getByRole('button', { name: '保存阅读偏好' }));
-    expect(api.savePreferences).toHaveBeenCalledWith(expect.objectContaining({ rendererMode: 'legacy' }));
+    await waitFor(() => expect(api.savePreferences).toHaveBeenCalledWith(expect.objectContaining({ rendererMode: 'legacy' })));
   });
 
   it('测试连接立即显示测试中，成功失败均更新固定 Toast，设置动作按钮使用统一尺寸类', async () => {

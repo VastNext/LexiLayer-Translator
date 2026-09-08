@@ -106,7 +106,7 @@
   "newCustomAi": { "message": "自定义 AI" },
   "engineOriginChanged": { "message": "Base URL 来源已变化，旧 API Key 不会沿用，请重新输入 API Key。" },
   "instructionCustomOnly": { "message": "自定义翻译要求仅对自定义 AI 生效；Google 和 Bing 会忽略此项。" },
-  "savePreferences": { "message": "保存阅读偏好" },
+  "retrySave": { "message": "重试保存" },
   "statusEngineSaved": { "message": "实例已保存" },
   "statusEngineUpdated": { "message": "引擎状态已更新" },
   "statusActiveChanged": { "message": "默认引擎已更新" },

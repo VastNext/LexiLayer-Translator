@@ -22,7 +22,7 @@ const fallbackMessages: Record<string, string> = {
   copySuccess: '已复制', showApiKey: '显示 API Key', hideApiKey: '隐藏 API Key',
   builtinEngines: '内置翻译引擎', googleDefaultFree: '内置', bingBackup: '内置', builtin: '内置', activeDefault: '当前默认', enabled: '启用', setDefault: '设为默认',
   customAiEngines: '自定义 AI', customAiDescription: '可添加多个 OpenAI 兼容服务，每个实例独立保存连接与密钥。', engineName: '名称', saveEngine: '保存实例', moveUp: '上移', moveDown: '下移', deleteEngine: '删除实例', confirmDeleteEngine: '再次点击确认删除', confirmDeleteEngineAction: '确认删除实例', addCustomAi: '新增自定义 AI', newCustomAi: '自定义 AI',
-  engineOriginChanged: 'Base URL 来源已变化，旧 API Key 不会沿用，请重新输入 API Key。', instructionCustomOnly: '自定义翻译要求仅对自定义 AI 生效；Google 和 Bing 会忽略此项。', savePreferences: '保存阅读偏好',
+  engineOriginChanged: 'Base URL 来源已变化，旧 API Key 不会沿用，请重新输入 API Key。', instructionCustomOnly: '自定义翻译要求仅对自定义 AI 生效；Google 和 Bing 会忽略此项。', retrySave: '重试保存',
   statusEngineSaved: '实例已保存', statusEngineUpdated: '引擎状态已更新', statusActiveChanged: '默认引擎已更新', statusOrderSaved: '引擎顺序已保存', statusEngineDeleted: '实例已删除', importApplied: '配置已安全导入',
   translateShortcut: '翻译 (Alt + A)', showOriginal: '显示原文 (Alt + A)', modeToggleHelp: '切换双语对照与仅译文', settingsNavigation: '设置导航', optionsTitle: '翻译设置', appearanceTheme: '外观主题', dataPrivacy: '数据隐私', themeDescription: '五套主题共享相同功能结构，点击后立即保存。', themeSaved: '主题已保存',
   themePearlDescription: '浅蓝珍珠，安静轻盈的默认阅读主题。', themeCommandDescription: '深色命令台，快速且键盘优先。', themeSageDescription: '鼠尾草绿，温暖友好的全球阅读感。', themeEditorialDescription: '奶油紫与衬线标题，内容编辑感更强。', themePrecisionDescription: '高精度蓝，理性、可靠且更方正。',

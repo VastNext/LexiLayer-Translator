@@ -6,7 +6,7 @@ const requiredLocaleKeys = [
   'builtinEngines', 'googleDefaultFree', 'bingBackup', 'builtin', 'activeDefault', 'enabled', 'setDefault',
   'customAiEngines', 'customAiDescription', 'engineName', 'saveEngine', 'moveUp', 'moveDown', 'deleteEngine',
   'confirmDeleteEngine', 'confirmDeleteEngineAction', 'addCustomAi', 'newCustomAi', 'engineOriginChanged',
-  'instructionCustomOnly', 'savePreferences', 'statusEngineSaved', 'statusEngineUpdated', 'statusActiveChanged',
+  'instructionCustomOnly', 'retrySave', 'statusEngineSaved', 'statusEngineUpdated', 'statusActiveChanged',
   'statusOrderSaved', 'statusEngineDeleted', 'importApplied',
 ] as const;
 

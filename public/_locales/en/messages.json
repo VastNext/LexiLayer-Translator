@@ -106,7 +106,7 @@
   "newCustomAi": { "message": "Custom AI" },
   "engineOriginChanged": { "message": "The Base URL origin changed. The old API key will not be reused; enter it again." },
   "instructionCustomOnly": { "message": "Custom translation instructions apply only to custom AI. Google and Bing ignore them." },
-  "savePreferences": { "message": "Save reading preferences" },
+  "retrySave": { "message": "Retry save" },
   "statusEngineSaved": { "message": "Instance saved" },
   "statusEngineUpdated": { "message": "Engine status updated" },
   "statusActiveChanged": { "message": "Default engine updated" },

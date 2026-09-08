@@ -19,7 +19,6 @@ async function useLegacyRenderer(options: import('@playwright/test').Page): Prom
   // "新增自定义 AI"按钮 disabled={!loaded}，等待它可用即配置已真正加载。
   await expect(options.getByRole('button', { name: '新增自定义 AI' })).toBeEnabled();
   await options.getByLabel('渲染器模式').selectOption('legacy');
-  await options.getByRole('button', { name: '保存阅读偏好' }).click();
   await expect(options.getByRole('status')).toHaveText('设置已保存');
 }
 
@@ -418,7 +417,7 @@ test('长页面底部划词面板始终在视口内，可拖动关闭，Ctrl 内
   const options = await openExtensionPage('options.html');
   await saveConfiguration(options, server.baseUrl);
   await options.getByLabel('目标语言').selectOption('zh-Hans');
-  await options.getByRole('button', { name: '保存阅读偏好' }).click();
+  await expect(options.getByRole('status')).toHaveText('设置已保存');
   await options.close();
   const page = await openFixture(context, server.selectionFixtureUrl);
   const paragraph = page.locator('#bottom-selection');
@@ -464,7 +463,7 @@ test('长页面底部划词面板始终在视口内，可拖动关闭，Ctrl 内
 
   const reopenedOptions = await openExtensionPage('options.html');
   await reopenedOptions.getByRole('checkbox', { name: '显示划词悬浮按钮' }).uncheck();
-  await reopenedOptions.getByRole('button', { name: '保存阅读偏好' }).click();
+  await expect(reopenedOptions.getByRole('status')).toHaveText('设置已保存');
   await reopenedOptions.close();
   await page.bringToFront();
   const disabledBox = await paragraph.boundingBox(); if (!disabledBox) throw new Error('关闭悬浮按钮后的选区不可见');
@@ -590,7 +589,7 @@ test('网页按 8+2 批处理，动态范围正确且离屏滚动后才请求', 
   const options = await openExtensionPage('options.html');
   await saveConfiguration(options, server.baseUrl);
   await options.getByLabel('默认范围').selectOption('main-content');
-  await options.getByRole('button', { name: '保存阅读偏好' }).click();
+  await expect(options.getByRole('status')).toHaveText('设置已保存');
   await options.close();
   const page = await openFixture(context, server.batchFixtureUrl);
   const initialOffscreen = await page.locator('#offscreen').boundingBox();
@@ -631,7 +630,7 @@ test('局部重试不打断在途与离屏任务，恢复后再翻译命中缓�
   const options = await openExtensionPage('options.html');
   await saveConfiguration(options, server.baseUrl);
   await options.getByLabel('默认范围').selectOption('main-content');
-  await options.getByRole('button', { name: '保存阅读偏好' }).click();
+  await expect(options.getByRole('status')).toHaveText('设置已保存');
   await options.close();
 
   // 受控失败：Visible paragraph 1 单段省略结果，同批其余段与后续批次正常，离屏段保持 pending。
@@ -683,7 +682,6 @@ test('德语划词遇畸形 SSE 自动回退非流式', async ({ context, server
   const options = await openExtensionPage('options.html');
   await saveConfiguration(options, server.baseUrl);
   await options.getByLabel('目标语言').selectOption('de');
-  await options.getByRole('button', { name: '保存阅读偏好' }).click();
   await expect(options.getByRole('status')).toHaveText('设置已保存');
   await options.close();
   server.setMode('invalid-sse');
