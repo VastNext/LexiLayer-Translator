@@ -22,6 +22,8 @@ export interface MockServer {
   hits: string[];
   maxConcurrency: () => number;
   setMode(mode: ApiMode): void;
+  /** 受控失败：命中原文的段落在非流式响应中被省略（同批其余段正常返回）。 */
+  setFailingTexts(texts: string[]): void;
   releaseDelay(): void;
   close(): Promise<void>;
 }
@@ -170,6 +172,7 @@ function translateToChinese(text: string): string {
 export async function startMockServer(): Promise<MockServer> {
   let mode: ApiMode = 'success';
   const pendingDelays: Array<() => void> = [];
+  const failingTexts = new Set<string>();
   let activeRequests = 0;
   let maxConcurrency = 0;
   const requests: RecordedRequest[] = [];
@@ -251,7 +254,11 @@ export async function startMockServer(): Promise<MockServer> {
       response.end('data: [DONE]\n\n');
       return;
     }
-    const content = JSON.stringify({ translations: segments.map(({ id, text }) => ({ id, text: translateToChinese(text) })) });
+    const content = JSON.stringify({
+      translations: segments
+        .filter(({ text }) => !failingTexts.has(text))
+        .map(({ id, text }) => ({ id, text: translateToChinese(text) })),
+    });
     response.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' });
     response.end(JSON.stringify({ choices: [{ message: { content } }] }));
   });
@@ -277,6 +284,7 @@ export async function startMockServer(): Promise<MockServer> {
     hits,
     maxConcurrency: () => maxConcurrency,
     setMode(nextMode) { mode = nextMode; },
+    setFailingTexts(texts) { failingTexts.clear(); for (const text of texts) failingTexts.add(text); },
     releaseDelay() { for (const resolve of pendingDelays.splice(0)) resolve(); },
     close: () => new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())),
   };

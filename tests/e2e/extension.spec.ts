@@ -626,6 +626,59 @@ test('网页按 8+2 批处理，动态范围正确且离屏滚动后才请求', 
   await expect(page.locator('#late-header + [data-vast-translator]')).toHaveCount(0);
 });
 
+test('局部重试不打断在途与离屏任务，恢复后再翻译命中缓存不重复 AI 请求', async ({ context, server, openExtensionPage }) => {
+  test.slow();
+  const options = await openExtensionPage('options.html');
+  await saveConfiguration(options, server.baseUrl);
+  await options.getByLabel('默认范围').selectOption('main-content');
+  await options.getByRole('button', { name: '保存阅读偏好' }).click();
+  await options.close();
+
+  // 受控失败：Visible paragraph 1 单段省略结果，同批其余段与后续批次正常，离屏段保持 pending。
+  server.setFailingTexts(['Visible paragraph 1']);
+  const page = await openFixture(context, server.batchFixtureUrl);
+  // popup 开局打开并全程复用；fixture 置前后重载，使 subscribeProgress 在 fixture
+  // 为活动标签时建立（与真实弹窗在页面前台弹出一致），不依赖 activeTabId 的兜底路径。
+  const popup = await openPopupForFixture(openExtensionPage, page);
+  await page.bringToFront();
+  await popup.reload();
+  await expect(popup.getByLabel('翻译引擎')).not.toHaveValue('google');
+  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+  const nonStream = () => server.requests.filter((request) => request.body.stream !== true);
+
+  // 失败与 pending 并存：单段错误 + 9 段成功 + 离屏段仍在等待，不因失败整页作废。
+  await expect(page.locator('#batch-1 + [data-vast-translator][data-vast-state="error"]')).toBeVisible();
+  await expect(page.locator('[data-vast-state="translated"]')).toHaveCount(9);
+  await expect(page.locator('[data-vast-retry-all]').first()).toBeVisible();
+  await expect(page.locator('#offscreen + [data-vast-translator]')).toHaveAttribute('data-vast-state', 'loading');
+  await expect.poll(() => nonStream().length).toBe(2);
+
+  // 局部重试：只补发失败段（新增 1 个请求），离屏任务不被取消或断开。
+  server.setFailingTexts([]);
+  await page.locator('[data-vast-retry-all]').first().click();
+  await expect(page.locator('#batch-1 + [data-vast-translator][data-vast-state="translated"]')).toBeVisible();
+  expect(nonStream().length).toBe(3);
+  await expect(page.locator('#offscreen + [data-vast-translator]')).toHaveAttribute('data-vast-state', 'loading');
+
+  // 未被打断的离屏 pending 在滚动后正常收口。
+  await page.locator('#offscreen').scrollIntoViewIfNeeded();
+  await expect(page.locator('#offscreen + [data-vast-translator]')).toHaveText('屏幕外段落');
+  await expect(page.locator('[data-vast-state="loading"]')).toHaveCount(0);
+  expect(nonStream().length).toBe(4);
+
+  // 恢复原文后再次翻译：滚回顶部让可见批命中缓存；有效缓存不清，全程无新增 AI 请求。
+  await page.locator('#batch-0').scrollIntoViewIfNeeded();
+  await clickPopupButton(popup, page, '显示原文 (Alt + A)');
+  await expect(page.locator('[data-vast-translator]')).toHaveCount(0);
+  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+  await expect(page.locator('[data-vast-state="translated"]')).toHaveCount(10);
+  await page.locator('#offscreen').scrollIntoViewIfNeeded();
+  await expect(page.locator('[data-vast-state="translated"]')).toHaveCount(11);
+  expect(nonStream().length).toBe(4);
+  await popup.close();
+  await page.close();
+});
+
 test('德语划词遇畸形 SSE 自动回退非流式', async ({ context, server, openExtensionPage }) => {
   const options = await openExtensionPage('options.html');
   await saveConfiguration(options, server.baseUrl);

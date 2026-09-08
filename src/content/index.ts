@@ -139,7 +139,8 @@ export function createContentController(dependencies: ContentControllerDependenc
     const previousTaskId = activeTaskId;
     activeTaskId = undefined;
     if (previousTaskId || active) dependencies.stopObserver();
-    if (previousTaskId) await dependencies.cancel(previousTaskId);
+    // cancel 只负责通知后台停止：拒绝或永不返回都不得阻塞新会话建立，旧结果由代际隔离。
+    if (previousTaskId) void dependencies.cancel(previousTaskId).catch(() => undefined);
     return currentGeneration === generation ? currentGeneration : undefined;
   }
 
@@ -236,14 +237,16 @@ export function createContentController(dependencies: ContentControllerDependenc
   async function restore(): Promise<void> {
     generation += 1;
     dependencies.stopObserver();
-    if (activeTaskId) await dependencies.cancel(activeTaskId);
+    const taskId = activeTaskId;
+    activeTaskId = undefined;
     for (const paragraph of paragraphs.values()) dependencies.restore(paragraph);
     dependencies.cleanupPage();
     paragraphs.clear();
     completedIds.clear();
     failedIds.clear();
     active = false;
-    activeTaskId = undefined;
+    // cancel 不阻塞本地清理：拒绝或永不返回时页面恢复立即生效，迟到结果由代际隔离兜底。
+    if (taskId) void dependencies.cancel(taskId).catch(() => undefined);
     report('idle');
   }
 
@@ -286,54 +289,55 @@ export function createContentController(dependencies: ContentControllerDependenc
     }
   }
 
-  // 重试只重发失败段落：保留已成功译文与页面状态，避免整页重翻浪费资源。
+  // 局部重试只重发失败段落：保留当前代际、任务与可见性队列，不打断在途批次与离屏等待。
+  // 候选在 renderLoading 前同步摘出 failedIds（无 await，天然防双击重复提交，且无跨会话锁，
+  // 旧重试挂起期间新会话的失败仍可重试）；本次重试再次失败时由 markFailed 重新加回。
   async function retryFailed(): Promise<void> {
     if (!active) return;
+    const taskId = activeTaskId;
+    if (!taskId) return;
     const failedParagraphs = [...failedIds]
       .map((id) => paragraphs.get(id))
       .filter((paragraph): paragraph is ParagraphRecord => paragraph !== undefined);
     if (failedParagraphs.length === 0) return;
-    const currentGeneration = await beginSession();
-    if (currentGeneration === undefined) return;
-    const taskId = `page-${currentGeneration}`;
-    activeTaskId = taskId;
-    const rule = await dependencies.loadRule();
-    if (currentGeneration !== generation) return;
-
-    // 在 await beginSession() 和 await dependencies.loadRule() 期间，可能某些失败节点已被 DOM 移除
-    const activeFailedParagraphs: ParagraphRecord[] = [];
-    for (const paragraph of failedParagraphs) {
-      if (!paragraph.element.isConnected || !paragraphs.has(paragraph.id)) {
-        paragraph.wrapper?.remove();
-        paragraphs.delete(paragraph.id);
-        completedIds.delete(paragraph.id);
-        failedIds.delete(paragraph.id);
-        store.delete(paragraph.element);
-      } else {
-        activeFailedParagraphs.push(paragraph);
-      }
-    }
-
-    dependencies.startObserver(rule, store, lastCommand.scope ?? 'main-content', createObserverHandler(currentGeneration, taskId));
-    if (activeFailedParagraphs.length === 0) {
-      reportCurrent();
-      return;
-    }
-
-    // 重试前刷新原文，段落文本若已变化则按当前文本重发。
-    for (const paragraph of activeFailedParagraphs) {
-      store.refresh(paragraph.element);
-      dependencies.renderLoading(paragraph);
-    }
-    report('translating', completedIds.size, failedIds.size);
+    for (const paragraph of failedParagraphs) failedIds.delete(paragraph.id);
+    const currentGeneration = generation;
     try {
-      await processParagraphs(activeFailedParagraphs, currentGeneration, taskId);
-      if (currentGeneration !== generation) return;
-      reportCurrent();
-    } catch (error) {
-      if (currentGeneration !== generation) return;
-      markFailed(activeFailedParagraphs, readableError(error));
-      reportCurrent();
+      // 收集失败清单后节点可能已被页面移除：彻底清理，不发起空重试与幽灵进度。
+      const activeFailedParagraphs: ParagraphRecord[] = [];
+      for (const paragraph of failedParagraphs) {
+        if (!paragraph.element.isConnected || !paragraphs.has(paragraph.id)) {
+          paragraph.wrapper?.remove();
+          paragraphs.delete(paragraph.id);
+          completedIds.delete(paragraph.id);
+          failedIds.delete(paragraph.id);
+          store.delete(paragraph.element);
+        } else {
+          activeFailedParagraphs.push(paragraph);
+        }
+      }
+      if (activeFailedParagraphs.length === 0) {
+        reportCurrent();
+        return;
+      }
+
+      // 重试前刷新原文，段落文本若已变化则按当前文本重发。
+      for (const paragraph of activeFailedParagraphs) {
+        store.refresh(paragraph.element);
+        dependencies.renderLoading(paragraph);
+      }
+      report('translating', completedIds.size, failedIds.size);
+      try {
+        await processParagraphs(activeFailedParagraphs, currentGeneration, taskId);
+        if (currentGeneration !== generation) return;
+        reportCurrent();
+      } catch (error) {
+        if (currentGeneration !== generation) return;
+        markFailed(activeFailedParagraphs, readableError(error));
+        reportCurrent();
+      }
+    } finally {
+      if (currentGeneration === generation) reportCurrent();
     }
   }
 
@@ -355,7 +359,8 @@ export function createContentController(dependencies: ContentControllerDependenc
     const taskId = activeTaskId;
     activeTaskId = undefined;
     active = false;
-    if (taskId) await dependencies.cancel(taskId);
+    // 取消失败不阻塞销毁：拒绝被接住，不产生未处理 Promise rejection。
+    if (taskId) void dependencies.cancel(taskId).catch(() => undefined);
   }
 
   return { register: () => dependencies.addMessageListener(onMessage), onMessage, dispose };

@@ -436,15 +436,8 @@ describe('网页翻译控制器', () => {
 
     const failedRecord = vi.mocked(dependencies.renderLoading).mock.calls[0][0];
 
-    // 模拟在 loadRule 异步期间该失败节点被从 DOM 移除
-    let loadRuleDone = false;
-    vi.mocked(dependencies.loadRule).mockImplementation(async () => {
-      if (!loadRuleDone) {
-        loadRuleDone = true;
-        failedRecord.element.remove();
-      }
-      return { id: 'generic', match: () => true, version: 1 };
-    });
+    // 局部重试在收集失败清单后检查连接性：节点已被 DOM 移除则彻底清理，不发起空重试。
+    failedRecord.element.remove();
 
     await dependencies.listeners[0]({ type: 'retry-page-translation' });
 
@@ -609,6 +602,136 @@ describe('网页翻译控制器', () => {
     await dependencies.listeners[0]({ type: 'retry-page-translation' });
     expect(dependencies.translate).toHaveBeenCalledTimes(1);
     expect(dependencies.scan).toHaveBeenCalledOnce();
+    expect(dependencies.report).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'complete' }));
+  });
+
+  it('retry 只重发失败段：不取消任务、不断开队列，在途与离屏段落继续收口', async () => {
+    // 四类段落并存：A(alpha) 已完成、B(beta) 失败、C(gamma) 在途、D(delta) 离屏等待。
+    document.body.innerHTML = `<main>${['alpha', 'beta', 'gamma', 'delta'].map((text) => `<p>${text}${'x'.repeat(4000)}</p>`).join('')}</main>`;
+    vi.mocked(dependencies.scan).mockReturnValue([...document.querySelectorAll('p')] as HTMLElement[]);
+
+    let resolveGamma!: (value: Array<{ id: string; text: string }>) => void;
+    let releaseDelta!: () => void;
+    const deltaGate = new Promise<void>((resolve) => { releaseDelta = resolve; });
+    let deltaWaiting = true;
+    vi.mocked(dependencies.hasWaiting).mockImplementation(() => deltaWaiting);
+    vi.mocked(dependencies.schedule).mockImplementation(async (items, worker) => {
+      const failures: Array<{ item: typeof items[number]; error: unknown }> = [];
+      await Promise.all(items.map(async (batch) => {
+        // delta 批模拟离屏等待：可见性释放前不进入 worker。
+        if (batch.some((paragraph) => paragraph.sourceText.startsWith('delta'))) {
+          await deltaGate;
+          deltaWaiting = false;
+        }
+        try { await worker(batch); } catch (error) { failures.push({ item: batch, error }); }
+      }));
+      return failures;
+    });
+    let betaAttempts = 0;
+    vi.mocked(dependencies.translate).mockImplementation(async ({ segments }) => {
+      const beta = segments.find((segment) => segment.text.startsWith('beta'));
+      if (beta) {
+        if (++betaAttempts === 1) throw new Error('网络异常');
+        return [{ id: beta.id, text: '译:beta' }];
+      }
+      if (segments.some((segment) => segment.text.startsWith('gamma'))) {
+        return new Promise((resolve) => { resolveGamma = resolve; });
+      }
+      return segments.map((segment) => ({ id: segment.id, text: `译:${segment.text.slice(0, 5)}` }));
+    });
+
+    const pending = dependencies.listeners[0]({ type: 'translate-page' });
+    await vi.waitFor(() => expect(dependencies.renderError).toHaveBeenCalledWith(expect.objectContaining({ sourceText: expect.stringContaining('beta') }), '网络异常'));
+    expect(dependencies.renderTranslation).toHaveBeenCalledTimes(1);
+    expect(dependencies.cancel).not.toHaveBeenCalled();
+    expect(dependencies.stopObserver).not.toHaveBeenCalled();
+
+    // 局部重试：不进入新会话，不取消当前任务，不断开可见性队列。
+    const retry = dependencies.listeners[0]({ type: 'retry-page-translation' });
+    await vi.waitFor(() => expect(dependencies.translate).toHaveBeenCalledTimes(4));
+    expect(dependencies.cancel).not.toHaveBeenCalled();
+    expect(dependencies.stopObserver).not.toHaveBeenCalled();
+    expect(vi.mocked(dependencies.translate).mock.calls[3][0].segments).toHaveLength(1);
+    expect(vi.mocked(dependencies.translate).mock.calls[3][0].segments[0].text.startsWith('beta')).toBe(true);
+    await retry;
+    expect(dependencies.renderTranslation).toHaveBeenCalledTimes(2);
+
+    // B 恢复后，C 在途结果与 D 离屏队列照常收口，不因 retry 被打断。
+    const gammaRecord = vi.mocked(dependencies.renderLoading).mock.calls.map(([paragraph]) => paragraph).find((paragraph) => paragraph.sourceText.startsWith('gamma'))!;
+    resolveGamma([{ id: gammaRecord.id, text: '译:gamma' }]);
+    releaseDelta();
+    await pending;
+
+    expect(dependencies.translate).toHaveBeenCalledTimes(5);
+    expect(dependencies.renderTranslation).toHaveBeenCalledTimes(4);
+    expect(dependencies.report).toHaveBeenLastCalledWith({ status: 'complete', completed: 4, failed: 0, total: 4, engineId: 'google' });
+  });
+
+  it('retry 进行中重复触发不重复提交，失败后仍可再次重试', async () => {
+    let attempts = 0;
+    let release!: (value: Array<{ id: string; text: string }>) => void;
+    vi.mocked(dependencies.translate).mockImplementation(async ({ segments }) => {
+      attempts += 1;
+      if (attempts === 1) throw new Error('网络异常');
+      if (attempts === 2) return new Promise((resolve) => { release = resolve; });
+      return segments.map((segment) => ({ id: segment.id, text: `译:${segment.text}` }));
+    });
+    await dependencies.listeners[0]({ type: 'translate-page' });
+    expect(dependencies.report).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'error', failed: 1 }));
+
+    // 重试进行中的第二次触发立即返回，不追加翻译请求。
+    const first = dependencies.listeners[0]({ type: 'retry-page-translation' });
+    const second = dependencies.listeners[0]({ type: 'retry-page-translation' });
+    await vi.waitFor(() => expect(dependencies.translate).toHaveBeenCalledTimes(2));
+    await second;
+    expect(dependencies.translate).toHaveBeenCalledTimes(2);
+
+    // retry 再次失败后仍可重试。
+    release([]);
+    await first;
+    expect(dependencies.report).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'error', failed: 1 }));
+    vi.mocked(dependencies.translate).mockResolvedValueOnce([{ id: 'paragraph-1', text: '译:ok' }]);
+    await dependencies.listeners[0]({ type: 'retry-page-translation' });
+    expect(dependencies.translate).toHaveBeenCalledTimes(3);
+    expect(dependencies.report).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'complete', completed: 1 }));
+  });
+
+  it('retry 进行中 restore：本地清理不被挂起的 cancel 阻塞，迟到结果不渲染', async () => {
+    let release!: (value: Array<{ id: string; text: string }>) => void;
+    vi.mocked(dependencies.translate)
+      .mockRejectedValueOnce(new Error('网络异常'))
+      .mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    vi.mocked(dependencies.cancel).mockImplementation(() => new Promise<void>(() => undefined));
+    await dependencies.listeners[0]({ type: 'translate-page' });
+    expect(dependencies.report).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'error', failed: 1 }));
+
+    const retry = dependencies.listeners[0]({ type: 'retry-page-translation' });
+    await vi.waitFor(() => expect(dependencies.translate).toHaveBeenCalledTimes(2));
+
+    // cancel 永不返回：restore 的本地清理不得被阻塞；旧 retry 继续挂起。
+    await dependencies.listeners[0]({ type: 'restore-page' });
+    expect(dependencies.report).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'idle' }));
+
+    // 旧 retry 仍挂起时开启新会话并失败：retry 不得被旧会话锁拒绝。
+    vi.mocked(dependencies.translate).mockRejectedValueOnce(new Error('新会话失败'));
+    await dependencies.listeners[0]({ type: 'translate-page' });
+    expect(dependencies.report).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'error', failed: 1 }));
+    vi.mocked(dependencies.translate).mockResolvedValueOnce([{ id: 'paragraph-1', text: '译:ok' }]);
+    await dependencies.listeners[0]({ type: 'retry-page-translation' });
+    expect(dependencies.translate).toHaveBeenCalledTimes(4);
+    expect(dependencies.report).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'complete', completed: 1 }));
+
+    // 旧 retry 的迟到结果被代际隔离，不渲染到已恢复/重译的页面。
+    release([{ id: 'paragraph-1', text: '迟到译文' }]);
+    await expect(retry).resolves.toBeUndefined();
+    expect(vi.mocked(dependencies.renderTranslation).mock.calls.some(([, text]) => text === '迟到译文')).toBe(false);
+  });
+
+  it('新会话 cancel 旧任务被拒绝时新翻译照常完成', async () => {
+    vi.mocked(dependencies.cancel).mockRejectedValueOnce(new Error('cancel 失败'));
+    await dependencies.listeners[0]({ type: 'translate-page', targetLanguage: 'ja' });
+    await dependencies.listeners[0]({ type: 'translate-page', targetLanguage: 'de' });
+    expect(dependencies.translate).toHaveBeenCalledWith(expect.objectContaining({ targetLanguage: 'de' }));
     expect(dependencies.report).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'complete' }));
   });
 
@@ -912,12 +1035,57 @@ describe('运行时可见性接线', () => {
       expect(chrome.progressCalls().at(-1)).toMatchObject({ status: 'partial', completed: 1, failed: 1 });
 
       // 重试仅重发失败段，成功后整体 complete，失败计数不重复。
+      // 局部重试为失败段走独立临时队列（与动态变更同路径），已可见元素由 IO 立即回调。
       const retry = controller.onMessage({ type: 'retry-page-translation' });
       await vi.waitFor(() => expect(io.observed).toHaveLength(3));
       io.notify([{ target: second, isIntersecting: true }]);
       await retry;
       expect(document.querySelectorAll('[data-vast-state="translated"]')).toHaveLength(2);
       expect(chrome.progressCalls().at(-1)).toMatchObject({ status: 'complete', completed: 2, failed: 0 });
+      await pending;
+    } finally {
+      io.restore();
+      chrome.restoreChrome();
+    }
+  });
+
+  it('离屏失败段 retry 挂起期间重复点击不重复入队，滚入后仅补发一次', async () => {
+    let secondAttempts = 0;
+    const chrome = installChromeRuntime(async (segments) => {
+      if (segments.some((segment) => segment.text === 'second') && secondAttempts++ === 0) {
+        return { ok: false, error: 'API 请求超时（90000ms）' };
+      }
+      return { ok: true, data: segments.map((segment) => ({ id: segment.id, text: `译:${segment.text}` })) };
+    });
+    const io = fakeIntersectionObserver();
+    try {
+      document.body.innerHTML = '<main><p>first</p><p>second</p></main>';
+      const [first, second] = [...document.querySelectorAll('p')] as HTMLElement[];
+      const controller = createContentController(createRuntimeDependencies());
+      const pending = controller.onMessage({ type: 'translate-page' });
+      await vi.waitFor(() => expect(io.observed).toHaveLength(2));
+
+      // first 可见成功；second 离屏等待。
+      io.notify([{ target: first, isIntersecting: true }, { target: second, isIntersecting: false }]);
+      await vi.waitFor(() => expect(document.querySelector('[data-vast-state="translated"]')?.textContent).toContain('译:first'));
+
+      // second 滚入失败：错误与重试入口出现。
+      io.notify([{ target: second, isIntersecting: true }]);
+      await vi.waitFor(() => expect(document.querySelector('[data-vast-state="error"]')).not.toBeNull());
+
+      // retry 建立补发队列后保持挂起（不 notify）：候选已同步摘出 failedIds，
+      // 重复点击不得再建第二个补发队列（否则滚入后存在重复请求风险）。
+      const retry = controller.onMessage({ type: 'retry-page-translation' });
+      await vi.waitFor(() => expect(io.observed).toHaveLength(3));
+      await controller.onMessage({ type: 'retry-page-translation' });
+      expect(io.observed).toHaveLength(3);
+
+      // 滚入后仅一次补发请求，成功后整体收口。
+      io.notify([{ target: second, isIntersecting: true }]);
+      await retry;
+      expect(document.querySelectorAll('[data-vast-state="translated"]')).toHaveLength(2);
+      const batchCalls = chrome.sendMessage.mock.calls.filter(([message]) => (message as { type: string }).type === 'translate-batch');
+      expect(batchCalls).toHaveLength(3);
       await pending;
     } finally {
       io.restore();
