@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "LexiLayer 页面与划词翻译时序流程",
+    "locale": "zh-CN",
+    "output": "lexilayer-translation-flow.html",
+    "viewBox": [980, 650],
+    "animation": "trace",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "views": [
+      {
+        "id": "scan-and-render",
+        "label": "扫描与占位",
+        "focus": ["user", "content", "renderer"],
+        "note": "用户触发翻译后，Content Script 过滤正文并由内联渲染器完成 DOM 占位。"
+      },
+      {
+        "id": "cache-and-batch",
+        "label": "缓存命中与 AI 合批",
+        "focus": ["content", "bg", "cache", "ai", "provider"],
+        "note": "后台先查本地 IndexedDB，未命中段落由 AI 协调器进行 inflight 去重与 100ms 合批。"
+      },
+      {
+        "id": "mount-and-progress",
+        "label": "译文挂载与进度同步",
+        "focus": ["ai", "bg", "content", "renderer", "user"],
+        "note": "翻译结果回写缓存后，内联渲染器安全注入译文并向后台广播页面进度。"
+      }
+    ]
+  },
+  "participants": [
+    { "id": "user", "type": "external", "label": "用户", "sublabel": "网页交互" },
+    { "id": "content", "type": "frontend", "label": "Content Script", "sublabel": "扫描·调度" },
+    { "id": "renderer", "type": "frontend", "label": "内联渲染器", "sublabel": "Inline" },
+    { "id": "bg", "type": "backend", "label": "Service Worker", "sublabel": "后台路由" },
+    { "id": "cache", "type": "database", "label": "翻译缓存", "sublabel": "IndexedDB" },
+    { "id": "ai", "type": "backend", "label": "AI 协调器", "sublabel": "去重·合批" },
+    { "id": "provider", "type": "external", "label": "翻译端点", "sublabel": "外部 API" }
+  ],
+  "segments": [
+    { "from": 140, "to": 215, "label": "1. 扫描与 DOM 占位" },
+    { "from": 225, "to": 435, "label": "2. 缓存查询、协调合批与端点调用" },
+    { "from": 445, "to": 578, "label": "3. 译文挂载与状态同步" }
+  ],
+  "messages": [
+    { "id": "msg-trigger", "from": "user", "to": "content", "y": 165, "label": "Alt+A 或选中文本", "variant": "emphasis" },
+    { "id": "msg-placeholder", "from": "content", "to": "renderer", "y": 195, "label": "renderLoading (规则过滤与占位标记)", "variant": "default" },
+    { "id": "msg-batch", "from": "content", "to": "bg", "y": 240, "label": "translate-batch (段落列表)", "variant": "emphasis" },
+    { "id": "msg-cache-get", "from": "bg", "to": "cache", "y": 268, "label": "cache.get(key)", "variant": "default" },
+    { "id": "msg-cache-miss", "from": "cache", "to": "bg", "y": 296, "label": "未命中 (cache miss)", "variant": "return" },
+    { "id": "msg-ai-dispatch", "from": "bg", "to": "ai", "y": 325, "label": "translate (未命中段落 · inflight 去重)", "variant": "dashed" },
+    { "id": "msg-provider-req", "from": "ai", "to": "provider", "y": 355, "label": "POST /chat/completions (100ms 合批)", "variant": "security" },
+    { "id": "msg-provider-res", "from": "provider", "to": "ai", "y": 385, "label": "200 OK (JSON 译文列表)", "variant": "return" },
+    { "id": "msg-cache-set", "from": "ai", "to": "cache", "y": 415, "label": "cache.set(key, text)", "variant": "dashed" },
+    { "id": "msg-ai-return", "from": "ai", "to": "bg", "y": 448, "label": "解析回填段落", "variant": "return" },
+    { "id": "msg-bg-return", "from": "bg", "to": "content", "y": 476, "label": "TranslationResult[]", "variant": "return" },
+    { "id": "msg-mount", "from": "content", "to": "renderer", "y": 505, "label": "renderTranslation (注入译文)", "variant": "emphasis" },
+    { "id": "msg-user-see", "from": "renderer", "to": "user", "y": 534, "label": "内联双语 / 仅译文回显", "variant": "return" },
+    { "id": "msg-progress", "from": "content", "to": "bg", "y": 563, "label": "page-progress (完成计数)", "variant": "dashed" }
+  ],
+  "activations": [
+    { "participant": "content", "from": 160, "to": 200, "type": "frontend" },
+    { "participant": "renderer", "from": 190, "to": 200, "type": "frontend" },
+    { "participant": "content", "from": 235, "to": 568, "type": "frontend" },
+    { "participant": "bg", "from": 235, "to": 480, "type": "backend" },
+    { "participant": "cache", "from": 262, "to": 300, "type": "database" },
+    { "participant": "ai", "from": 320, "to": 455, "type": "backend" },
+    { "participant": "provider", "from": 350, "to": 390, "type": "external" },
+    { "participant": "cache", "from": 410, "to": 422, "type": "database" },
+    { "participant": "renderer", "from": 500, "to": 538, "type": "frontend" },
+    { "participant": "bg", "from": 558, "to": 568, "type": "backend" }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "内联渲染与占位",
+      "items": [
+        "Content Script 先行触发内联占位与状态标记",
+        "段落级状态精确绑定，避免动态页面重绘导致闪烁",
+        "失败段落支持局部重试而无需全页重新扫描"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "高效缓存与 AI 协调",
+      "items": [
+        "所有段落优先经 SHA-256 缓存键在本地 IndexedDB 命中",
+        "AiRequestCoordinator 对相同在途段落做 inflight 去重",
+        "100ms 时间窗口聚合合批，显著减少 API 请求频次"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "安全与隔离",
+      "items": [
+        "API Key 仅在 Service Worker 后台与外部 API 通信中使用",
+        "网页与 Content Script 上下文完全绝缘于 API 密钥",
+        "Provider 异常时优雅降级并保护 DOM 树完整性"
+      ]
+    }
+  ]
+}
