@@ -549,6 +549,51 @@ describe('Options v2 多引擎设置', () => {
     expect(within(work).queryByLabelText('API Key')).not.toBeInTheDocument();
   });
 
+  it('自定义 AI 收起态显示模型与端点摘要', async () => {
+    render(<OptionsApp api={createApi()} />);
+    const work = await screen.findByRole('group', { name: '工作 AI' });
+    const home = screen.getByRole('group', { name: '个人 AI' });
+    expect(within(work).getByText('work-model · https://work.example')).toBeInTheDocument();
+    expect(within(home).getByText('home-model · https://home.example')).toBeInTheDocument();
+  });
+
+  it('点击启用开关不会触发卡片折叠或展开', async () => {
+    const api = createStatefulApi();
+    render(<OptionsApp api={api} />);
+    const work = await screen.findByRole('group', { name: '工作 AI' });
+
+    // 收起态下点击启用开关，不应展开
+    expect(within(work).queryByLabelText('API Key')).not.toBeInTheDocument();
+    const checkbox = within(work).getByRole('checkbox', { name: '启用' });
+    expect(checkbox).toBeChecked();
+    await userEvent.click(checkbox);
+    await waitFor(() => expect(api.setEngineEnabled).toHaveBeenCalledWith('custom-work', false));
+    expect(within(work).queryByLabelText('API Key')).not.toBeInTheDocument();
+
+    // 展开后再点击启用开关，不应折叠
+    await expandEngine(work);
+    expect(within(work).getByLabelText('API Key')).toBeVisible();
+    await userEvent.click(checkbox);
+    await waitFor(() => expect(api.setEngineEnabled).toHaveBeenCalledWith('custom-work', true));
+    expect(within(work).getByLabelText('API Key')).toBeVisible();
+  });
+
+  it('新建自定义 AI 草稿初始显示尚未配置，填入内容后更新摘要', async () => {
+    const api = createStatefulApi();
+    render(<OptionsApp api={api} />);
+    await screen.findByRole('group', { name: '工作 AI' });
+    await userEvent.click(screen.getByRole('button', { name: '新增自定义 AI' }));
+
+    const draft = screen.getByRole('group', { name: '自定义 AI' });
+    expect(within(draft).getByText('尚未配置')).toBeInTheDocument();
+
+    await userEvent.type(within(draft).getByLabelText('模型'), 'gpt-4o');
+    expect(within(draft).getByText('gpt-4o')).toBeInTheDocument();
+
+    await userEvent.type(within(draft).getByLabelText('Base URL'), 'https://api.example.com/v1');
+    expect(within(draft).getByText('gpt-4o · https://api.example.com')).toBeInTheDocument();
+  });
+
   it('取消新建自定义 AI 草稿会移除该卡片且不保存', async () => {
     const api = createStatefulApi();
     render(<OptionsApp api={api} />);

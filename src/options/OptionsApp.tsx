@@ -381,12 +381,23 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
         const changedOrigin = Boolean(draft.savedBaseUrl && origin(draft.baseUrl) !== origin(draft.savedBaseUrl));
         const expanded = expandedEngines.has(draft.id);
         const displayName = draft.name.trim() || t('newCustomAi');
+        const metaParts = [draft.model.trim(), origin(draft.baseUrl)].filter(Boolean);
+        const meta = (draft.isNew && !draft.name.trim() && metaParts.length === 0)
+          ? '尚未配置'
+          : metaParts.join(' · ');
         return <fieldset className={`engine-card ${!expanded ? 'engine-card--collapsed' : ''}`} aria-label={displayName} key={draft.id}>
-          <legend onClick={() => setExpandedEngines((current) => { const next = new Set(current); if (next.has(draft.id)) next.delete(draft.id); else next.add(draft.id); return next; })}><button type="button" className="engine-collapse" aria-expanded={expanded} aria-label={`${displayName} ${expanded ? '折叠' : '展开'}`} onClick={(event) => { event.stopPropagation(); setExpandedEngines((current) => { const next = new Set(current); if (next.has(draft.id)) next.delete(draft.id); else next.add(draft.id); return next; }); }}>{expanded ? '⌄' : '›'}</button>{displayName}</legend>
-          <div className="engine-card-head"><div className="engine-identity">{settings.activeEngineId === draft.id && <span className="badge badge--active">{t('activeDefault')}</span>}</div><label className="toggle"><input type="checkbox" aria-label={t('enabled')} checked={draft.enabled} onChange={(event) => {
-            if (draft.isNew) updateDraft(draft.id, 'enabled', event.target.checked);
-            else void act(() => api.setEngineEnabled(draft.id, event.target.checked), t('statusEngineUpdated'), true);
-          }} /> {t('enabled')}</label></div>
+          <legend onClick={() => setExpandedEngines((current) => { const next = new Set(current); if (next.has(draft.id)) next.delete(draft.id); else next.add(draft.id); return next; })}>
+            <button type="button" className="engine-collapse" aria-expanded={expanded} aria-label={`${displayName} ${expanded ? '折叠' : '展开'}`} onClick={(event) => { event.stopPropagation(); setExpandedEngines((current) => { const next = new Set(current); if (next.has(draft.id)) next.delete(draft.id); else next.add(draft.id); return next; }); }}>{expanded ? '⌄' : '›'}</button>
+            <span className="engine-card-title">{displayName}</span>
+            <span className="engine-card-meta">{meta}</span>
+            {settings.activeEngineId === draft.id && <span className="badge badge--active">{t('activeDefault')}</span>}
+            <label className="toggle engine-card-toggle" onClick={(event) => event.stopPropagation()}>
+              <input type="checkbox" aria-label={t('enabled')} checked={draft.enabled} onChange={(event) => {
+                if (draft.isNew) updateDraft(draft.id, 'enabled', event.target.checked);
+                else void act(() => api.setEngineEnabled(draft.id, event.target.checked), t('statusEngineUpdated'), true);
+              }} /> {t('enabled')}
+            </label>
+          </legend>
           {expanded && <div className="grid engine-grid">
             <label className="field">{t('engineName')}<input aria-label={t('engineName')} placeholder={t('newCustomAi')} value={draft.name} onChange={(event) => updateDraft(draft.id, 'name', event.target.value)} /></label>
             <label className="field">{t('model')}<input aria-label={t('model')} placeholder="gpt-4o-mini" value={draft.model} onChange={(event) => updateDraft(draft.id, 'model', event.target.value)} /></label>
