@@ -8,6 +8,13 @@ import { DEFAULT_SETTINGS, type OptionsSettings } from '../../src/shared/config'
 
 afterEach(cleanup);
 
+async function expandEngine(group: HTMLElement): Promise<void> {
+  const expandBtn = within(group).queryByRole('button', { name: /展开$/ });
+  if (expandBtn) {
+    await userEvent.click(expandBtn);
+  }
+}
+
 const loaded: OptionsSettings = {
   ...DEFAULT_SETTINGS,
   engines: [
@@ -200,6 +207,7 @@ describe('Options v2 多引擎设置', () => {
     const button = within(builtins).getAllByRole('button', { name: '测试连接' })[0];
     expect(button).toHaveClass('options-action');
     const work = screen.getByRole('group', { name: '工作 AI' });
+    await expandEngine(work);
     for (const name of ['保存实例', '设为默认', '清除 API Key']) {
       expect(within(work).getByRole('button', { name })).toHaveClass('options-action');
     }
@@ -224,6 +232,8 @@ describe('Options v2 多引擎设置', () => {
     render(<OptionsApp api={api} />);
     const work = await screen.findByRole('group', { name: '工作 AI' });
     const home = screen.getByRole('group', { name: '个人 AI' });
+    await expandEngine(work);
+    await expandEngine(home);
     expect(within(work).queryByText('custom-work')).not.toBeInTheDocument();
     expect(within(work).getByLabelText('API Key')).toHaveValue('work-secret');
     expect(within(work).getByLabelText('API Key')).toHaveAttribute('type', 'password');
@@ -247,16 +257,24 @@ describe('Options v2 多引擎设置', () => {
     await screen.findByRole('group', { name: '工作 AI' });
     await userEvent.click(screen.getByRole('button', { name: '新增自定义 AI' }));
 
-    const draft = screen.getByRole('group', { name: '自定义 AI 3' });
+    const draft = screen.getByRole('group', { name: '自定义 AI' });
+    expect(within(draft).getByLabelText('名称')).toHaveValue('');
+    expect(within(draft).getByLabelText('名称')).toHaveAttribute('placeholder', '自定义 AI');
+    expect(within(draft).getByLabelText('模型')).toHaveAttribute('placeholder', 'gpt-4o-mini');
+    expect(within(draft).getByLabelText('Base URL')).toHaveAttribute('placeholder', 'https://api.openai.com/v1');
+
     const enabled = within(draft).getByRole('checkbox', { name: '启用' });
     await userEvent.click(enabled);
     expect(enabled).not.toBeChecked();
     expect(api.setEngineEnabled).not.toHaveBeenCalled();
 
+    await userEvent.type(within(draft).getByLabelText('名称'), '自定义 AI 3');
+    await userEvent.type(within(draft).getByLabelText('模型'), 'gpt-4o-mini');
+    await userEvent.type(within(draft).getByLabelText('Base URL'), 'https://api.openai.com/v1');
     await userEvent.type(within(draft).getByLabelText('API Key'), 'draft-secret');
     await userEvent.click(within(draft).getByRole('button', { name: '保存实例' }));
     await waitFor(() => expect(api.load).toHaveBeenCalledTimes(2));
-    expect(api.upsertEngine).toHaveBeenCalledWith(expect.objectContaining({ enabled: false, apiKey: 'draft-secret' }));
+    expect(api.upsertEngine).toHaveBeenCalledWith(expect.objectContaining({ enabled: false, apiKey: 'draft-secret', name: '自定义 AI 3' }));
     expect(screen.getByRole('group', { name: '自定义 AI 3' })).toBeInTheDocument();
   });
 
@@ -275,13 +293,17 @@ describe('Options v2 多引擎设置', () => {
     await screen.findByRole('button', { name: '＋ 自定义专家' });
     await userEvent.click(screen.getByRole('button', { name: '＋ 自定义专家' }));
 
-    const draft = screen.getByRole('article', { name: '我的翻译专家' });
-    expect(within(draft).getByRole('checkbox', { name: '我的翻译专家 启用' })).toBeChecked();
+    const draft = screen.getByRole('article', { name: '新建专家' });
+    expect(within(draft).getByLabelText('名称')).toHaveValue('');
+    expect(within(draft).getByLabelText('名称')).toHaveAttribute('placeholder', '例如：我的翻译专家');
+    expect(within(draft).getByLabelText('说明')).toHaveAttribute('placeholder', '例如：自定义翻译能力');
+    expect(within(draft).getByLabelText('系统提示词')).toHaveAttribute('placeholder', 'Translate accurately into {{to}}. Preserve meaning and formatting.');
+    expect(within(draft).getByRole('checkbox', { name: '新建专家 启用' })).toBeChecked();
     expect(within(draft).getByRole('button', { name: '保存专家' })).toBeInTheDocument();
     expect(within(draft).getByRole('button', { name: '取消' })).toBeInTheDocument();
     expect(within(draft).queryByRole('button', { name: /删除/ })).not.toBeInTheDocument();
-    await userEvent.click(within(draft).getByRole('checkbox', { name: '我的翻译专家 启用' }));
-    expect(within(draft).getByRole('checkbox', { name: '我的翻译专家 启用' })).not.toBeChecked();
+    await userEvent.click(within(draft).getByRole('checkbox', { name: '新建专家 启用' }));
+    expect(within(draft).getByRole('checkbox', { name: '新建专家 启用' })).not.toBeChecked();
   });
 
   it('取消新建不会保存草稿，已保存专家默认收缩并可编辑删除', async () => {
@@ -289,9 +311,9 @@ describe('Options v2 多引擎设置', () => {
     render(<OptionsApp api={api} />);
     await screen.findByRole('button', { name: '＋ 自定义专家' });
     await userEvent.click(screen.getByRole('button', { name: '＋ 自定义专家' }));
-    const draft = screen.getByRole('article', { name: '我的翻译专家' });
+    const draft = screen.getByRole('article', { name: '新建专家' });
     await userEvent.click(within(draft).getByRole('button', { name: '取消' }));
-    expect(screen.queryByRole('article', { name: '我的翻译专家' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('article', { name: '新建专家' })).not.toBeInTheDocument();
     expect(api.upsertExpert).not.toHaveBeenCalled();
 
     const expert = screen.getByRole('article', { name: '工作专家' });
@@ -330,23 +352,28 @@ describe('Options v2 多引擎设置', () => {
     await screen.findByRole('group', { name: '工作 AI' });
     await userEvent.click(screen.getByRole('button', { name: '新增自定义 AI' }));
 
-    const newDraft = screen.getByRole('group', { name: '自定义 AI 3' });
+    const newDraft = screen.getByRole('group', { name: '自定义 AI' });
     await userEvent.click(within(newDraft).getByRole('button', { name: '上移' }));
     expect(api.reorderEngines).not.toHaveBeenCalled();
-    expect(screen.getAllByRole('group').map((group) => group.getAttribute('aria-label'))).toEqual(['工作 AI', '自定义 AI 3', '个人 AI']);
+    expect(screen.getAllByRole('group').map((group) => group.getAttribute('aria-label'))).toEqual(['工作 AI', '自定义 AI', '个人 AI']);
 
-    await userEvent.click(within(screen.getByRole('group', { name: '工作 AI' })).getByRole('button', { name: '下移' }));
+    const work = screen.getByRole('group', { name: '工作 AI' });
+    await expandEngine(work);
+    await userEvent.click(within(work).getByRole('button', { name: '下移' }));
     expect(api.reorderEngines).not.toHaveBeenCalled();
 
-    await userEvent.click(within(screen.getByRole('group', { name: '个人 AI' })).getByRole('button', { name: '上移' }));
+    const home = screen.getByRole('group', { name: '个人 AI' });
+    await expandEngine(home);
+    await userEvent.click(within(home).getByRole('button', { name: '上移' }));
     await waitFor(() => expect(api.reorderEngines).toHaveBeenCalledWith(['google', 'bing', 'custom-home', 'custom-work']));
-    expect(screen.getByRole('group', { name: '自定义 AI 3' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: '自定义 AI' })).toBeInTheDocument();
   });
 
   it('同 origin 空 key 保留状态，修改 origin 后清除该实例 key 状态并要求重输', async () => {
     const api = createApi();
     render(<OptionsApp api={api} />);
     const work = await screen.findByRole('group', { name: '工作 AI' });
+    await expandEngine(work);
     await userEvent.clear(within(work).getByLabelText('Base URL'));
     await userEvent.type(within(work).getByLabelText('Base URL'), 'https://other.example/v1');
     expect(within(work).getByLabelText('API Key')).toHaveValue('');
@@ -364,13 +391,17 @@ describe('Options v2 多引擎设置', () => {
     vi.mocked(api.clearEngineApiKey).mockImplementation(async () => { key = ''; });
     render(<OptionsApp api={api} />);
     const work = await screen.findByRole('group', { name: '工作 AI' });
+    await expandEngine(work);
     await userEvent.clear(within(work).getByLabelText('API Key'));
     await userEvent.type(within(work).getByLabelText('API Key'), 'new-secret');
     await userEvent.click(within(work).getByRole('button', { name: '保存实例' }));
+    const reloaded = await screen.findByRole('group', { name: '工作 AI' });
+    await expandEngine(reloaded);
     await waitFor(() => expect(within(screen.getByRole('group', { name: '工作 AI' })).getByLabelText('API Key')).toHaveValue('new-secret'));
-    const reloaded = screen.getByRole('group', { name: '工作 AI' });
     await userEvent.click(within(reloaded).getByRole('button', { name: '清除 API Key' }));
     await userEvent.click(within(reloaded).getByRole('button', { name: '确认清除 API Key' }));
+    const afterClear = await screen.findByRole('group', { name: '工作 AI' });
+    await expandEngine(afterClear);
     await waitFor(() => expect(within(screen.getByRole('group', { name: '工作 AI' })).getByLabelText('API Key')).toHaveValue(''));
   });
 
@@ -396,11 +427,14 @@ describe('Options v2 多引擎设置', () => {
     expect(screen.getAllByRole('group', { name: /自定义 AI/ })).toHaveLength(1);
 
     const work = screen.getByRole('group', { name: '工作 AI' });
+    await expandEngine(work);
     await userEvent.click(within(work).getByRole('button', { name: '设为默认' }));
     await userEvent.click(within(work).getByRole('checkbox', { name: '启用' }));
     await userEvent.click(within(work).getByRole('button', { name: '测试连接' }));
     await userEvent.click(within(work).getByRole('button', { name: '下移' }));
-    await userEvent.click(within(screen.getByRole('group', { name: '个人 AI' })).getByRole('button', { name: '上移' }));
+    const home = screen.getByRole('group', { name: '个人 AI' });
+    await expandEngine(home);
+    await userEvent.click(within(home).getByRole('button', { name: '上移' }));
     await userEvent.click(within(work).getByRole('button', { name: '清除 API Key' }));
     await userEvent.click(within(work).getByRole('button', { name: '确认清除 API Key' }));
     await userEvent.click(within(work).getByRole('button', { name: '删除实例' }));
@@ -420,6 +454,7 @@ describe('Options v2 多引擎设置', () => {
     const api = createStatefulApi();
     render(<OptionsApp api={api} />);
     const work = await screen.findByRole('group', { name: '工作 AI' });
+    await expandEngine(work);
 
     await userEvent.click(within(work).getByRole('button', { name: '设为默认' }));
     await waitFor(() => expect(within(screen.getByRole('group', { name: '工作 AI' })).getByText('当前默认')).toBeVisible());
@@ -427,15 +462,20 @@ describe('Options v2 多引擎设置', () => {
     await waitFor(() => expect(within(screen.getByRole('group', { name: '工作 AI' })).getByRole('checkbox', { name: '启用' })).not.toBeChecked());
 
     const home = screen.getByRole('group', { name: '个人 AI' });
+    await expandEngine(home);
     await userEvent.click(within(home).getByRole('button', { name: '上移' }));
     await waitFor(() => expect(screen.getAllByRole('group')[0]).toHaveAccessibleName('个人 AI'));
 
     const workAfterMove = screen.getByRole('group', { name: '工作 AI' });
+    await expandEngine(workAfterMove);
     await userEvent.click(within(workAfterMove).getByRole('button', { name: '清除 API Key' }));
     await userEvent.click(within(workAfterMove).getByRole('button', { name: '确认清除 API Key' }));
-    await waitFor(() => expect(within(screen.getByRole('group', { name: '工作 AI' })).queryByText(/已保存 API Key/)).not.toBeInTheDocument());
+    const workAfterClear = await screen.findByRole('group', { name: '工作 AI' });
+    await expandEngine(workAfterClear);
+    await waitFor(() => expect(within(workAfterClear).queryByText(/已保存 API Key/)).not.toBeInTheDocument());
 
     const homeAfterClear = screen.getByRole('group', { name: '个人 AI' });
+    await expandEngine(homeAfterClear);
     await userEvent.click(within(homeAfterClear).getByRole('button', { name: '删除实例' }));
     await userEvent.click(within(homeAfterClear).getByRole('button', { name: '确认删除实例' }));
     await waitFor(() => expect(screen.queryByRole('group', { name: '个人 AI' })).not.toBeInTheDocument());
@@ -455,9 +495,10 @@ describe('Options v2 多引擎设置', () => {
         engines: loaded.engines.map((engine) => engine.id === 'bing' ? { ...engine, enabled: false } : engine),
       });
     render(<OptionsApp api={api} />);
-    await screen.findByRole('group', { name: '工作 AI' });
+    const work = await screen.findByRole('group', { name: '工作 AI' });
+    await expandEngine(work);
 
-    await userEvent.click(within(screen.getByRole('group', { name: '工作 AI' })).getByRole('button', { name: '设为默认' }));
+    await userEvent.click(within(work).getByRole('button', { name: '设为默认' }));
     await userEvent.click(screen.getByRole('checkbox', { name: 'Bing 启用' }));
     await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Bing 启用' })).not.toBeChecked());
     resolveOlder(structuredClone(loaded));
@@ -493,14 +534,66 @@ describe('Options v2 多引擎设置', () => {
     await waitFor(() => expect(api.importSettings).toHaveBeenCalledWith(imported));
   });
 
-  it('自定义 AI 实例可以独立折叠并恢复编辑区', async () => {
+  it('自定义 AI 实例默认收起，可以独立展开并折叠', async () => {
     render(<OptionsApp api={createApi()} />);
     const work = await screen.findByRole('group', { name: '工作 AI' });
-    expect(within(work).getByLabelText('API Key')).toBeVisible();
-    await userEvent.click(within(work).getByRole('button', { name: '工作 AI 折叠' }));
+    const home = screen.getByRole('group', { name: '个人 AI' });
     expect(within(work).queryByLabelText('API Key')).not.toBeInTheDocument();
+    expect(within(home).queryByLabelText('API Key')).not.toBeInTheDocument();
+
     await userEvent.click(within(work).getByRole('button', { name: '工作 AI 展开' }));
     expect(within(work).getByLabelText('API Key')).toBeVisible();
+    expect(within(home).queryByLabelText('API Key')).not.toBeInTheDocument();
+
+    await userEvent.click(within(work).getByRole('button', { name: '工作 AI 折叠' }));
+    expect(within(work).queryByLabelText('API Key')).not.toBeInTheDocument();
+  });
+
+  it('取消新建自定义 AI 草稿会移除该卡片且不保存', async () => {
+    const api = createStatefulApi();
+    render(<OptionsApp api={api} />);
+    await screen.findByRole('group', { name: '工作 AI' });
+    await userEvent.click(screen.getByRole('button', { name: '新增自定义 AI' }));
+
+    const draft = screen.getByRole('group', { name: '自定义 AI' });
+    expect(within(draft).getByRole('button', { name: '取消' })).toBeInTheDocument();
+    await userEvent.click(within(draft).getByRole('button', { name: '取消' }));
+    expect(screen.queryByRole('group', { name: '自定义 AI' })).not.toBeInTheDocument();
+    expect(api.upsertEngine).not.toHaveBeenCalled();
+  });
+
+  it('已保存自定义 AI 点击取消编辑会重新加载配置', async () => {
+    const api = createStatefulApi();
+    render(<OptionsApp api={api} />);
+    const work = await screen.findByRole('group', { name: '工作 AI' });
+    await expandEngine(work);
+    expect(within(work).getByRole('button', { name: '取消编辑' })).toBeInTheDocument();
+    await userEvent.clear(within(work).getByLabelText('名称'));
+    await userEvent.type(within(work).getByLabelText('名称'), '修改中的名字');
+    await userEvent.click(within(work).getByRole('button', { name: '取消编辑' }));
+    await waitFor(() => expect(api.load).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('group', { name: '工作 AI' })).toBeInTheDocument();
+  });
+
+  it('新建自定义专家未填写名称或提示词时阻止保存并提示错误', async () => {
+    const api = createStatefulApi();
+    render(<OptionsApp api={api} />);
+    await screen.findByRole('button', { name: '＋ 自定义专家' });
+    await userEvent.click(screen.getByRole('button', { name: '＋ 自定义专家' }));
+
+    const draft = screen.getByRole('article', { name: '新建专家' });
+    await userEvent.click(within(draft).getByRole('button', { name: '保存专家' }));
+    expect(screen.getByRole('status')).toHaveTextContent('专家名称不能为空');
+    expect(api.upsertExpert).not.toHaveBeenCalled();
+
+    await userEvent.type(within(draft).getByLabelText('名称'), '我的新专家');
+    await userEvent.click(within(draft).getByRole('button', { name: '保存专家' }));
+    expect(screen.getByRole('status')).toHaveTextContent('专家提示词不能为空');
+    expect(api.upsertExpert).not.toHaveBeenCalled();
+
+    await userEvent.type(within(draft).getByLabelText('系统提示词'), 'Translate accurately into target language');
+    await userEvent.click(within(draft).getByRole('button', { name: '保存专家' }));
+    await waitFor(() => expect(api.upsertExpert).toHaveBeenCalledWith(expect.objectContaining({ name: '我的新专家', prompt: 'Translate accurately into target language' })));
   });
 
   it('导出提供包含、不含和取消三个明确选择，取消不会导出', async () => {

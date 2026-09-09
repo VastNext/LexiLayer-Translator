@@ -5,7 +5,7 @@
   A browser translator that turns configurable AI prompts into domain-aware translation.
 </p>
 
-当前版本：`0.10.9`。
+当前版本：`0.11.0`。
 
 <p align="center">
   <a href="https://github.com/VastNext/LexiLayer-Translator"><img src="https://img.shields.io/badge/status-MVP-orange.svg" alt="MVP status"></a>
@@ -162,7 +162,7 @@ VAST_E2E_PROXY=http://127.0.0.1:7890 npm run e2e:network
 
 ## 🗺️ 当前状态与路线
 
-当前版本：`0.10.9` · MVP
+当前版本：`0.11.0` · MVP
 
 - ✅ Google / Bing 网页与划词翻译
 - ✅ 多个 OpenAI 兼容 AI 实例
@@ -175,6 +175,13 @@ VAST_E2E_PROXY=http://127.0.0.1:7890 npm run e2e:network
 - ✅ 按 AI 底座保存当前专家选择
 
 当前不包含账号同步、云端配置、PDF 翻译、字幕翻译、术语库管理和自动整站翻译。
+
+## 0.11.0 更新
+
+- 🗂️ **自定义 AI 卡片默认收起**：已保存的自定义 AI 实例默认收起展示，支持点击整张卡片标题或折叠图标展开/收起，放大折叠按钮点击区域。
+- ✏️ **新建表单占位提示化**：自定义 AI 与自定义专家新建表单不再预填真实文本，改为占位提示（聚焦输入即消失），无需手动退格删除。
+- ↩️ **新增取消与取消编辑**：自定义 AI 卡片新增取消按钮，新建草稿一键移除、已保存实例一键重载还原。
+- 🏷️ **移除冗余徽标**：清理自定义 AI 卡片顶部冗余的“AI”徽标，使卡片头部更清爽。
 
 ## 0.10.9 更新
 

@@ -140,7 +140,7 @@ h1, h2, h3 { font-family: var(--font-title); color: var(--ink); }
 .toggle input, .check-field input { width: 17px; height: 17px; accent-color: var(--accent); }
 .engine-stack { display: grid; gap: 10px; }
 .engine-card { min-width: 0; margin: 0; padding: 15px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--card); }
-.engine-card legend { max-width: 80%; padding: 0 7px; overflow: hidden; color: var(--ink); font: 700 14px var(--font-title); text-overflow: ellipsis; white-space: nowrap; }
+.engine-card legend { max-width: 80%; padding: 0 7px; overflow: hidden; color: var(--ink); font: 700 14px var(--font-title); text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .engine-card-head { justify-content: space-between; margin-bottom: 12px; }
 .engine-identity code { max-width: 260px; overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; }
 .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
@@ -211,8 +211,11 @@ h1, h2, h3 { font-family: var(--font-title); color: var(--ink); }
 .icon-button--danger { color: var(--error); }
 .icon-button--danger:hover { background: color-mix(in srgb, var(--error) 12%, transparent); }
 .expert-control { margin-top: 10px; }
-.engine-collapse { width: 22px; height: 22px; margin-right: 5px; padding: 0; border: 0; background: transparent; color: var(--muted); font-size: 18px; line-height: 1; }
+.engine-collapse { width: 32px; height: 32px; margin-right: 5px; padding: 0; border: 0; border-radius: var(--radius-icon); background: transparent; color: var(--muted); font-size: 16px; line-height: 1; }
+.engine-collapse:hover { background: var(--hover); color: var(--ink); }
 .engine-card--collapsed { padding-bottom: 10px; }
+::placeholder { color: var(--faint); opacity: 1; }
+input:focus::placeholder, textarea:focus::placeholder { color: transparent; }
 .export-choice { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 7px; }
 
 @media (max-width: 760px) {
