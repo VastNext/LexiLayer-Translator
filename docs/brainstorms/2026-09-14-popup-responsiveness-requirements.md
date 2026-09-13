@@ -15,6 +15,8 @@ topic: popup-responsiveness
 
 真实 action popup 调查使用当前 `dist` 和 `chrome.action.openPopup()` 完成：普通页面约 0.85-1.63 秒出现并可用；超大 DOM 仍在流式加载时，最慢约 1.47 秒发现 Popup target、2.34 秒到 DOMContentLoaded、2.70 秒内确认 React 主按钮可用；约 2388 个 loading 节点存在时约 1.0-1.25 秒可用。没有复现永久打不开，但秒级空窗足以被感知为首次点击无效。
 
+用户进一步确认现场表现为：点击工具栏图标后 Popup 外框完全不出现，过一段时间才出现；不存在空白 Popup、控件禁用、按钮长期 busy 或一闪而过。由此可将问题定界为 Action Popup target 创建/调度延迟，而不是 Popup React 初始化或配置门禁。页面自身初载压力也可能触发该现象；扩展主动翻译后，同步扫描和 loading 回填会进一步制造目标页 renderer 长任务与整体 CPU 压力。
+
 ---
 
 ## Key Flows
@@ -47,6 +49,7 @@ topic: popup-responsiveness
 - R2. 配置加载仍不得使用 fallback 覆盖真实设置；加载较慢时显示明确的局部加载状态，失败时提供原地重试和设置入口。
 - R3. Popup 初始化只解析一次目标标签页，并只执行一次“订阅实时进度 + 读取初始快照”的流程，避免重复活动标签查询和重复进度请求。
 - R4. 新的进度事件不得被较晚返回的旧快照覆盖；同一标签页导航到新文档后不得沿用旧文档的翻译状态。
+- R4a. 本次首要性能目标是缩短用户点击工具栏图标到 Action Popup target 创建的延迟；Popup 内部配置重试属于次要韧性改进，不得替代主线程响应性治理。
 
 **命令与任务生命周期**
 
@@ -112,14 +115,11 @@ topic: popup-responsiveness
 - 配置加载采用可见降级而非不安全 fallback：慢时提示，失败可重试，但不允许写入未知配置。
 - 性能分片使用宏任务让步和时间预算，不能只用微任务或简单把一个长任务拆成两个长任务。
 - 当前证据不支持把配置读取或大量 loading 节点本身视为 Popup 永久打不开的直接根因；优先修复可证明的命令等待关系和页面长任务，同时增加真实 action popup 性能门禁。
+- 现场问题属于“外框延迟出现”：第一实施优先级改为切分扫描和 loading 长任务、减少连续 CPU 占用；命令立即 ACK 紧随其后，用于解除 Popup 操作与翻译任务的错误等待关系。
 
 ---
 
 ## Outstanding Questions
-
-### Resolve Before Planning
-
-- 用户实际看到的是“Popup 完全没有出现”，还是“Popup 已出现但内容空白/按钮禁用/按钮显示翻译中”？该答案决定真实 action popup 测量和配置门禁修复的优先级。
 
 ### Deferred to Planning
 
@@ -133,4 +133,4 @@ topic: popup-responsiveness
 
 ## Next Steps
 
--> Resume `/ce-brainstorm` to resolve the observed Popup state before planning
+-> `/ce-plan` for structured implementation planning
