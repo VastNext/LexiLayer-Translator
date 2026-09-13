@@ -76,6 +76,14 @@ function createStatefulApi(settings: OptionsSettings = loaded): OptionsApi {
 }
 
 describe('Options v2 多引擎设置', () => {
+  it('独立保存输入框目标语言且不改变网页目标语言', async () => {
+    const api = createApi();
+    render(<OptionsApp api={api} />);
+    await waitFor(() => expect(screen.getByLabelText('输入框目标语言')).toBeEnabled());
+    expect(screen.getByLabelText('输入框目标语言')).toHaveValue('en');
+    await userEvent.selectOptions(screen.getByLabelText('输入框目标语言'), 'ja');
+    await waitFor(() => expect(api.savePreferences).toHaveBeenCalledWith(expect.objectContaining({ inputTargetLanguage: 'ja', targetLanguage: 'auto' })));
+  });
   it('自动保存失败显示原因并提供重试保存入口', async () => {
     const api = createApi();
     vi.mocked(api.savePreferences).mockRejectedValueOnce(new Error('设置保存失败'));

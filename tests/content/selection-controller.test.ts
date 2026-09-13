@@ -149,6 +149,24 @@ describe('划词翻译控制器', () => {
     dependencies.eventSource.emit('mouseup', { isTrusted: true, target } as unknown as MouseEvent);
   }
 
+  it('迟到的 mouseup 配置回调不取消已触发的内联翻译', async () => {
+    const config = await dependencies.getPublicConfig();
+    let finishConfig!: (value: typeof config) => void;
+    let finishTranslation!: (value: string) => void;
+    register();
+    await Promise.resolve();
+    vi.mocked(dependencies.getPublicConfig).mockImplementationOnce(() => new Promise((resolve) => { finishConfig = resolve; }));
+    vi.mocked(dependencies.translateInline).mockImplementationOnce(() => new Promise((resolve) => { finishTranslation = resolve; }));
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
+    trustedMouseUp();
+    controller.close();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' }));
+    expect(document.querySelector('[data-vast-inline-selection-translation]')).not.toBeNull();
+    finishConfig(config); await Promise.resolve();
+    finishTranslation('正确译文');
+    await vi.waitFor(() => expect(document.querySelector('[data-vast-inline-selection-translation]')?.textContent).toBe('正确译文'));
+  });
+
   it('普通选区显示原创 V 按钮，点击后创建 Shadow DOM 浮层', async () => {
     dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
     register();

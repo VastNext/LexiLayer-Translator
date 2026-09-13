@@ -1,4 +1,6 @@
 {
+  "inputTargetLanguage": { "message": "输入框目标语言" },
+  "inputTranslationHelp": { "message": "选中输入框文字，按 Alt+Shift+X 使用当前引擎翻译并替换选区。默认英语，独立于网页翻译；内容或选区变化时不覆盖。" },
   "extensionName": { "message": "语层翻译" },
   "brandShort": { "message": "语层" },
   "extensionDescription": { "message": "使用 Google、Bing 或多个自定义 AI 进行网页双语与划词翻译。" },

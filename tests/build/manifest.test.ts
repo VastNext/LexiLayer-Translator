@@ -14,6 +14,7 @@ describe('manifest', () => {
     expect(manifest.options_page).toBe('options.html');
     expect(manifest.background?.service_worker).toBe('background.js');
     expect(manifest.content_scripts).toEqual([
+      { matches: ['<all_urls>'], js: ['input-translation.js'], all_frames: true },
       expect.objectContaining({
         matches: ['<all_urls>'],
         // 单条目 js 数组顺序即注入顺序：装配层依赖前两个脚本的全局接口。

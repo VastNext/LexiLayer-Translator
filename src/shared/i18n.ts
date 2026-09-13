@@ -1,6 +1,7 @@
 export type Translator = (key: string, substitutions?: string | string[]) => string;
 
 const fallbackMessages: Record<string, string> = {
+  inputTargetLanguage: '输入框目标语言', inputTranslationHelp: '选中输入框文字，按 Alt+Shift+X 使用当前引擎翻译并替换选区。默认英语，独立于网页翻译；内容或选区变化时不覆盖。',
   popupKicker: '双语校样台', popupCurrentPage: '当前页面', translationEngine: '翻译引擎', sourceLanguage: '源语言', targetLanguage: '目标语言', translationScope: '翻译范围', displayMode: '显示模式',
   mainContent: '主要内容', wholePage: '整个页面', bilingual: '双语对照', translationOnly: '仅译文', ready: '就绪',
   actionTranslatePage: '翻译当前页面', actionRestore: '恢复原文', actionRetry: '重试', actionSettings: '设置', statusTranslating: '翻译中…',

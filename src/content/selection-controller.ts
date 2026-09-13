@@ -166,6 +166,8 @@ export function createSelectionController(dependencies: SelectionDependencies) {
   async function toggleInline(): Promise<void> {
     const selected = remembered;
     if (!selected || !selected.block.isConnected) return;
+    // 内联操作接管当前选区，迟到的浮层配置回调不得重建浮层并取消它。
+    selectionGeneration += 1;
     const existing = selected.block.nextElementSibling;
     if (existing?.hasAttribute('data-vast-inline-selection-translation')) {
       if (pending) pending = false;

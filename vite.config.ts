@@ -37,6 +37,19 @@ function buildClassicContentScript(): Plugin {
         build: {
           emptyOutDir: false,
           lib: {
+            entry: resolve(import.meta.dirname, 'src/content/input-main.ts'),
+            formats: ['iife'],
+            name: 'LexiLayerInputTranslation',
+            fileName: () => 'input-translation.js',
+          },
+          outDir: resolve(import.meta.dirname, 'dist'),
+        },
+      });
+      await build({
+        configFile: false,
+        build: {
+          emptyOutDir: false,
+          lib: {
             entry: resolve(import.meta.dirname, 'src/content/index.ts'),
             formats: ['iife'],
             name: 'LexiLayerContent',
