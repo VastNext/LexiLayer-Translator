@@ -8,6 +8,7 @@ import {
 import { defaultExperts, type Expert } from '../shared/experts';
 import { languageOptions } from '../shared/languages';
 import { createTranslator, type Translator } from '../shared/i18n';
+import type { ShortcutState } from '../shared/shortcuts';
 
 type CustomDraft = Omit<CustomAiEngine, 'apiKey'> & {
   apiKey: string;
@@ -34,6 +35,8 @@ export interface OptionsApi {
   setExpertEnabled?(expertId: string, enabled: boolean): Promise<void>;
   upsertExpert?(expert: Expert): Promise<void>;
   deleteExpert?(expertId: string): Promise<void>;
+  getPageTranslationShortcut(): Promise<ShortcutState>;
+  openShortcutSettings(): Promise<{ ok: boolean; manualUrl: string }>;
 }
 
 const themeChoices: Array<{ id: Theme; name: string; descriptionKey: string; swatch: string }> = [
@@ -85,6 +88,87 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
   const importInput = useRef<HTMLInputElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const reloadGeneration = useRef(0);
+
+  const [shortcutState, setShortcutState] = useState<ShortcutState | undefined>();
+  const [shortcutLoading, setShortcutLoading] = useState(true);
+  const [shortcutRefreshing, setShortcutRefreshing] = useState(false);
+  const [lastKnownShortcut, setLastKnownShortcut] = useState<string | undefined>();
+  const [shortcutError, setShortcutError] = useState<{ message: string; manualUrl: string } | undefined>();
+  const shortcutGeneration = useRef(0);
+
+  async function refreshShortcut(isBackground = false): Promise<void> {
+    const generation = ++shortcutGeneration.current;
+    if (!isBackground) {
+      setShortcutLoading((prev) => prev && shortcutState === undefined);
+    } else {
+      setShortcutRefreshing(true);
+    }
+    try {
+      const result = await api.getPageTranslationShortcut();
+      if (generation !== shortcutGeneration.current) return;
+      setShortcutState(result);
+      if (result.status === 'assigned') {
+        setLastKnownShortcut(result.displayShortcut);
+      } else if (result.status === 'unassigned') {
+        setLastKnownShortcut(undefined);
+      }
+    } catch {
+      if (generation !== shortcutGeneration.current) return;
+      setShortcutState({ status: 'unavailable', reason: 'api-error' });
+    } finally {
+      if (generation === shortcutGeneration.current) {
+        setShortcutLoading(false);
+        setShortcutRefreshing(false);
+      }
+    }
+  }
+
+  async function handleOpenShortcutSettings(): Promise<void> {
+    setShortcutError(undefined);
+    const result = await api.openShortcutSettings();
+    if (!result.ok) {
+      setShortcutError({
+        message: t('shortcutSettingsOpenFailed'),
+        manualUrl: result.manualUrl,
+      });
+    }
+  }
+
+  useEffect(() => {
+    void refreshShortcut();
+
+    let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+    let trailingTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const clearTimers = () => {
+      if (debounceTimer !== undefined) { clearTimeout(debounceTimer); debounceTimer = undefined; }
+      if (trailingTimer !== undefined) { clearTimeout(trailingTimer); trailingTimer = undefined; }
+    };
+    const handleTrigger = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return clearTimers();
+      if (debounceTimer !== undefined) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        debounceTimer = undefined;
+        if (document.visibilityState === 'hidden') return;
+        void refreshShortcut(true);
+        if (trailingTimer !== undefined) clearTimeout(trailingTimer);
+        trailingTimer = setTimeout(() => {
+          trailingTimer = undefined;
+          if (document.visibilityState === 'hidden') return;
+          void refreshShortcut(true);
+        }, 200);
+      }, 50);
+    };
+
+    window.addEventListener('focus', handleTrigger);
+    document.addEventListener('visibilitychange', handleTrigger);
+
+    return () => {
+      clearTimers();
+      window.removeEventListener('focus', handleTrigger);
+      document.removeEventListener('visibilitychange', handleTrigger);
+    };
+  }, [api]);
 
   async function reload(message?: string): Promise<void> {
     const generation = ++reloadGeneration.current;
@@ -254,6 +338,9 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
   const customExperts = experts.filter((expert) => expert.kind === 'custom');
   const statusState = /失败|错误|无效|不能为空|不能|failed|invalid/i.test(status) ? 'error' : 'ready';
 
+  const isModifierOff = settings.readingPreferences.inlineSelectionModifier === 'Off';
+  const isSinglePressRisk = !isModifierOff && Number(settings.readingPreferences.inlineSelectionTriggerCount) === 1;
+
   async function chooseTheme(theme: Theme): Promise<void> {
     const previous = settings.theme;
     setSettings((current) => ({ ...current, theme }));
@@ -340,6 +427,7 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
         <button onClick={() => navigateTo('ai-experts')}>AI 专家</button>
         <button onClick={() => navigateTo('reading-preferences')}>{t('optionsReadingPreferences')}</button>
         <button onClick={() => navigateTo('selection-preferences')}>{t('selectionPreferences')}</button>
+        <button onClick={() => navigateTo('shortcuts-triggers')}>{t('shortcutsAndTriggers')}</button>
         <button onClick={() => navigateTo('appearance-theme')}>{t('appearanceTheme')}</button>
         <button onClick={() => navigateTo('data-privacy')}>{t('dataPrivacy')}</button>
       </nav>
@@ -443,21 +531,181 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
       <label className="field field--wide">{t('customInstruction')}<textarea aria-label={t('customInstruction')} disabled={!loaded} value={settings.readingPreferences.userInstruction} onChange={(event) => updatePreferences('userInstruction', event.target.value)} /><small>{t('instructionCustomOnly')}</small></label>
     </div></section>
 
-    <section id="selection-preferences" className="section" aria-label={t('selectionPreferences')}><div className="section-header"><h2>{t('selectionPreferences')}</h2><span className="section-index">04 / SELECT</span></div><div className="grid">
+    <section id="selection-preferences" className="section" aria-label={t('selectionPreferences')}><div className="section-header"><h2>{t('selectionPreferences')}</h2><span className="section-index">05 / SELECT</span></div><div className="grid">
       <label className="field check-field"><input aria-label={t('limitedContext')} type="checkbox" disabled={!loaded} checked={settings.readingPreferences.selectionContext} onChange={(event) => updatePreferences('selectionContext', event.target.checked)} /> {t('limitedContextLabel')}</label>
       <label className="field check-field"><input aria-label={t('selectionPopupEnabled')} type="checkbox" disabled={!loaded} checked={settings.readingPreferences.selectionPopupEnabled} onChange={(event) => updatePreferences('selectionPopupEnabled', event.target.checked)} /> {t('selectionPopupEnabled')}</label>
-       <label className="field">{t('inlineSelectionModifier')}<select aria-label={t('inlineSelectionModifier')} disabled={!loaded} value={settings.readingPreferences.inlineSelectionModifier} onChange={(event) => updatePreferences('inlineSelectionModifier', event.target.value as ReadingPreferences['inlineSelectionModifier'])}><option value="Control">Ctrl</option><option value="Alt">Alt</option><option value="Shift">Shift</option><option value="Meta">{typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform) ? 'Command' : 'Win / Command'}</option><option value="Off">{t('modifierOff')}</option></select></label>
-       <label className="field">{t('inlineSelectionTriggerCount')}<select aria-label={t('inlineSelectionTriggerCount')} disabled={!loaded} value={settings.readingPreferences.inlineSelectionTriggerCount} onChange={(event) => updatePreferences('inlineSelectionTriggerCount', Number(event.target.value) as ReadingPreferences['inlineSelectionTriggerCount'])}><option value="1">{t('triggerOnce')}</option><option value="2">{t('triggerTwice')}</option><option value="3">{t('triggerThrice')}</option></select></label>
       <p className="field field--wide context-help">{t('limitedContextHelp')}</p>
+      <p className="field field--wide migration-hint note">{t('selectionPreferencesMigrationHint')} <button type="button" className="link-button" onClick={() => navigateTo('shortcuts-triggers')}>{t('shortcutsAndTriggers')}</button></p>
     </div></section>
 
-    <section id="appearance-theme" className="section theme-section" aria-label={t('appearanceTheme')}><div className="section-header"><div><h2>{t('appearanceTheme')}</h2><p className="section-copy">{t('themeDescription')}</p></div><span className="section-index">05 / THEME</span></div>
+    <section id="shortcuts-triggers" className="section" aria-label={t('shortcutsAndTriggers')}>
+      <div className="section-header">
+        <div>
+          <h2>{t('shortcutsAndTriggers')}</h2>
+          <p className="section-copy">{t('shortcutsAndTriggersDescription')}</p>
+        </div>
+        <span className="section-index">06 / KEYS</span>
+      </div>
+
+      <div className="shortcut-card">
+        <div className="shortcut-card-header">
+          <div>
+            <h3>{t('pageTranslationShortcut')}</h3>
+            <p className="section-copy">{t('pageTranslationShortcutHelp')}</p>
+          </div>
+        </div>
+
+        <div className="shortcut-status-row" aria-live="polite">
+          {shortcutLoading && <span className="badge">{t('shortcutChecking')}</span>}
+          {!shortcutLoading && shortcutState?.status === 'assigned' && (
+            <div className="shortcut-display-group">
+              <kbd className="shortcut-badge">{shortcutState.displayShortcut}</kbd>
+              {shortcutRefreshing && <span className="shortcut-refreshing-tag">{t('shortcutChecking')}</span>}
+            </div>
+          )}
+          {!shortcutLoading && shortcutState?.status === 'unassigned' && (
+            <div className="shortcut-display-group">
+              <span className="shortcut-unassigned-tag">{t('shortcutUnassigned')}</span>
+              <p className="shortcut-subtext">{t('shortcutUnassignedHelp')}</p>
+              {shortcutRefreshing && <span className="shortcut-refreshing-tag">{t('shortcutChecking')}</span>}
+            </div>
+          )}
+          {!shortcutLoading && shortcutState?.status === 'unavailable' && (
+            <div className="shortcut-display-group">
+              {lastKnownShortcut ? (
+                <>
+                  <kbd className="shortcut-badge shortcut-badge--stale">{lastKnownShortcut}</kbd>
+                  <span className="shortcut-stale-tag">{t('shortcutLastKnown', lastKnownShortcut)}</span>
+                </>
+              ) : (
+                <>
+                  <span className="shortcut-unavailable-tag">{t('shortcutUnavailable')}</span>
+                  <p className="shortcut-subtext">{t('shortcutUnavailableHelp')}</p>
+                </>
+              )}
+              {shortcutRefreshing && <span className="shortcut-refreshing-tag">{t('shortcutChecking')}</span>}
+            </div>
+          )}
+        </div>
+
+        <div className="actions shortcut-actions">
+          {(!shortcutState || shortcutState.status === 'assigned') && (
+            <button
+              type="button"
+              className="secondary options-action"
+              aria-label={`${t('openShortcutSettings')} ${t('pageTranslationShortcut')}`}
+              onClick={() => void handleOpenShortcutSettings()}
+            >
+              {t('openShortcutSettings')}
+            </button>
+          )}
+          {shortcutState?.status === 'unassigned' && (
+            <button
+              type="button"
+              className="primary options-action"
+              aria-label={`${t('assignShortcut')} ${t('pageTranslationShortcut')}`}
+              onClick={() => void handleOpenShortcutSettings()}
+            >
+              {t('assignShortcut')}
+            </button>
+          )}
+          {shortcutState?.status === 'unavailable' && (
+            <>
+              <button
+                type="button"
+                className="secondary options-action"
+                aria-label={`${t('recheckShortcut')} ${t('pageTranslationShortcut')}`}
+                onClick={() => void refreshShortcut()}
+              >
+                {t('recheckShortcut')}
+              </button>
+              <button
+                type="button"
+                className="secondary options-action"
+                aria-label={`${t('openShortcutSettings')} ${t('pageTranslationShortcut')}`}
+                onClick={() => void handleOpenShortcutSettings()}
+              >
+                {t('openShortcutSettings')}
+              </button>
+            </>
+          )}
+        </div>
+
+        {shortcutError && (
+          <div className="shortcut-manual-fallback" aria-live="polite">
+            <p className="shortcut-error-msg">{shortcutError.message}</p>
+            <label className="field field--wide">
+              <span className="sr-only">{t('manualShortcutSettingsHelp')}</span>
+              <input
+                type="text"
+                readOnly
+                aria-label={t('manualShortcutSettingsHelp')}
+                value={shortcutError.manualUrl}
+                onFocus={(e) => e.target.select()}
+              />
+            </label>
+          </div>
+        )}
+      </div>
+
+      <div className="shortcut-card">
+        <div className="shortcut-card-header">
+          <div>
+            <h3>{t('inlineSelectionTrigger')}</h3>
+          </div>
+        </div>
+        <div className="grid">
+          <label className="field">
+            {t('inlineSelectionModifier')}
+            <select
+              aria-label={t('inlineSelectionModifier')}
+              disabled={!loaded}
+              value={settings.readingPreferences.inlineSelectionModifier}
+              onChange={(event) => updatePreferences('inlineSelectionModifier', event.target.value as ReadingPreferences['inlineSelectionModifier'])}
+            >
+              <option value="Control">Ctrl</option>
+              <option value="Alt">Alt</option>
+              <option value="Shift">Shift</option>
+              <option value="Meta">{typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform) ? 'Command' : 'Win / Command'}</option>
+              <option value="Off">{t('modifierOff')}</option>
+            </select>
+          </label>
+          <label className="field">
+            {t('inlineSelectionTriggerCount')}
+            <select
+              aria-label={t('inlineSelectionTriggerCount')}
+              disabled={!loaded || isModifierOff}
+              aria-describedby={isModifierOff ? 'trigger-count-off-help' : undefined}
+              value={settings.readingPreferences.inlineSelectionTriggerCount}
+              onChange={(event) => updatePreferences('inlineSelectionTriggerCount', Number(event.target.value) as ReadingPreferences['inlineSelectionTriggerCount'])}
+            >
+              <option value="1">{t('triggerOnce')}</option>
+              <option value="2">{t('triggerTwice')}</option>
+              <option value="3">{t('triggerThrice')}</option>
+            </select>
+            {isModifierOff && <small id="trigger-count-off-help">{t('triggerCountDisabledForOff')}</small>}
+          </label>
+          {isSinglePressRisk && (
+            <p className="field field--wide field-warning" aria-live="polite">
+              {t('triggerCountSingleRisk')}
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="shortcut-card shortcut-card--info">
+        <h3>{t('triggerIndependenceTitle')}</h3>
+        <p className="context-help">{t('triggerIndependenceHelp')}</p>
+      </div>
+    </section>
+
+    <section id="appearance-theme" className="section theme-section" aria-label={t('appearanceTheme')}><div className="section-header"><div><h2>{t('appearanceTheme')}</h2><p className="section-copy">{t('themeDescription')}</p></div><span className="section-index">07 / THEME</span></div>
       <div className="theme-grid">{themeChoices.map((theme) => <button key={theme.id} className={`theme-choice ${settings.theme === theme.id ? 'selected' : ''}`} aria-pressed={settings.theme === theme.id} aria-label={`${theme.name}：${t(theme.descriptionKey)}`} onClick={() => void chooseTheme(theme.id)}>
         <span className={`theme-swatch ${theme.swatch}`} aria-hidden="true" /><span><strong>{theme.name}</strong><small>{t(theme.descriptionKey)}</small></span><i aria-hidden="true">{settings.theme === theme.id ? '✓' : ''}</i>
       </button>)}</div>
     </section>
 
-    <section id="data-privacy" className="section" aria-labelledby="data-title"><div className="section-header"><div><h2 id="data-title">{t('dataPrivacy')}</h2><p className="section-copy">{t('privacyWarning')}</p></div><span className="section-index">06 / LOCAL</span></div>
+    <section id="data-privacy" className="section" aria-labelledby="data-title"><div className="section-header"><div><h2 id="data-title">{t('dataPrivacy')}</h2><p className="section-copy">{t('privacyWarning')}</p></div><span className="section-index">08 / LOCAL</span></div>
       <input ref={importInput} hidden aria-label={t('actionImport')} type="file" accept="application/json" onChange={(event) => void importFile(event.target.files?.[0])} />
        <div className="actions"><button className="secondary options-action" onClick={() => importInput.current?.click()}>{t('actionImport')}</button>{!exportChoice ? <button className="secondary options-action" onClick={() => setExportChoice(true)}>{t('actionExport')}</button> : <span className="export-choice"><span className="help">是否包含 API Key？</span><button className="primary options-action" onClick={() => void exportFile(true)}>包含 API Key</button><button className="secondary options-action" onClick={() => void exportFile(false)}>不含 API Key</button><button className="secondary options-action" onClick={() => setExportChoice(false)}>取消导出</button></span>}
       {!confirmCache ? <button className="danger options-action" onClick={() => setConfirmCache(true)}>{t('actionClearCache')}</button> : <><span className="help">{t('confirmClear')}</span><button className="danger options-action" onClick={() => void act(async () => { await api.clearCache(); setConfirmCache(false); }, t('cacheCleared'))}>{t('actionConfirmClear')}</button></>}</div>

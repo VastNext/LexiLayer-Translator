@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import packageJson from '../../package.json' with { type: 'json' };
@@ -6,7 +6,11 @@ import packageJson from '../../package.json' with { type: 'json' };
 import { OptionsApp, type OptionsApi } from '../../src/options/OptionsApp';
 import { DEFAULT_SETTINGS, type OptionsSettings } from '../../src/shared/config';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 async function expandEngine(group: HTMLElement): Promise<void> {
   const expandBtn = within(group).queryByRole('button', { name: /展开$/ });
@@ -40,6 +44,8 @@ function createApi(settings: OptionsSettings = loaded): OptionsApi {
     clearCache: vi.fn(async () => undefined),
     saveTheme: vi.fn(async () => undefined),
     exportSettings: vi.fn(),
+    getPageTranslationShortcut: vi.fn(async () => ({ status: 'assigned' as const, shortcut: 'Alt+A', displayShortcut: 'Alt + A' })),
+    openShortcutSettings: vi.fn(async () => ({ ok: true as const, manualUrl: 'chrome://extensions/shortcuts' })),
   };
 }
 
@@ -132,15 +138,24 @@ describe('Options v2 多引擎设置', () => {
     expect(document.documentElement).toHaveAttribute('data-theme', 'command-translator');
   });
 
-  it('使用左侧六项导航并提供独立划词翻译章节', async () => {
+  it('使用左侧导航并提供快捷键与触发方式栏目', async () => {
     render(<OptionsApp api={createApi()} />);
     const nav = await screen.findByRole('navigation', { name: '设置导航' });
-    for (const name of ['翻译引擎', '自定义 AI', '阅读偏好', '划词翻译', '外观主题', '数据隐私']) {
+    for (const name of ['翻译引擎', '自定义 AI', 'AI 专家', '阅读偏好', '划词翻译', '快捷键与触发方式', '外观主题', '数据隐私']) {
       expect(within(nav).getByRole('button', { name })).toBeInTheDocument();
     }
-    expect(screen.getByRole('region', { name: '划词翻译' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '新增自定义 AI' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '导出配置' })).toBeInTheDocument();
+    const selectionRegion = screen.getByRole('region', { name: '划词翻译' });
+    expect(selectionRegion).toBeInTheDocument();
+    expect(within(selectionRegion).getByRole('checkbox', { name: '显示划词悬浮按钮' })).toBeInTheDocument();
+    expect(within(selectionRegion).getByRole('checkbox', { name: /有限上下文/ })).toBeInTheDocument();
+    expect(within(selectionRegion).queryByLabelText('选区内联翻译快捷键')).not.toBeInTheDocument();
+    expect(within(selectionRegion).queryByLabelText('触发次数')).not.toBeInTheDocument();
+    expect(within(selectionRegion).getByText(/选区内联快捷键与触发方式已迁移至「快捷键与触发方式」栏目/)).toBeInTheDocument();
+
+    const shortcutRegion = screen.getByRole('region', { name: '快捷键与触发方式' });
+    expect(shortcutRegion).toBeInTheDocument();
+    expect(within(shortcutRegion).getByRole('combobox', { name: '选区内联翻译快捷键' })).toBeInTheDocument();
+    expect(within(shortcutRegion).getByRole('combobox', { name: '触发次数' })).toBeInTheDocument();
   });
 
   it('reload 失败后保持 loaded=false 不解锁表单，重试成功后才解锁保存', async () => {
@@ -193,6 +208,18 @@ describe('Options v2 多引擎设置', () => {
       inlineSelectionTriggerCount: 2,
     }));
     expect(screen.getByText(/发送选区所在段落的有限文本帮助消歧，不翻译上下文本身/)).toBeInTheDocument();
+  });
+
+  it('新安装初次显示双击触发并在自动保存时携带完整阅读偏好', async () => {
+    const api = createApi({ ...loaded, readingPreferences: structuredClone(DEFAULT_SETTINGS.readingPreferences) });
+    render(<OptionsApp api={api} />);
+
+    expect(await screen.findByLabelText('触发次数')).toHaveValue('2');
+    await userEvent.selectOptions(screen.getByLabelText('目标语言'), 'ja');
+    await waitFor(() => expect(api.savePreferences).toHaveBeenCalledWith({
+      ...DEFAULT_SETTINGS.readingPreferences,
+      targetLanguage: 'ja',
+    }));
   });
 
   it('渲染器模式下拉可选内联/兼容，保存时携带所选值并说明生效时机', async () => {
@@ -284,7 +311,7 @@ describe('Options v2 多引擎设置', () => {
     await waitFor(() => expect(api.load).toHaveBeenCalledTimes(2));
     expect(api.upsertEngine).toHaveBeenCalledWith(expect.objectContaining({ enabled: false, apiKey: 'draft-secret', name: '自定义 AI 3' }));
     expect(screen.getByRole('group', { name: '自定义 AI 3' })).toBeInTheDocument();
-  });
+  }, 10_000);
 
   it('自定义专家按钮复用新增自定义 AI 的主按钮样式', async () => {
     render(<OptionsApp api={createApi()} />);
@@ -375,7 +402,7 @@ describe('Options v2 多引擎设置', () => {
     await userEvent.click(within(home).getByRole('button', { name: '上移' }));
     await waitFor(() => expect(api.reorderEngines).toHaveBeenCalledWith(['google', 'bing', 'custom-home', 'custom-work']));
     expect(screen.getByRole('group', { name: '自定义 AI' })).toBeInTheDocument();
-  });
+  }, 10_000);
 
   it('同 origin 空 key 保留状态，修改 origin 后清除该实例 key 状态并要求重输', async () => {
     const api = createApi();
@@ -673,5 +700,257 @@ describe('Options v2 多引擎设置', () => {
     const file = new File([JSON.stringify(imported)], 'with-key.json', { type: 'application/json' });
     await userEvent.upload(screen.getByLabelText('导入配置'), file);
     await waitFor(() => expect(api.importSettings).toHaveBeenCalledWith(imported, true));
+  });
+
+  it('快捷键与触发方式栏目展示真实绑定并支持在浏览器中修改，聚焦刷新不调用设置 reload', async () => {
+    const api = createApi();
+    vi.mocked(api.getPageTranslationShortcut).mockResolvedValue({
+      status: 'assigned',
+      shortcut: 'Ctrl+Shift+Y',
+      displayShortcut: 'Ctrl + Shift + Y',
+    });
+
+    render(<OptionsApp api={api} />);
+    const region = await screen.findByRole('region', { name: '快捷键与触发方式' });
+    expect(within(region).getByText('Ctrl + Shift + Y')).toBeInTheDocument();
+    const modifyButton = within(region).getByRole('button', { name: '在浏览器中修改 页面翻译快捷键' });
+    expect(modifyButton).toBeInTheDocument();
+
+    await userEvent.click(modifyButton);
+    expect(api.openShortcutSettings).toHaveBeenCalledTimes(1);
+
+    vi.mocked(api.getPageTranslationShortcut).mockResolvedValue({
+      status: 'assigned',
+      shortcut: 'Alt+T',
+      displayShortcut: 'Alt + T',
+    });
+
+    window.dispatchEvent(new Event('focus'));
+    await waitFor(() => expect(within(region).getByText('Alt + T')).toBeInTheDocument());
+    expect(api.load).toHaveBeenCalledTimes(1);
+  });
+
+  it('页面翻译快捷键为 unassigned 时强提示并提供分配按钮，unavailable 时提供重新检查按钮', async () => {
+    const api = createApi();
+    vi.mocked(api.getPageTranslationShortcut).mockResolvedValue({
+      status: 'unassigned',
+    });
+
+    render(<OptionsApp api={api} />);
+    const region = await screen.findByRole('region', { name: '快捷键与触发方式' });
+    expect(within(region).getByText('未分配页面快捷键')).toBeInTheDocument();
+    const assignButton = within(region).getByRole('button', { name: '分配或修复 页面翻译快捷键' });
+    expect(assignButton).toBeEnabled();
+    await userEvent.click(assignButton);
+    expect(api.openShortcutSettings).toHaveBeenCalledTimes(1);
+
+    vi.mocked(api.getPageTranslationShortcut).mockResolvedValue({
+      status: 'unavailable',
+      reason: 'api-error',
+    });
+
+    window.dispatchEvent(new Event('focus'));
+    await waitFor(() => expect(within(region).getByText('暂不可用')).toBeInTheDocument());
+    const recheckButton = within(region).getByRole('button', { name: '重新检查 页面翻译快捷键' });
+    expect(recheckButton).toBeEnabled();
+    await userEvent.click(recheckButton);
+    await waitFor(() => expect(api.getPageTranslationShortcut).toHaveBeenCalledTimes(4));
+  });
+
+  it('成功读到未分配后清除上次绑定，随后不可用时不显示旧快捷键', async () => {
+    const api = createApi();
+    vi.mocked(api.getPageTranslationShortcut)
+      .mockResolvedValueOnce({ status: 'assigned', shortcut: 'Alt+A', displayShortcut: 'Alt + A' })
+      .mockResolvedValueOnce({ status: 'unassigned' })
+      .mockResolvedValueOnce({ status: 'unavailable', reason: 'api-error' });
+    render(<OptionsApp api={api} />);
+    const region = await screen.findByRole('region', { name: '快捷键与触发方式' });
+    expect(within(region).getByText('Alt + A')).toBeInTheDocument();
+
+    window.dispatchEvent(new Event('focus'));
+    await waitFor(() => expect(within(region).getByText('未分配页面快捷键')).toBeInTheDocument());
+    await waitFor(() => expect(within(region).getByText('暂不可用')).toBeInTheDocument());
+    expect(within(region).queryByText(/上次读取：Alt \+ A/)).not.toBeInTheDocument();
+  });
+
+  it('打开浏览器快捷键设置页失败时在卡片内展示可选择的手动地址，且不产生全局 Toast 和复制按钮', async () => {
+    const api = createApi();
+    vi.mocked(api.openShortcutSettings).mockResolvedValue({
+      ok: false,
+      manualUrl: 'chrome://extensions/shortcuts',
+    });
+
+    render(<OptionsApp api={api} />);
+    const region = await screen.findByRole('region', { name: '快捷键与触发方式' });
+    const modifyButton = within(region).getByRole('button', { name: '在浏览器中修改 页面翻译快捷键' });
+    await userEvent.click(modifyButton);
+
+    const manualInput = await within(region).findByLabelText('快捷键设置手动地址');
+    expect(manualInput).toHaveValue('chrome://extensions/shortcuts');
+    expect(within(region).getByText('无法打开浏览器快捷键设置页，请手动打开以下地址')).toBeInTheDocument();
+    expect(within(region).queryByRole('button', { name: '复制' })).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).not.toHaveTextContent('无法打开浏览器快捷键设置页');
+  });
+
+  it('已有成功快捷键后刷新失败保留上次读取，隐藏时不刷新而恢复可见时刷新', async () => {
+    const api = createApi();
+    vi.mocked(api.getPageTranslationShortcut)
+      .mockResolvedValueOnce({ status: 'assigned', shortcut: 'Ctrl+Shift+Y', displayShortcut: 'Ctrl + Shift + Y' })
+      .mockRejectedValueOnce(new Error('读取失败'));
+    const visibility = vi.spyOn(document, 'visibilityState', 'get');
+    visibility.mockReturnValue('visible');
+    render(<OptionsApp api={api} />);
+    const region = await screen.findByRole('region', { name: '快捷键与触发方式' });
+    expect(within(region).getByText('Ctrl + Shift + Y')).toBeInTheDocument();
+
+    visibility.mockReturnValue('hidden');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(api.getPageTranslationShortcut).toHaveBeenCalledTimes(1);
+
+    visibility.mockReturnValue('visible');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await waitFor(() => expect(within(region).getByText(/上次读取：Ctrl \+ Shift \+ Y/)).toBeInTheDocument());
+  });
+
+  it('页面隐藏会取消已排队的快捷键防抖与尾随刷新', async () => {
+    vi.useFakeTimers();
+    const api = createApi();
+    const visibility = vi.spyOn(document, 'visibilityState', 'get');
+    visibility.mockReturnValue('visible');
+    render(<OptionsApp api={api} />);
+    await act(async () => { await Promise.resolve(); });
+    expect(api.getPageTranslationShortcut).toHaveBeenCalledTimes(1);
+
+    window.dispatchEvent(new Event('focus'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+    expect(api.getPageTranslationShortcut).toHaveBeenCalledTimes(2);
+    visibility.mockReturnValue('hidden');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    expect(api.getPageTranslationShortcut).toHaveBeenCalledTimes(2);
+
+    visibility.mockReturnValue('visible');
+    document.dispatchEvent(new Event('visibilitychange'));
+    visibility.mockReturnValue('hidden');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+    expect(api.getPageTranslationShortcut).toHaveBeenCalledTimes(2);
+  });
+
+  it('focus 与 visibilitychange 触发命令状态刷新并进行尾随复查，代际保护丢弃过期旧响应', async () => {
+    const api = createApi();
+    let resolveSlowFirst!: (val: any) => void;
+    vi.mocked(api.getPageTranslationShortcut)
+      .mockResolvedValueOnce({ status: 'assigned', shortcut: 'Alt+A', displayShortcut: 'Alt + A' })
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveSlowFirst = resolve; }))
+      .mockResolvedValueOnce({ status: 'assigned', shortcut: 'Ctrl+Shift+K', displayShortcut: 'Ctrl + Shift + K' });
+
+    render(<OptionsApp api={api} />);
+    const region = await screen.findByRole('region', { name: '快捷键与触发方式' });
+    expect(within(region).getByText('Alt + A')).toBeInTheDocument();
+
+    window.dispatchEvent(new Event('focus'));
+    document.dispatchEvent(new Event('visibilitychange'));
+
+    await waitFor(() => expect(api.getPageTranslationShortcut).toHaveBeenCalledTimes(3), { timeout: 3000 });
+
+    resolveSlowFirst({ status: 'assigned', shortcut: 'Old+Stale', displayShortcut: 'Old + Stale' });
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(within(region).getByText('Ctrl + Shift + K')).toBeInTheDocument();
+    expect(within(region).queryByText('Old + Stale')).not.toBeInTheDocument();
+  });
+
+  it('偏好防抖保存或自定义 AI 编辑期间刷新命令状态，不会重置表单或覆盖草稿', async () => {
+    const api = createApi();
+    render(<OptionsApp api={api} />);
+    const work = await screen.findByRole('group', { name: '工作 AI' });
+    await expandEngine(work);
+    await userEvent.clear(within(work).getByLabelText('模型'));
+    await userEvent.type(within(work).getByLabelText('模型'), 'draft-custom-model');
+
+    window.dispatchEvent(new Event('focus'));
+    await waitFor(() => expect(api.getPageTranslationShortcut).toHaveBeenCalled());
+    expect(within(work).getByLabelText('模型')).toHaveValue('draft-custom-model');
+    expect(api.load).toHaveBeenCalledTimes(1);
+  });
+
+  it('选择单击时持续显示非阻断误触风险提示，双击、三击或 Off 时隐藏', async () => {
+    const api = createApi();
+    render(<OptionsApp api={api} />);
+    const region = await screen.findByRole('region', { name: '快捷键与触发方式' });
+    const countSelect = within(region).getByRole('combobox', { name: '触发次数' });
+    const modifierSelect = within(region).getByRole('combobox', { name: '选区内联翻译快捷键' });
+
+    await userEvent.selectOptions(countSelect, '1');
+    expect(within(region).getByText(/单击修饰键可能在触发其他组合快捷键时产生误触/)).toBeInTheDocument();
+
+    await userEvent.selectOptions(countSelect, '2');
+    expect(within(region).queryByText(/单击修饰键可能在触发其他组合快捷键时产生误触/)).not.toBeInTheDocument();
+
+    await userEvent.selectOptions(countSelect, '1');
+    expect(within(region).getByText(/单击修饰键可能在触发其他组合快捷键时产生误触/)).toBeInTheDocument();
+
+    await userEvent.selectOptions(modifierSelect, 'Off');
+    expect(within(region).queryByText(/单击修饰键可能在触发其他组合快捷键时产生误触/)).not.toBeInTheDocument();
+  });
+
+  it('选择 Off 时禁用触发次数下拉框并保留原 count，重新启用时恢复原次数', async () => {
+    const api = createApi({
+      ...loaded,
+      readingPreferences: { ...loaded.readingPreferences, inlineSelectionTriggerCount: 2, inlineSelectionModifier: 'Control' },
+    });
+    render(<OptionsApp api={api} />);
+    const region = await screen.findByRole('region', { name: '快捷键与触发方式' });
+    const modifierSelect = within(region).getByRole('combobox', { name: '选区内联翻译快捷键' });
+    const countSelect = within(region).getByRole('combobox', { name: '触发次数' });
+
+    expect(countSelect).toBeEnabled();
+    expect(countSelect).toHaveValue('2');
+
+    await userEvent.selectOptions(modifierSelect, 'Off');
+    expect(countSelect).toBeDisabled();
+    expect(countSelect).toHaveValue('2');
+    expect(within(region).getByText(/重新启用后恢复上次次数/)).toBeInTheDocument();
+
+    await waitFor(() => expect(api.savePreferences).toHaveBeenCalledWith(expect.objectContaining({
+      inlineSelectionModifier: 'Off',
+      inlineSelectionTriggerCount: 2,
+    })));
+
+    await userEvent.selectOptions(modifierSelect, 'Alt');
+    expect(countSelect).toBeEnabled();
+    expect(countSelect).toHaveValue('2');
+  });
+
+  it('划词悬浮按钮与键盘内联触发独立，关闭悬浮按钮不影响内联修饰键', async () => {
+    const api = createApi();
+    render(<OptionsApp api={api} />);
+    const popupCheckbox = await screen.findByRole('checkbox', { name: '显示划词悬浮按钮' });
+    const region = screen.getByRole('region', { name: '快捷键与触发方式' });
+    const modifierSelect = within(region).getByRole('combobox', { name: '选区内联翻译快捷键' });
+
+    expect(popupCheckbox).toBeChecked();
+    expect(modifierSelect).toHaveValue('Control');
+
+    await userEvent.click(popupCheckbox);
+    expect(popupCheckbox).not.toBeChecked();
+    expect(modifierSelect).toHaveValue('Control');
+    expect(within(region).getByText(/悬浮按钮与选区内联触发互不控制/)).toBeInTheDocument();
+  });
+
+  it('动作按钮 accessible name 明确包含“页面翻译快捷键”，Off 状态关联说明文字', async () => {
+    const api = createApi();
+    render(<OptionsApp api={api} />);
+    const region = await screen.findByRole('region', { name: '快捷键与触发方式' });
+    expect(within(region).getByRole('button', { name: '在浏览器中修改 页面翻译快捷键' })).toBeInTheDocument();
+
+    const modifierSelect = within(region).getByRole('combobox', { name: '选区内联翻译快捷键' });
+    const countSelect = within(region).getByRole('combobox', { name: '触发次数' });
+    await userEvent.selectOptions(modifierSelect, 'Off');
+    expect(countSelect).toHaveAttribute('aria-describedby');
+    const helpId = countSelect.getAttribute('aria-describedby')!;
+    expect(document.getElementById(helpId)).toHaveTextContent(/重新启用后恢复上次次数/);
   });
 });

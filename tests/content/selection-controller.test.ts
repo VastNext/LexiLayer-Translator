@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createSelectionController, registerSelectionController, type SelectionDependencies } from '../../src/content/selection-controller';
+import { DEFAULT_SETTINGS } from '../../src/shared/config';
 import { SelectionView, type SelectionViewActions, type SelectionViewHandle } from '../../src/content/selection-view';
 import { SUPPORTED_LANGUAGES } from '../../src/shared/languages';
 import type { Translator } from '../../src/shared/i18n';
@@ -533,6 +534,80 @@ describe('划词翻译控制器', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' }));
     await vi.waitFor(() => expect(dependencies.translateInline).toHaveBeenCalledOnce());
 
+  });
+
+  it('初始配置加载前不触发，加载完成后从完整双击序列重新计数', async () => {
+    let resolveConfig!: (value: Awaited<ReturnType<SelectionDependencies['getPublicConfig']>>) => void;
+    const config = await dependencies.getPublicConfig();
+    vi.mocked(dependencies.getPublicConfig).mockImplementation(() => new Promise((resolve) => { resolveConfig = resolve; }));
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
+    register();
+    trustedMouseUp();
+    dependencies.selection = null;
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' }));
+    expect(dependencies.translateInline).not.toHaveBeenCalled();
+
+    resolveConfig({ ...config, inlineSelectionTriggerCount: 2 });
+    await Promise.resolve();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' }));
+    expect(dependencies.translateInline).not.toHaveBeenCalled();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' }));
+    await vi.waitFor(() => expect(dependencies.translateInline).toHaveBeenCalledOnce());
+  });
+
+  it('register 与新选区配置乱序返回时只应用最新配置并保留完整双击触发', async () => {
+    const baseConfig = await dependencies.getPublicConfig();
+    let resolveRegister!: (value: typeof baseConfig) => void;
+    let resolveMouseUp!: (value: typeof baseConfig) => void;
+    vi.mocked(dependencies.getPublicConfig)
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveRegister = resolve; }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveMouseUp = resolve; }));
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
+    register();
+    trustedMouseUp();
+    dependencies.selection = null;
+
+    resolveMouseUp({ ...baseConfig, inlineSelectionTriggerCount: 2 });
+    await Promise.resolve();
+    resolveRegister({ ...baseConfig, inlineSelectionTriggerCount: 1 });
+    await Promise.resolve();
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' }));
+    expect(dependencies.translateInline).not.toHaveBeenCalled();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' }));
+    await vi.waitFor(() => expect(dependencies.translateInline).toHaveBeenCalledOnce());
+  });
+
+  it('初始配置加载失败后保持禁用，不使用默认单击触发', async () => {
+    vi.mocked(dependencies.getPublicConfig).mockRejectedValue(new Error('配置读取失败'));
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
+    register();
+    trustedMouseUp();
+    dependencies.selection = null;
+
+    await Promise.resolve();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' }));
+
+    expect(dependencies.translateInline).not.toHaveBeenCalled();
+  });
+
+  it('新安装默认需要双击 Control 才触发内联翻译', async () => {
+    vi.mocked(dependencies.getPublicConfig).mockResolvedValue({
+      ...(await dependencies.getPublicConfig()),
+      inlineSelectionModifier: DEFAULT_SETTINGS.readingPreferences.inlineSelectionModifier,
+      inlineSelectionTriggerCount: DEFAULT_SETTINGS.readingPreferences.inlineSelectionTriggerCount,
+    });
+    dependencies.selection = selectionFor(document.querySelector('#text')!, 'Hello');
+    register(); trustedMouseUp();
+    await vi.waitFor(() => expect(dependencies.getPublicConfig).toHaveBeenCalled());
+    dependencies.selection = null;
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' }));
+    expect(dependencies.translateInline).not.toHaveBeenCalled();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' }));
+    await vi.waitFor(() => expect(dependencies.translateInline).toHaveBeenCalledOnce());
   });
 
   it('按配置需要三击 modifier 才触发内联翻译', async () => {

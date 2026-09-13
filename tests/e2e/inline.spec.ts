@@ -58,7 +58,7 @@ test('内联请求期间角色改变后错误入口可见，真实点击重试�
   server.setMode('delay');
   const page = await openFixture(context, server.inlineFixtureUrl);
   const popup = await openPopupForFixture(openExtensionPage, page);
-  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+  await clickPopupButton(popup, page, '翻译当前页面');
   await expect(page.locator('#plain > [data-vast-state="loading"]')).toBeVisible();
   // role 不在当前观察器属性过滤器内，确保由结果拒绝后的错误回退负责收口。
   await page.locator('#plain').evaluate((element) => element.setAttribute('role', 'button'));
@@ -145,7 +145,7 @@ test('内联模式页面翻译：普通段落内部渲染，flex/grid 多子项�
   await options.close();
   const page = await openFixture(context, server.inlineFixtureUrl);
   const popup = await openPopupForFixture(openExtensionPage, page);
-  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+  await clickPopupButton(popup, page, '翻译当前页面');
 
   // 普通段落由内联渲染器处理：译文与原文包装都在段落内部。
   await expect(page.locator('#plain')).toHaveAttribute('data-vast-inline', '');
@@ -170,7 +170,7 @@ test('内联模式页面翻译：普通段落内部渲染，flex/grid 多子项�
   await page.screenshot({ path: evidence('translated'), fullPage: true });
 
   // 恢复后无插件节点残留，原节点还原。
-  await clickPopupButton(popup, page, '显示原文 (Alt + A)');
+  await clickPopupButton(popup, page, '显示当前页面原文');
   await expect(page.locator('[data-vast-translator]')).toHaveCount(0);
   await expect(page.locator('[data-vast-inline]')).toHaveCount(0);
   await expect(page.locator('#plain')).toHaveText('Plain paragraph for inline.');
@@ -193,7 +193,7 @@ test('内联翻译保持 heading 计算样式，恢复保留原节点事件，Op
     return { fontSize: style.fontSize, color: style.color };
   });
   const popup = await openPopupForFixture(openExtensionPage, page);
-  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+  await clickPopupButton(popup, page, '翻译当前页面');
 
   // 译文容器是 heading 的子节点，heading 自身计算样式不受包装影响。
   await expect(page.locator('#heading > [data-vast-translator]')).toHaveText('标题译文。');
@@ -207,7 +207,7 @@ test('内联翻译保持 heading 计算样式，恢复保留原节点事件，Op
   await expect(page.locator('#heading > [data-vast-translator]')).toHaveCSS('color', headingStyleBefore.color);
 
   // 恢复后原节点事件监听器保留（移动而非克隆）。
-  await clickPopupButton(popup, page, '显示原文 (Alt + A)');
+  await clickPopupButton(popup, page, '显示当前页面原文');
   await expect(page.locator('[data-vast-translator]')).toHaveCount(0);
   await page.locator('#event-source').click();
   await expect.poll(() => page.evaluate(() => (window as unknown as { clicks: number }).clicks)).toBe(1);
@@ -218,7 +218,7 @@ test('内联翻译保持 heading 计算样式，恢复保留原节点事件，Op
   await expect(reopened.getByRole('status')).toHaveText('设置已保存');
   await expect(reopened.getByRole('status')).toHaveText('设置已保存');
   await reopened.close();
-  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+  await clickPopupButton(popup, page, '翻译当前页面');
   await expect(page.locator('#plain')).not.toHaveAttribute('data-vast-inline', '');
   await expect(page.locator('#plain + [data-vast-translator]')).toHaveText('内联段落译文。');
   await page.screenshot({ path: evidence('switched-legacy'), fullPage: true });
@@ -232,7 +232,7 @@ test('inline 错误归属保持，重试后恢复混合渲染并可完整还原'
   server.setMode('401');
   const page = await openFixture(context, server.inlineFixtureUrl);
   const popup = await openPopupForFixture(openExtensionPage, page);
-  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+  await clickPopupButton(popup, page, '翻译当前页面');
 
   // 失败时归属保持首次判定：安全段落错误提示在段落内部（inline），布局不安全段落用兄弟容器（legacy）。
   await expect(page.locator('#plain')).toHaveAttribute('data-vast-inline', '');
@@ -253,7 +253,7 @@ test('inline 错误归属保持，重试后恢复混合渲染并可完整还原'
   await expect(page.locator('[data-vast-state="error"]')).toHaveCount(0);
 
   // 混合 inline/legacy 状态下恢复原文：两类渲染节点与内联标记全部清理。
-  await clickPopupButton(popup, page, '显示原文 (Alt + A)');
+  await clickPopupButton(popup, page, '显示当前页面原文');
   await expect(page.locator('[data-vast-translator]')).toHaveCount(0);
   await expect(page.locator('[data-vast-inline]')).toHaveCount(0);
   await expect(page.locator('#plain')).toHaveText('Plain paragraph for inline.');
@@ -267,7 +267,7 @@ test('仅译文模式下动态页面外部变化不触发重译闪烁，翻译�
   await options.close();
   const page = await openFixture(context, server.inlineFixtureUrl);
   const popup = await openPopupForFixture(openExtensionPage, page);
-  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+  await clickPopupButton(popup, page, '翻译当前页面');
 
   // 首轮翻译完成（默认双语）：下钻段落译文挂载在链接内部。
   await expect(page.locator('#user-release-link [data-vast-translator]')).toHaveText('发布版本。');
@@ -343,7 +343,7 @@ test('用户结构 h2>span>a>span Releases 下钻内联翻译，保持计算样�
   });
 
   const popup = await openPopupForFixture(openExtensionPage, page);
-  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+  await clickPopupButton(popup, page, '翻译当前页面');
 
   // 1. h2 不被 hidden，外部无相邻 wrapper
   await expect(page.locator('#user-release-h2')).toBeVisible();
@@ -372,7 +372,7 @@ test('用户结构 h2>span>a>span Releases 下钻内联翻译，保持计算样�
   await page.screenshot({ path: evidence('user-release-translated'), fullPage: true });
 
   // 6. 恢复原文：完整还原原结构与事件
-  await clickPopupButton(popup, page, '显示原文 (Alt + A)');
+  await clickPopupButton(popup, page, '显示当前页面原文');
   await expect(page.locator('[data-vast-translator]')).toHaveCount(0);
   await expect(page.locator('[data-vast-inline]')).toHaveCount(0);
   await expect(page.locator('#user-release-title')).toHaveText('Releases');
@@ -390,7 +390,7 @@ test('手风琴折叠结构：保留 h3/button/aria/事件且 svg 不隐藏，in
   await options.close();
   const page = await openFixture(context, server.accordionFixtureUrl);
   const popup = await openPopupForFixture(openExtensionPage, page);
-  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+  await clickPopupButton(popup, page, '翻译当前页面');
 
   // 1. 初始折叠状态：h3 与 button 保持原位且未被 hidden
   await expect(page.locator('#europe-accordion-h3')).toBeVisible();
@@ -452,7 +452,7 @@ test('手风琴折叠结构：保留 h3/button/aria/事件且 svg 不隐藏，in
   await expect(page.locator('#london-checkbox')).toBeChecked();
 
   // 9. 恢复原文：完整还原原 DOM 与事件
-  await clickPopupButton(popup, page, '显示原文 (Alt + A)');
+  await clickPopupButton(popup, page, '显示当前页面原文');
   await expect(page.locator('[data-vast-translator]')).toHaveCount(0);
   await expect(page.locator('[data-vast-inline]')).toHaveCount(0);
   await expect(page.locator('[data-vast-text-leaf]')).toHaveCount(0);
@@ -479,7 +479,7 @@ test('手风琴折叠结构在 Legacy 兼容模式下：h3/button 不被隐藏�
 
   const page = await openFixture(context, server.accordionFixtureUrl);
   const popup = await openPopupForFixture(openExtensionPage, page);
-  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+  await clickPopupButton(popup, page, '翻译当前页面');
 
   // 1. Legacy 模式下，因按钮外壳跳过而精准提取了内部文本叶，因此 h3/button 不会被隐藏
   await expect(page.locator('#europe-accordion-h3')).toBeVisible();
@@ -504,7 +504,7 @@ test('手风琴折叠结构在 Legacy 兼容模式下：h3/button 不被隐藏�
   await expect(page.locator('#london-checkbox')).toBeChecked();
 
   // 5. 恢复原文
-  await clickPopupButton(popup, page, '显示原文 (Alt + A)');
+  await clickPopupButton(popup, page, '显示当前页面原文');
   await expect(page.locator('[data-vast-translator]')).toHaveCount(0);
   await expect(page.locator('[data-vast-text-leaf]')).toHaveCount(0);
   await expect(page.locator('#europe-accordion-span')).toContainText('Europe');
@@ -523,12 +523,12 @@ test('内联模式下段落内部发生深克隆/替换后动态观察器与渲�
 
   const page = await openFixture(context, server.inlineFixtureUrl);
   const popup = await openPopupForFixture(openExtensionPage, page);
-  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+  await clickPopupButton(popup, page, '翻译当前页面');
 
   // 1. 首轮翻译完成：断言页面内联译文与 Popup 状态真实同步
   await expect(page.locator('#plain > [data-vast-translator]')).toHaveText('内联段落译文。');
   await expect(page.locator('[data-vast-state="loading"]')).toHaveCount(0);
-  await expect(popup.getByRole('button', { name: '显示原文 (Alt + A)' })).toBeVisible();
+  await expect(popup.getByRole('button', { name: '显示当前页面原文' })).toBeVisible();
 
   // 2. 模拟前端框架对 #plain 内部子树进行深克隆替换，并将克隆的 translator 改为 loading+文字“翻译中…”（精准复现现场问题结构）
   await page.evaluate(() => {
@@ -556,15 +556,15 @@ test('内联模式下段落内部发生深克隆/替换后动态观察器与渲�
   await expect(page.locator('#plain > [data-vast-translator]')).toHaveText('内联段落译文。');
   await expect(page.locator('[data-vast-state="loading"]')).toHaveCount(0);
   await expect(page.locator('#plain [data-vast-source]')).toHaveCount(1);
-  await expect(popup.getByRole('button', { name: '显示原文 (Alt + A)' })).toBeVisible();
+  await expect(popup.getByRole('button', { name: '显示当前页面原文' })).toBeVisible();
 
   // 4. 恢复原文：断言 Popup 回到就绪态且页面干净还原
-  await clickPopupButton(popup, page, '显示原文 (Alt + A)');
+  await clickPopupButton(popup, page, '显示当前页面原文');
   await expect(page.locator('[data-vast-translator]')).toHaveCount(0);
   await expect(page.locator('[data-vast-inline]')).toHaveCount(0);
   await expect(page.locator('#plain')).toHaveText('Plain paragraph for inline.');
   await expect(popup.getByRole('status')).toHaveText('就绪');
-  await expect(popup.getByRole('button', { name: '翻译 (Alt + A)' })).toBeVisible();
+  await expect(popup.getByRole('button', { name: '翻译当前页面' })).toBeVisible();
   await popup.close();
   await page.close();
 });
@@ -578,7 +578,7 @@ test('内联模式下请求 pending 期间发生内部克隆替换，旧结果�
 
   const page = await openFixture(context, server.inlineFixtureUrl);
   const popup = await openPopupForFixture(openExtensionPage, page);
-  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+  await clickPopupButton(popup, page, '翻译当前页面');
 
   // 验证处于 loading 状态
   await expect(page.locator('#plain [data-vast-state="loading"]')).toBeVisible();
@@ -606,14 +606,14 @@ test('内联模式下请求 pending 期间发生内部克隆替换，旧结果�
   await expect(staleLoading).toHaveCount(0);
   await expect(page.locator('#plain > [data-vast-translator]')).toHaveText('内联段落译文。');
   await expect(page.locator('[data-vast-state="loading"]')).toHaveCount(0);
-  await expect(popup.getByRole('button', { name: '显示原文 (Alt + A)' })).toBeVisible();
+  await expect(popup.getByRole('button', { name: '显示当前页面原文' })).toBeVisible();
 
   // 恢复原文
-  await clickPopupButton(popup, page, '显示原文 (Alt + A)');
+  await clickPopupButton(popup, page, '显示当前页面原文');
   await expect(page.locator('[data-vast-translator]')).toHaveCount(0);
   await expect(page.locator('#plain')).toHaveText('Plain paragraph for inline.');
   await expect(popup.getByRole('status')).toHaveText('就绪');
-  await expect(popup.getByRole('button', { name: '翻译 (Alt + A)' })).toBeVisible();
+  await expect(popup.getByRole('button', { name: '翻译当前页面' })).toBeVisible();
   await popup.close();
   await page.close();
 });

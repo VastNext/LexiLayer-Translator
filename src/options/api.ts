@@ -1,9 +1,26 @@
 import { DEFAULT_SETTINGS, type CustomAiEngine, type Engine, type OptionsSettings, type ReadingPreferences, type Theme } from '../shared/config';
 import type { Expert } from '../shared/experts';
+import { getShortcutSettingsUrl, resolvePageTranslationShortcut, type BrowserIdentity, type ShortcutState } from '../shared/shortcuts';
 
-interface OptionsChromeApi { runtime: { sendMessage(message: unknown): Promise<unknown> } }
+interface OptionsChromeApi {
+  runtime: { sendMessage(message: unknown): Promise<unknown> };
+  commands?: { getAll(): Promise<unknown[]> };
+  tabs?: { create(createProperties: { url: string }): Promise<unknown> };
+}
 
-export function createOptionsApi(chromeApi: OptionsChromeApi) {
+interface NavigatorIdentitySource {
+  userAgent: string;
+  userAgentData?: { brands?: Array<{ brand: string }> };
+}
+
+export function browserIdentityFromNavigator(navigatorApi: NavigatorIdentitySource): BrowserIdentity {
+  return {
+    brands: navigatorApi.userAgentData?.brands,
+    userAgent: navigatorApi.userAgent,
+  };
+}
+
+export function createOptionsApi(chromeApi: OptionsChromeApi, browserIdentity?: BrowserIdentity) {
   async function request<T = void>(message: unknown): Promise<T> {
     const response = await chromeApi.runtime.sendMessage(message) as { ok?: boolean; data?: T; error?: string };
     if (response.ok === false) throw new Error(response.error ?? '设置操作失败');
@@ -31,5 +48,26 @@ export function createOptionsApi(chromeApi: OptionsChromeApi) {
     deleteExpert: (expertId: string) => request({ type: 'delete-expert', expertId }),
     importSettings: (settings: unknown, allowApiKeys?: boolean) => request({ type: 'import-settings', settings, ...(allowApiKeys !== undefined ? { allowApiKeys } : {}) }),
     clearCache: () => request({ type: 'clear-cache' }),
+    async getPageTranslationShortcut(): Promise<ShortcutState> {
+      try {
+        if (!chromeApi.commands) return { status: 'unavailable', reason: 'api-error' };
+        return resolvePageTranslationShortcut(await chromeApi.commands.getAll());
+      } catch {
+        return { status: 'unavailable', reason: 'api-error' };
+      }
+    },
+    async openShortcutSettings() {
+      const manualUrl = getShortcutSettingsUrl(browserIdentity);
+      try {
+        if (!chromeApi.tabs) throw new Error('tabs API unavailable');
+        await chromeApi.tabs.create({ url: manualUrl });
+        return { ok: true as const, manualUrl };
+      } catch {
+        return {
+          ok: false as const,
+          manualUrl,
+        };
+      }
+    },
   };
 }

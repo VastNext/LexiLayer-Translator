@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 import { BrandMark } from '../BrandMark';
 import { type Theme } from '../shared/config';
 import { engineDisplayName } from '../shared/engine-display';
+import { isAiEngine } from '../shared/experts';
 import { createTranslator, type Translator } from '../shared/i18n';
 import { languageOptions } from '../shared/languages';
+import type { ShortcutState } from '../shared/shortcuts';
 import type { PopupConfigResponse } from './api';
-import { isAiEngine } from '../shared/experts';
 
 interface Progress { status: string; completed: number; failed: number; total: number }
 
@@ -17,6 +18,7 @@ export interface PopupApi {
   sendToPage(message: unknown): Promise<unknown>;
   setTranslationBadge(active: boolean): Promise<void>;
   openOptions(): void;
+  getPageTranslationShortcut(): Promise<ShortcutState>;
   getProgress(): Promise<Progress | undefined>;
   subscribeProgress(listener: (progress: Progress) => void): (() => void) | Promise<() => void>;
 }
@@ -24,7 +26,7 @@ export interface PopupApi {
 const fallbackPreferences: NonNullable<PopupConfigResponse['preferences']> = {
   sourceLanguage: 'auto', targetLanguage: 'zh-Hans', displayMode: 'bilingual', scanScope: 'whole-page' as const,
   translationPosition: 'after' as const, userInstruction: '', selectionContext: true,
-  selectionPopupEnabled: true, inlineSelectionModifier: 'Control' as const, rendererMode: 'legacy' as const,
+  selectionPopupEnabled: true, inlineSelectionModifier: 'Control' as const, inlineSelectionTriggerCount: 1 as const, rendererMode: 'legacy' as const,
 };
 
 export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: Translator }) {
@@ -43,6 +45,7 @@ export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: T
   const [theme, setTheme] = useState<Theme>('pearl-reader');
   const [experts, setExperts] = useState<NonNullable<PopupConfigResponse['experts']>>([]);
   const [activeExpertByEngine, setActiveExpertByEngine] = useState<Record<string, string>>({});
+  const [shortcutState, setShortcutState] = useState<ShortcutState | null>(null);
 
   useEffect(() => {
     let disposed = false;
@@ -59,6 +62,9 @@ export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: T
       setActiveExpertByEngine(config.activeExpertByEngine ?? {});
       setConfigLoaded(true);
     }).catch((error) => setStatus(error instanceof Error ? error.message : t('statusFailed')));
+    void api.getPageTranslationShortcut()
+      .then((state) => { if (!disposed) setShortcutState(state); })
+      .catch(() => { if (!disposed) setShortcutState({ status: 'unavailable', reason: 'api-error' }); });
     void api.getProgress().then((progress) => { if (!disposed && progress) applyProgress(progress); }).catch(() => undefined);
     void Promise.resolve(api.subscribeProgress((progress) => applyProgress(progress)))
       .then((cleanup) => { if (disposed) cleanup(); else unsubscribe = cleanup; })
@@ -165,7 +171,15 @@ export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: T
     <p className="status translation-status" role="status"><span className="status-dot" aria-hidden="true" />{status}</p>
     <div className="primary-actions">
       <button className="mode-icon" aria-label={preferences.displayMode === 'bilingual' ? t('bilingual') : t('translationOnly')} title={t('modeToggleHelp')} disabled={!configLoaded} onClick={() => void savePreferences({ ...preferences, displayMode: preferences.displayMode === 'bilingual' ? 'translation' : 'bilingual' }, true)}>{preferences.displayMode === 'bilingual' ? '◫' : '▣'}</button>
-      <button className="primary primary--wide" disabled={busy || !configLoaded} aria-busy={busy} onClick={() => void togglePage()}>{busy ? t('statusTranslating') : pageActive ? t('showOriginal') : t('translateShortcut')}</button>
+      <button className="primary primary--wide" aria-label={pageActive ? t('actionShowOriginal') : t('actionTranslatePage')} aria-describedby={shortcutState?.status === 'assigned' ? 'popup-page-shortcut-description' : undefined} disabled={busy || !configLoaded} aria-busy={busy} onClick={() => void togglePage()}>
+        {busy ? <span>{t('statusTranslating')}</span> : <>
+          <span>{pageActive ? t('showOriginal') : t('actionTranslate')}</span>
+          {shortcutState?.status === 'assigned' && <kbd className="popup-shortcut-key" aria-hidden="true">{shortcutState.displayShortcut}</kbd>}
+        </>}
+      </button>
+      {shortcutState?.status === 'assigned' && <span id="popup-page-shortcut-description" className="sr-only">{shortcutState.displayShortcut}</span>}
     </div>
+    {shortcutState?.status === 'unassigned' && <p className="popup-shortcut-hint popup-shortcut-hint--unassigned">{t('shortcutUnassignedPopup')}</p>}
+    {shortcutState?.status === 'unavailable' && <p className="popup-shortcut-hint popup-shortcut-hint--unavailable">{t('shortcutUnavailablePopup')}</p>}
   </main>;
 }

@@ -48,7 +48,7 @@ describe('v2 settings', () => {
         selectionContext: true,
         selectionPopupEnabled: true,
         inlineSelectionModifier: 'Control',
-        inlineSelectionTriggerCount: 1,
+        inlineSelectionTriggerCount: 2,
       },
       experts: expect.arrayContaining([expect.objectContaining({ id: 'technology', kind: 'builtin', enabled: false })]),
       activeExpertByEngine: {},
@@ -148,10 +148,39 @@ describe('migration and normalization', () => {
     const legacyV2 = structuredClone(settings) as Omit<Settings, 'readingPreferences'> & { readingPreferences: Partial<Settings['readingPreferences']> };
     delete legacyV2.readingPreferences.selectionPopupEnabled;
     delete legacyV2.readingPreferences.inlineSelectionModifier;
+    delete legacyV2.readingPreferences.inlineSelectionTriggerCount;
 
     expect(normalizeSettings(legacyV2).readingPreferences).toMatchObject({
       selectionPopupEnabled: true,
       inlineSelectionModifier: 'Control',
+      inlineSelectionTriggerCount: 1,
+    });
+  });
+
+  it.each([
+    ['Alt', 1],
+    ['Control', 2],
+    ['Shift', 3],
+    ['Off', 3],
+  ] as const)('保留已保存的合法内联触发值 %s + %s', (inlineSelectionModifier, inlineSelectionTriggerCount) => {
+    const saved = structuredClone(settings);
+    saved.readingPreferences.inlineSelectionModifier = inlineSelectionModifier;
+    saved.readingPreferences.inlineSelectionTriggerCount = inlineSelectionTriggerCount;
+
+    expect(normalizeSettings(saved).readingPreferences).toMatchObject({ inlineSelectionModifier, inlineSelectionTriggerCount });
+  });
+
+  it('旧导入缺少触发次数时补单击，完整导入保留显式值', () => {
+    const legacyImport = exportSafeSettings(settings) as Omit<SafeSettings, 'readingPreferences'> & { readingPreferences: Partial<Settings['readingPreferences']> };
+    delete legacyImport.readingPreferences.inlineSelectionTriggerCount;
+    expect(importSettings(legacyImport, settings).readingPreferences.inlineSelectionTriggerCount).toBe(1);
+
+    const completeImport = exportSafeSettings(settings);
+    completeImport.readingPreferences.inlineSelectionModifier = 'Off';
+    completeImport.readingPreferences.inlineSelectionTriggerCount = 3;
+    expect(importSettings(completeImport, settings).readingPreferences).toMatchObject({
+      inlineSelectionModifier: 'Off',
+      inlineSelectionTriggerCount: 3,
     });
   });
 
