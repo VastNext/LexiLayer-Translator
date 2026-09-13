@@ -8,6 +8,11 @@ const requiredLocaleKeys = [
   'confirmDeleteEngine', 'confirmDeleteEngineAction', 'addCustomAi', 'newCustomAi', 'engineOriginChanged',
   'instructionCustomOnly', 'retrySave', 'statusEngineSaved', 'statusEngineUpdated', 'statusActiveChanged',
   'statusOrderSaved', 'statusEngineDeleted', 'importApplied',
+  'shortcutsAndTriggers', 'pageTranslationShortcut', 'inlineSelectionTrigger', 'triggerIndependenceHelp',
+  'triggerCountSingleRisk', 'triggerCountDisabledForOff', 'openShortcutSettings', 'assignShortcut',
+  'recheckShortcut', 'shortcutChecking', 'shortcutLastKnown', 'shortcutUnassigned', 'shortcutUnavailable',
+  'shortcutUnassignedPopup', 'shortcutUnavailablePopup', 'manualShortcutSettingsHelp',
+  'selectionPreferencesMigrationHint',
 ] as const;
 
 describe('文档发布契约', () => {
@@ -142,10 +147,28 @@ describe('文档发布契约', () => {
     expect(latestNotes).toContain(`# 语层翻译（LexiLayer Translator）${pkg.version}`);
     expect(latestNotes).toMatch(/^## /m);
     expect(latestNotes).toContain('## ✅ 验证');
+    expect(latestNotes).toMatch(/浏览器.*快捷键/s);
+    expect(latestNotes).toMatch(/双击.*Ctrl|Ctrl.*双击/s);
+    expect(latestNotes).toMatch(/旧用户.*(?:保留|覆盖)|不会覆盖.*旧用户/s);
 
     // 历史修复记录不随当前版本变化。
     const legacyNotes = await readFile(resolve('docs/release-notes/0.7.4.md'), 'utf8');
     expect(legacyNotes).toContain('“仅译文”模式显示源文');
     expect(legacyNotes).toContain('高优先级 CSS');
+  });
+
+  it('当前用户文档把 Alt+A 作为建议默认值，并以浏览器实际绑定为准', async () => {
+    const [readme, site, roadmap] = await Promise.all([
+      readFile(resolve('README.md'), 'utf8'),
+      readFile(resolve('site/index.html'), 'utf8'),
+      readFile(resolve('docs/ROADMAP.md'), 'utf8'),
+    ]);
+
+    expect(readme).toMatch(/Alt\+A.*建议默认|建议默认.*Alt\+A/s);
+    expect(readme).toMatch(/实际绑定.*设置页|设置页.*实际绑定/s);
+    expect(readme).not.toContain('Shift+Alt+A');
+    expect(site).toMatch(/建议默认.*Alt|Alt.*建议默认/s);
+    expect(site).toMatch(/实际绑定.*设置页|设置页.*实际绑定/s);
+    expect(roadmap).toMatch(/快捷键.*已完成|已完成.*快捷键/s);
   });
 });

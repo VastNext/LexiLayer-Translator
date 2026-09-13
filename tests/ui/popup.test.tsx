@@ -8,7 +8,7 @@ afterEach(cleanup);
 const preferences = {
   targetLanguage: 'zh-Hans', displayMode: 'bilingual', scanScope: 'whole-page' as const,
   translationPosition: 'after' as const, userInstruction: '', selectionContext: true,
-  selectionPopupEnabled: true, inlineSelectionModifier: 'Control' as const, rendererMode: 'legacy' as const,
+  selectionPopupEnabled: true, inlineSelectionModifier: 'Control' as const, inlineSelectionTriggerCount: 1 as const, rendererMode: 'legacy' as const,
 };
 
 function createApi(overrides: Partial<PopupApi> = {}): PopupApi {
@@ -26,6 +26,7 @@ function createApi(overrides: Partial<PopupApi> = {}): PopupApi {
     sendToPage: vi.fn(async () => undefined),
     setTranslationBadge: vi.fn(async () => undefined),
     openOptions: vi.fn(),
+    getPageTranslationShortcut: vi.fn(async () => ({ status: 'assigned' as const, shortcut: 'Alt+A', displayShortcut: 'Alt + A' })),
     getProgress: vi.fn(async () => undefined),
     subscribeProgress: vi.fn(() => () => undefined),
     ...overrides,
@@ -62,9 +63,10 @@ describe('精简 Popup', () => {
     });
     render(<PopupApp api={api} />);
     expect(await screen.findByLabelText('AI 专家')).toHaveValue('');
-    await userEvent.click(screen.getByRole('button', { name: '翻译 (Alt + A)' }));
+    await userEvent.click(screen.getByRole('button', { name: '翻译当前页面' }));
     expect(api.sendToPage).toHaveBeenCalledWith(expect.not.objectContaining({ expertId: expect.anything() }));
   });
+
   it('按正式结构展示品牌、同排语言、整行引擎、状态、模式主操作和设置', async () => {
     render(<PopupApp api={createApi()} />);
     expect(await screen.findByRole('main')).toHaveAttribute('data-theme', 'pearl-reader');
@@ -72,7 +74,7 @@ describe('精简 Popup', () => {
     expect(screen.getByLabelText('源语言')).toHaveValue('auto');
     expect(screen.getByLabelText('目标语言')).toHaveValue('zh-Hans');
     expect(screen.getByRole('button', { name: '双语对照' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '翻译 (Alt + A)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '翻译当前页面' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '设置' })).toBeInTheDocument();
     expect(screen.queryByLabelText('翻译范围')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '重试' })).not.toBeInTheDocument();
@@ -93,7 +95,7 @@ describe('精简 Popup', () => {
   });
 
   it('保存偏好时完整回传渲染器模式，不因局部修改丢失字段', async () => {
-    const inlinePreferences = { ...preferences, rendererMode: 'inline' as const };
+    const inlinePreferences = { ...preferences, inlineSelectionTriggerCount: 3 as const, rendererMode: 'inline' as const };
     const api = createApi();
     vi.mocked(api.getConfig).mockResolvedValue({
       preferences: inlinePreferences, activeEngineId: 'google', theme: 'pearl-reader' as const,
@@ -106,7 +108,27 @@ describe('精简 Popup', () => {
     await waitFor(() => expect(screen.getByLabelText('翻译引擎')).toBeEnabled());
     await userEvent.selectOptions(screen.getByLabelText('目标语言'), 'ja');
     await waitFor(() => expect(api.savePopupState).toHaveBeenCalled());
-    expect(api.savePopupState).toHaveBeenLastCalledWith('google', expect.objectContaining({ rendererMode: 'inline', targetLanguage: 'ja' }));
+    expect(api.savePopupState).toHaveBeenLastCalledWith('google', expect.objectContaining({ inlineSelectionTriggerCount: 3, rendererMode: 'inline', targetLanguage: 'ja' }));
+
+    await userEvent.click(screen.getByRole('button', { name: '双语对照' }));
+    await waitFor(() => expect(api.savePopupState).toHaveBeenLastCalledWith('google', expect.objectContaining({
+      displayMode: 'translation',
+      inlineSelectionTriggerCount: 3,
+      rendererMode: 'inline',
+    })));
+  });
+
+  it('配置未返回偏好时 fallback 保存仍携带历史单击触发次数', async () => {
+    const api = createApi({ getConfig: vi.fn(async () => ({ activeEngineId: 'google', theme: 'pearl-reader' as const })) });
+    await renderAndAwaitLoaded(api);
+
+    await userEvent.selectOptions(screen.getByLabelText('目标语言'), 'ja');
+    await waitFor(() => expect(api.savePopupState).toHaveBeenCalled());
+    expect(api.savePopupState).toHaveBeenLastCalledWith('google', expect.objectContaining({
+      targetLanguage: 'ja',
+      inlineSelectionModifier: 'Control',
+      inlineSelectionTriggerCount: 1,
+    }));
   });
 
   it('getConfig 挂起时保存控件禁用且不发送保存，加载成功后解锁且字段不丢', async () => {
@@ -120,8 +142,8 @@ describe('精简 Popup', () => {
     expect(screen.getByLabelText('翻译引擎')).toBeDisabled();
     expect(screen.getByRole('button', { name: '双语对照' })).toBeDisabled();
     // 主翻译按钮同样受配置加载门禁：getConfig 挂起时点击不得发送翻译/恢复命令。
-    expect(screen.getByRole('button', { name: '翻译 (Alt + A)' })).toBeDisabled();
-    fireEvent.click(screen.getByRole('button', { name: '翻译 (Alt + A)' }));
+    expect(screen.getByRole('button', { name: '翻译当前页面' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: '翻译当前页面' }));
     await waitFor(() => expect(api.sendToPage).not.toHaveBeenCalled());
     expect(api.setTranslationBadge).not.toHaveBeenCalled();
 
@@ -139,7 +161,7 @@ describe('精简 Popup', () => {
       ],
     });
     await waitFor(() => expect(target).toBeEnabled());
-    expect(screen.getByRole('button', { name: '翻译 (Alt + A)' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '翻译当前页面' })).toBeEnabled();
     await userEvent.selectOptions(target, 'ja');
     await waitFor(() => expect(api.savePopupState).toHaveBeenCalled());
     expect(api.savePopupState).toHaveBeenLastCalledWith('google', expect.objectContaining({ rendererMode: 'inline', targetLanguage: 'ja' }));
@@ -160,7 +182,7 @@ describe('精简 Popup', () => {
   it('已翻译页面切换引擎后使用新引擎立即重译', async () => {
     const api = createApi({ getProgress: vi.fn(async () => ({ status: 'complete', completed: 2, failed: 0, total: 2 })) });
     render(<PopupApp api={api} />);
-    await screen.findByRole('button', { name: '显示原文 (Alt + A)' });
+    await screen.findByRole('button', { name: '显示当前页面原文' });
     await waitFor(() => expect(screen.getByLabelText('翻译引擎')).toBeEnabled());
 
     await userEvent.selectOptions(screen.getByLabelText('翻译引擎'), 'bing');
@@ -169,20 +191,20 @@ describe('精简 Popup', () => {
       type: 'translate-page', engineId: 'bing', scope: 'whole-page', sourceLanguage: 'auto', mode: 'bilingual', targetLanguage: 'zh-Hans',
     }));
     expect(api.savePopupState).toHaveBeenCalledWith('bing', expect.objectContaining({ displayMode: 'bilingual' }));
-    expect(screen.getByRole('button', { name: '显示原文 (Alt + A)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '显示当前页面原文' })).toBeInTheDocument();
   });
 
   it('translating 即使尚未扫描到段落也视为当前页面已翻译', async () => {
     const api = createApi({ getProgress: vi.fn(async () => ({ status: 'translating', completed: 0, failed: 0, total: 0 })) });
     render(<PopupApp api={api} />);
 
-    expect(await screen.findByRole('button', { name: '显示原文 (Alt + A)' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: '显示当前页面原文' })).toBeInTheDocument();
   });
 
   it('已翻译页面切换显示模式后立即重译并保持显示原文按钮', async () => {
     const api = createApi({ getProgress: vi.fn(async () => ({ status: 'complete', completed: 2, failed: 0, total: 2 })) });
     render(<PopupApp api={api} />);
-    await screen.findByRole('button', { name: '显示原文 (Alt + A)' });
+    await screen.findByRole('button', { name: '显示当前页面原文' });
     await waitFor(() => expect(screen.getByRole('button', { name: '双语对照' })).toBeEnabled());
     await userEvent.click(screen.getByRole('button', { name: '双语对照' }));
 
@@ -190,21 +212,21 @@ describe('精简 Popup', () => {
       type: 'translate-page', engineId: 'google', scope: 'whole-page', sourceLanguage: 'auto', mode: 'translation-only', targetLanguage: 'zh-Hans',
     }));
     expect(api.savePopupState).toHaveBeenCalledWith('google', expect.objectContaining({ displayMode: 'translation' }));
-    expect(screen.getByRole('button', { name: '显示原文 (Alt + A)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '显示当前页面原文' })).toBeInTheDocument();
   });
 
-  it('翻译后主按钮切换为显示原文，再次点击恢复', async () => {
+  it('翻译后主按钮切换为显示当前页面原文，再次点击恢复', async () => {
     let progressListener: ((progress: { status: string; completed: number; failed: number; total: number }) => void) | undefined;
     const api = createApi({ subscribeProgress: vi.fn((listener) => { progressListener = listener; return () => undefined; }) });
     render(<PopupApp api={api} />);
-    const translateButton = await screen.findByRole('button', { name: '翻译 (Alt + A)' });
+    const translateButton = await screen.findByRole('button', { name: '翻译当前页面' });
     await waitFor(() => expect(translateButton).toBeEnabled());
     await userEvent.click(translateButton);
     expect(api.setTranslationBadge).toHaveBeenCalledWith(true);
     expect(api.sendToPage).toHaveBeenCalledWith(expect.objectContaining({ type: 'translate-page', scope: 'whole-page', targetLanguage: 'zh-Hans' }));
     progressListener?.({ status: 'complete', completed: 1, failed: 0, total: 1 });
-    await waitFor(() => expect(screen.getByRole('button', { name: '显示原文 (Alt + A)' })).toBeInTheDocument());
-    await userEvent.click(await screen.findByRole('button', { name: '显示原文 (Alt + A)' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: '显示当前页面原文' })).toBeInTheDocument());
+    await userEvent.click(await screen.findByRole('button', { name: '显示当前页面原文' }));
     expect(api.sendToPage).toHaveBeenLastCalledWith({ type: 'restore-page' });
     expect(api.setTranslationBadge).toHaveBeenLastCalledWith(false);
   });
@@ -223,6 +245,68 @@ describe('精简 Popup', () => {
     expect(screen.getByRole('button', { name: '仅译文' })).toBeInTheDocument();
     expect(screen.getByRole('main')).toHaveAttribute('data-theme', 'command-translator');
     expect(document.documentElement).toHaveAttribute('data-theme', 'command-translator');
+  });
+
+  it('用户绑定自定义快捷键时展示实际绑定 kbd，且不影响按钮 accessible name', async () => {
+    const api = createApi({
+      getPageTranslationShortcut: vi.fn(async () => ({
+        status: 'assigned' as const,
+        shortcut: 'Ctrl+Shift+Y',
+        displayShortcut: 'Ctrl + Shift + Y',
+      })),
+    });
+    render(<PopupApp api={api} />);
+    const button = await screen.findByRole('button', { name: '翻译当前页面' });
+    expect(button).toBeInTheDocument();
+    expect(screen.getByText('Ctrl + Shift + Y', { selector: 'kbd' })).toBeInTheDocument();
+    expect(button).toHaveAttribute('aria-describedby');
+    expect(document.getElementById(button.getAttribute('aria-describedby')!)).toHaveTextContent('Ctrl + Shift + Y');
+    expect(screen.queryByText(/Alt\s*\+\s*A/i)).not.toBeInTheDocument();
+  });
+
+  it('快捷键未分配时展示弱提示，主按钮仍可用且不回退默认快捷键', async () => {
+    const api = createApi({
+      getPageTranslationShortcut: vi.fn(async () => ({ status: 'unassigned' as const })),
+    });
+    render(<PopupApp api={api} />);
+    const button = await screen.findByRole('button', { name: '翻译当前页面' });
+    expect(button).toBeEnabled();
+    await userEvent.click(button);
+    expect(api.sendToPage).toHaveBeenCalledWith(expect.objectContaining({ type: 'translate-page' }));
+    expect(await screen.findByText('未设置页面快捷键，仍可点击按钮翻译')).toBeInTheDocument();
+    expect(screen.queryByText(/Alt\s*\+\s*A/i)).not.toBeInTheDocument();
+  });
+
+  it('快捷键不可用时展示暂不可读弱提示，主按钮仍可用', async () => {
+    const api = createApi({
+      getPageTranslationShortcut: vi.fn(async () => ({ status: 'unavailable' as const, reason: 'api-error' })),
+    });
+    render(<PopupApp api={api} />);
+    const button = await screen.findByRole('button', { name: '翻译当前页面' });
+    expect(button).toBeEnabled();
+    await userEvent.click(button);
+    expect(api.sendToPage).toHaveBeenCalledWith(expect.objectContaining({ type: 'translate-page' }));
+    expect(await screen.findByText('暂时无法读取页面快捷键，按钮仍可使用')).toBeInTheDocument();
+  });
+
+  it('命令读取挂起或失败不阻塞配置加载和主翻译按钮', async () => {
+    const api = createApi({
+      getPageTranslationShortcut: vi.fn(() => new Promise<never>(() => {})),
+    });
+    render(<PopupApp api={api} />);
+    await waitFor(() => expect(screen.getByLabelText('翻译引擎')).toBeEnabled());
+    expect(screen.getByRole('button', { name: '翻译当前页面' })).toBeEnabled();
+  });
+
+  it('配置加载失败但命令读取成功时保持配置门禁，设置入口仍可用', async () => {
+    const api = createApi({
+      getConfig: vi.fn(async () => { throw new Error('配置读取失败'); }),
+      getPageTranslationShortcut: vi.fn(async () => ({ status: 'assigned' as const, shortcut: 'Alt+A', displayShortcut: 'Alt + A' })),
+    });
+    render(<PopupApp api={api} />);
+    expect(await screen.findByText('配置读取失败')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '翻译当前页面' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '设置' })).toBeEnabled();
   });
 });
 

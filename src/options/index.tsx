@@ -2,9 +2,9 @@ import { createRoot } from 'react-dom/client';
 import { OptionsApp } from './OptionsApp';
 import '../ui.css';
 import { createTranslator } from '../shared/i18n';
-import { createOptionsApi } from './api';
+import { browserIdentityFromNavigator, createOptionsApi } from './api';
 
-const v2Api = createOptionsApi(chrome);
+const v2Api = createOptionsApi(chrome, browserIdentityFromNavigator(navigator));
 const api = {
   ...v2Api,
   exportSettings(config: import('../shared/config').SafeSettings | import('../shared/config').Settings) {

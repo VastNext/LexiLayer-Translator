@@ -1,6 +1,7 @@
 import type { Theme } from '../shared/config';
 import type { Expert } from '../shared/experts';
 import { createTranslator } from '../shared/i18n';
+import { resolvePageTranslationShortcut, type ShortcutState } from '../shared/shortcuts';
 
 interface PopupChromeApi {
   runtime: {
@@ -25,6 +26,7 @@ interface PopupChromeApi {
     setBadgeText(details: { tabId: number; text: string }): Promise<void>;
     setBadgeBackgroundColor(details: { tabId: number; color: string }): Promise<void>;
   };
+  commands?: { getAll(): Promise<unknown[]> };
   i18n: { getMessage(key: string): string };
 }
 
@@ -36,7 +38,7 @@ interface Progress {
 }
 
 export interface PopupConfigResponse {
-  preferences?: { sourceLanguage?: string; targetLanguage: string; displayMode: string; scanScope: 'main-content' | 'whole-page'; translationPosition: 'before' | 'after'; userInstruction: string; selectionContext: boolean; selectionPopupEnabled: boolean; inlineSelectionModifier: 'Control' | 'Alt' | 'Shift' | 'Meta' | 'Off'; rendererMode: 'legacy' | 'inline' };
+  preferences?: { sourceLanguage?: string; targetLanguage: string; displayMode: string; scanScope: 'main-content' | 'whole-page'; translationPosition: 'before' | 'after'; userInstruction: string; selectionContext: boolean; selectionPopupEnabled: boolean; inlineSelectionModifier: 'Control' | 'Alt' | 'Shift' | 'Meta' | 'Off'; inlineSelectionTriggerCount: 1 | 2 | 3; rendererMode: 'legacy' | 'inline' };
   activeEngineId?: string;
   theme?: Theme;
   availableEngines?: Array<{ id: string; kind: string; name: string; ready: boolean; capabilities: { streaming: boolean } }>;
@@ -108,6 +110,14 @@ export function createPopupApi(api: PopupChromeApi) {
       await api.action.setBadgeText({ tabId, text: active ? '✓' : '' });
     },
     openOptions: () => void api.runtime.openOptionsPage(),
+    async getPageTranslationShortcut(): Promise<ShortcutState> {
+      try {
+        if (!api.commands) return { status: 'unavailable', reason: 'api-error' };
+        return resolvePageTranslationShortcut(await api.commands.getAll());
+      } catch {
+        return { status: 'unavailable', reason: 'api-error' };
+      }
+    },
     async getProgress() {
       const tabId = await activeTabId();
       if (tabId === undefined) return undefined;

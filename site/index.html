@@ -232,7 +232,7 @@
         <div class="card"><span class="emoji">🌊</span><h3>流式划词结果</h3><p>自定义 AI 划词翻译优先使用流式响应，边生成边显示，体验更流畅。</p></div>
         <div class="card"><span class="emoji">⚡</span><h3>现代网页适配</h3><p>优先处理可见文本，支持 React、Vue、Angular、Web Component 与动态新增内容。</p></div>
         <div class="card"><span class="emoji">💾</span><h3>本地缓存</h3><p>译文保存在浏览器本地 IndexedDB，默认保留 30 天、最多 5000 条，可随时清理。</p></div>
-        <div class="card"><span class="emoji">⌨️</span><h3>快捷键与双语界面</h3><p>使用 <kbd>Alt</kbd> + <kbd>A</kbd> 切换当前页面翻译；界面提供简体中文与英文。</p></div>
+        <div class="card"><span class="emoji">⌨️</span><h3>快捷键与双语界面</h3><p>页面翻译快捷键的建议默认值为 <kbd>Alt</kbd> + <kbd>A</kbd>，实际绑定以扩展设置页或浏览器快捷键管理页显示为准；界面提供简体中文与英文。</p></div>
       </div>
     </div>
   </section>
@@ -484,8 +484,8 @@ API Key:  sk-...</code></pre>
         <p>语层翻译只处理可见正文，会跳过密码框、输入框等交互控件和图标类内容；未主动发起翻译的页面不会被扫描。动态加载的内容（如无限滚动）会在出现后自动纳入翻译。</p>
       </details>
       <details>
-        <summary>快捷键 <kbd>Alt</kbd> + <kbd>A</kbd> 无效怎么办？</summary>
-        <p>可能被其他扩展或应用占用。打开 <code>chrome://extensions/shortcuts</code>，找到「语层翻译」重新指定快捷键即可。</p>
+        <summary>页面翻译快捷键无效怎么办？</summary>
+        <p>先在扩展设置页查看浏览器返回的实际绑定。若未分配或发生冲突，请打开 <code>chrome://extensions/shortcuts</code>，找到「语层翻译」重新指定快捷键。</p>
       </details>
       <details>
         <summary>支持哪些浏览器？</summary>

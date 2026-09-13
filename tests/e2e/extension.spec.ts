@@ -11,6 +11,10 @@ mkdirSync(evidenceDir, { recursive: true });
 const evidence = (name: string) => resolve(evidenceDir, `e2e-${name}.png`);
 const themeEvidence = (name: string) => resolve(evidenceDir, `theme-${name}.png`);
 
+function formatShortcut(shortcut: string): string {
+  return shortcut.split('+').map((part) => part.trim()).join(' + ');
+}
+
 // 既有用例断言基于兼容模式的兄弟节点 wrapper；新安装默认内联，
 // 因此每个翻译用例显式把渲染器模式切回兼容模式。
 async function useLegacyRenderer(options: import('@playwright/test').Page): Promise<void> {
@@ -117,6 +121,24 @@ test('五套主题从 Options 即时保存并在重开 Popup 后持久应用', a
   }
 });
 
+test('真实 commands.getAll 结果贯通到 Options 与 Popup 默认展示', async ({ serviceWorker, openExtensionPage }) => {
+  const commands = await serviceWorker.evaluate(async () => chrome.commands.getAll());
+  const translateCommand = commands.find((command) => command.name === 'translate_page');
+  expect(translateCommand).toBeDefined();
+  expect(translateCommand?.shortcut).toBeTruthy();
+  const displayShortcut = formatShortcut(translateCommand!.shortcut!);
+
+  const options = await openExtensionPage('options.html');
+  const shortcutRegion = options.getByRole('region', { name: '快捷键与触发方式' });
+  await expect(shortcutRegion.getByText(displayShortcut, { exact: true })).toBeVisible();
+  await options.close();
+
+  const popup = await openExtensionPage('popup.html');
+  await expect(popup.locator('kbd').getByText(displayShortcut, { exact: true })).toBeVisible();
+  await expect(popup.getByRole('button', { name: '翻译当前页面' })).toBeVisible();
+  await popup.close();
+});
+
 test('MV3、Popup 与 Options 无错误加载，自定义实例可测试并在保存后持久化', async ({
   context, extensionId, serviceWorker, server, openExtensionPage, errors,
 }) => {
@@ -181,6 +203,7 @@ test('MV3、Popup 与 Options 无错误加载，自定义实例可测试并在�
   await options.close();
   const reopened = await openExtensionPage('options.html');
   const reopenedCard = reopened.getByRole('group', { name: 'E2E 自定义 AI' });
+  await reopenedCard.getByRole('button', { name: '展开' }).click();
   await expect(reopenedCard.getByLabel('Base URL')).toHaveValue(server.baseUrl);
   await expect(reopenedCard.getByLabel('模型')).toHaveValue('e2e-model');
   await expect(reopenedCard.getByLabel('API Key', { exact: true })).toHaveValue(API_KEY);
@@ -221,10 +244,14 @@ test('新安装默认 Google 且有 Bing，多实例排序、默认、密钥、�
   await expect(groups.nth(0)).toHaveAccessibleName('实例乙');
   await expect(groups.nth(1)).toHaveAccessibleName('实例甲');
   await expect(options.getByRole('group', { name: '实例乙' }).getByText('当前默认')).toBeVisible();
-  await expect(options.getByRole('group', { name: '实例甲' }).getByText('已保存 API Key；留空会保留现有密钥。')).toBeVisible();
-  await expect(options.getByRole('group', { name: '实例乙' }).getByText('已保存 API Key；留空会保留现有密钥。')).toBeVisible();
+  const alpha = options.getByRole('group', { name: '实例甲' });
+  const betaAfterReload = options.getByRole('group', { name: '实例乙' });
+  await alpha.getByRole('button', { name: '展开' }).click();
+  await betaAfterReload.getByRole('button', { name: '展开' }).click();
+  await expect(alpha.getByText('已保存 API Key；留空会保留现有密钥。')).toBeVisible();
+  await expect(betaAfterReload.getByText('已保存 API Key；留空会保留现有密钥。')).toBeVisible();
 
-  const alphaKey = options.getByRole('group', { name: '实例甲' });
+  const alphaKey = alpha;
   await alphaKey.getByRole('button', { name: '清除 API Key' }).click();
   await alphaKey.getByRole('button', { name: '确认清除 API Key' }).click();
   await expect(options.getByRole('status')).toHaveText('API Key 已清除');
@@ -298,17 +325,17 @@ test('Popup 通过真实 Google/Bing clients 完成生产主链路并发送各�
   await popup.getByLabel('目标语言').selectOption('zh-Hans');
 
   await popup.getByLabel('翻译引擎').selectOption('google');
-  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+  await clickPopupButton(popup, page, '翻译当前页面');
   await expect(page.locator('#hello + [data-vast-translator]')).toHaveText('你好');
-  await clickPopupButton(popup, page, '显示原文 (Alt + A)');
+  await clickPopupButton(popup, page, '显示当前页面原文');
   await expect(page.locator('[data-vast-translator]')).toHaveCount(0);
   await expect(page.locator('#hello')).toBeVisible();
   await expect(popup.getByRole('status')).toHaveText('就绪');
 
   await popup.getByLabel('翻译引擎').selectOption('bing');
-  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+  await clickPopupButton(popup, page, '翻译当前页面');
   await expect(page.locator('#hello + [data-vast-translator]')).toHaveText('您好');
-  await clickPopupButton(popup, page, '显示原文 (Alt + A)');
+  await clickPopupButton(popup, page, '显示当前页面原文');
   await expect(page.locator('[data-vast-translator]')).toHaveCount(0);
   await expect(page.locator('#hello')).toBeVisible();
   await expect(popup.getByRole('status')).toHaveText('就绪');
@@ -337,21 +364,21 @@ test('普通文章由 Popup 翻译，支持进度、模式切换、动态更新�
   expect(extensionRequests.some((url) => /rules\/(github|google-search|bing-search|youtube|reddit|x|stackoverflow|substack)\.json/.test(url))).toBe(false);
 
   const popup = await openPopupForFixture(openExtensionPage, page);
-  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+  await clickPopupButton(popup, page, '翻译当前页面');
   await expect(page.locator('[data-vast-translator][data-vast-state="translated"]')).toHaveCount(5);
   await expect(page.locator('#first + [data-vast-translator]')).toHaveText('用于翻译的第一段。');
   await expect(page.locator('#outside + [data-vast-translator]')).toHaveCount(1);
-  await expect(popup.getByRole('button', { name: '显示原文 (Alt + A)' })).toBeVisible();
+  await expect(popup.getByRole('button', { name: '显示当前页面原文' })).toBeVisible();
   await popup.screenshot({ path: evidence('popup'), fullPage: true });
   await page.screenshot({ path: evidence('translated-fixture'), fullPage: true });
 
   await popup.getByRole('button', { name: '双语对照' }).click();
-  await clickPopupButton(popup, page, '显示原文 (Alt + A)');
-  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+  await clickPopupButton(popup, page, '显示当前页面原文');
+  await clickPopupButton(popup, page, '翻译当前页面');
   await expect(page.locator('#first')).toBeHidden();
   await popup.getByRole('button', { name: '仅译文' }).click();
-  await clickPopupButton(popup, page, '显示原文 (Alt + A)');
-  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+  await clickPopupButton(popup, page, '显示当前页面原文');
+  await clickPopupButton(popup, page, '翻译当前页面');
   await expect(page.locator('#first')).toBeVisible();
 
   await page.locator('#dynamic-root').evaluate((root) => { root.innerHTML = '<p id="added">Dynamically added paragraph.</p>'; });
@@ -359,7 +386,7 @@ test('普通文章由 Popup 翻译，支持进度、模式切换、动态更新�
   await page.locator('#first').evaluate((element) => { element.textContent = 'Changed source paragraph.'; });
   await expect(page.locator('#first + [data-vast-translator]')).toHaveText('修改后的原文段落。');
 
-  await clickPopupButton(popup, page, '显示原文 (Alt + A)');
+  await clickPopupButton(popup, page, '显示当前页面原文');
   await expect(page.locator('[data-vast-translator]')).toHaveCount(0);
   await expect(page.locator('#first')).toBeVisible();
   expect(extensionRequests.some((url) => /rules\/.+\.json/.test(url))).toBe(false);
@@ -456,8 +483,12 @@ test('长页面底部划词面板始终在视口内，可拖动关闭，Ctrl 内
   const selectedBox = await paragraph.boundingBox(); if (!selectedBox) throw new Error('内联选区不可见');
   await page.mouse.move(selectedBox.x + 4, selectedBox.y + selectedBox.height / 2); await page.mouse.down(); await page.mouse.move(selectedBox.x + selectedBox.width - 4, selectedBox.y + selectedBox.height / 2, { steps: 10 }); await page.mouse.up();
   await page.keyboard.press('Control');
-  await expect(page.locator('#bottom-selection + [data-vast-inline-selection-translation]')).toContainText('请使用真实鼠标手势选择这句话');
+  await expect(page.locator('[data-vast-inline-selection-translation]')).toHaveCount(0);
+  await page.keyboard.press('Control');
+  await expect(page.locator('#bottom-selection + [data-vast-inline-selection-translation]')).toBeVisible();
   await page.screenshot({ path: evidence('selection-inline'), fullPage: false });
+  await page.keyboard.press('Control');
+  await expect(page.locator('#bottom-selection + [data-vast-inline-selection-translation]')).toHaveCount(1);
   await page.keyboard.press('Control');
   await expect(page.locator('[data-vast-inline-selection-translation]')).toHaveCount(0);
 
@@ -469,13 +500,17 @@ test('长页面底部划词面板始终在视口内，可拖动关闭，Ctrl 内
   const disabledBox = await paragraph.boundingBox(); if (!disabledBox) throw new Error('关闭悬浮按钮后的选区不可见');
   await page.mouse.move(disabledBox.x + 4, disabledBox.y + disabledBox.height / 2); await page.mouse.down(); await page.mouse.move(disabledBox.x + disabledBox.width - 4, disabledBox.y + disabledBox.height / 2, { steps: 10 }); await page.mouse.up();
   await expect(page.locator('[data-vast-selection-host]')).toHaveCount(0);
+  await page.keyboard.press('Control');
+  await expect(page.locator('[data-vast-inline-selection-translation]')).toHaveCount(0);
+  await page.keyboard.press('Control');
+  await expect(page.locator('#bottom-selection + [data-vast-inline-selection-translation]')).toBeVisible();
 });
 
 test('整个页面翻译 findryai 面包屑四个文本叶', async ({ context, server, openExtensionPage }) => {
   const options = await openExtensionPage('options.html'); await saveConfiguration(options, server.baseUrl); await options.close();
   const page = await openFixture(context, server.selectionFixtureUrl);
   const popup = await openPopupForFixture(openExtensionPage, page);
-  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+  await clickPopupButton(popup, page, '翻译当前页面');
   const breadcrumb = page.getByRole('navigation', { name: 'Breadcrumb' });
   for (const text of ['Home', 'Category', 'Image Generation', 'trainengine ai']) {
     await expect(breadcrumb.getByText(text, { exact: true }).locator('+ [data-vast-translator]')).toHaveCount(1);
@@ -498,7 +533,7 @@ test('findryai 仅译文模式保留直接文本链接与按钮交互，不显�
     const value = await chrome.storage.local.get('translatorSettings');
     return (value.translatorSettings as { readingPreferences?: { displayMode?: string } } | undefined)?.readingPreferences?.displayMode;
   })).toBe('translation');
-  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+  await clickPopupButton(popup, page, '翻译当前页面');
 
   for (const [id, href] of [['direct-home', '/'], ['direct-category', '/category']] as const) {
     const link = page.locator(`#${id}`);
@@ -541,7 +576,7 @@ test('启用并选择内置 AI 专家后使用对应提示词翻译', async ({ c
     const value = await chrome.storage.local.get('translatorSettings');
     return (value.translatorSettings as { activeExpertByEngine?: Record<string, string> } | undefined)?.activeExpertByEngine?.[engineId];
   }, selectedEngineId)).toBe('technology');
-  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+  await clickPopupButton(popup, page, '翻译当前页面');
   await expect(page.locator('[data-vast-state="translated"]')).toHaveCount(5);
   await expect.poll(() => server.requests.some((request) => JSON.stringify(request.body).includes('For software terminology'))).toBe(true);
   await popup.close();
@@ -552,7 +587,7 @@ test('整个页面翻译 Angular 管理菜单的标题、说明与链接文字�
   const options = await openExtensionPage('options.html'); await saveConfiguration(options, server.baseUrl); await options.close();
   const page = await openFixture(context, server.adminFixtureUrl);
   const popup = await openPopupForFixture(openExtensionPage, page);
-  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+  await clickPopupButton(popup, page, '翻译当前页面');
 
   await expect(page.locator('#reports-label + [data-vast-translator]')).toContainText('中文译文：Reports snapshot');
   await expect(page.locator('#leads-label + [data-vast-translator]')).toContainText('中文译文：Generate leads');
@@ -600,7 +635,7 @@ test('网页按 8+2 批处理，动态范围正确且离屏滚动后才请求', 
     const commands = await serviceWorker.evaluate(async () => chrome.commands.getAll());
     expect(commands).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'translate_page', description: expect.any(String) })]));
     const popup = await openPopupForFixture(openExtensionPage, page);
-    await clickPopupButton(popup, page, '翻译 (Alt + A)');
+    await clickPopupButton(popup, page, '翻译当前页面');
   }
   await expect(page.locator('[data-vast-state="translated"]')).toHaveCount(10);
   const nonStream = () => server.requests.filter((request) => request.body.stream !== true);
@@ -642,7 +677,7 @@ test('局部重试不打断在途与离屏任务，恢复后再翻译命中缓�
   await page.bringToFront();
   await popup.reload();
   await expect(popup.getByLabel('翻译引擎')).not.toHaveValue('google');
-  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+  await clickPopupButton(popup, page, '翻译当前页面');
   const nonStream = () => server.requests.filter((request) => request.body.stream !== true);
 
   // 失败与 pending 并存：单段错误 + 9 段成功 + 离屏段仍在等待，不因失败整页作废。
@@ -667,9 +702,9 @@ test('局部重试不打断在途与离屏任务，恢复后再翻译命中缓�
 
   // 恢复原文后再次翻译：滚回顶部让可见批命中缓存；有效缓存不清，全程无新增 AI 请求。
   await page.locator('#batch-0').scrollIntoViewIfNeeded();
-  await clickPopupButton(popup, page, '显示原文 (Alt + A)');
+  await clickPopupButton(popup, page, '显示当前页面原文');
   await expect(page.locator('[data-vast-translator]')).toHaveCount(0);
-  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+  await clickPopupButton(popup, page, '翻译当前页面');
   await expect(page.locator('[data-vast-state="translated"]')).toHaveCount(10);
   await page.locator('#offscreen').scrollIntoViewIfNeeded();
   await expect(page.locator('[data-vast-state="translated"]')).toHaveCount(11);
@@ -701,7 +736,7 @@ for (const mode of ['401', 'invalid-json'] as const) {
     server.setMode(mode);
     const page = await openFixture(context, server.fixtureUrl);
     const popup = await openPopupForFixture(openExtensionPage, page);
-    await clickPopupButton(popup, page, '翻译 (Alt + A)');
+    await clickPopupButton(popup, page, '翻译当前页面');
     await expect(page.locator('[data-vast-state="error"]')).toHaveCount(5);
     await expect(page.locator('[data-vast-state="loading"]')).toHaveCount(0);
     await expect(page.locator('[data-vast-retry-all]').first()).toBeVisible();
@@ -722,7 +757,7 @@ test('源节点在 loading 阶段被 replaceWith 替换后旧 loading 移除且�
   server.setMode('delay');
   const page = await openFixture(context, server.fixtureUrl);
   const popup = await openPopupForFixture(openExtensionPage, page);
-  await clickPopupButton(popup, page, '翻译 (Alt + A)');
+  await clickPopupButton(popup, page, '翻译当前页面');
 
   // 验证页面已进入 loading 状态，并精确定位由 legacy 模式附加在 #first 后的 loading wrapper
   const oldLoading = page.locator('#first + [data-vast-translator][data-vast-state="loading"]');

@@ -5,7 +5,7 @@
   A browser translator that turns configurable AI prompts into domain-aware translation.
 </p>
 
-当前版本：`0.12.0`。
+当前版本：`0.13.0`。
 
 <p align="center">
   <a href="https://github.com/VastNext/LexiLayer-Translator"><img src="https://img.shields.io/badge/status-MVP-orange.svg" alt="MVP status"></a>
@@ -34,7 +34,7 @@ LexiLayer does more than replace words. It adds a translation layer to the web: 
 - 🌊 **流式划词结果**：自定义 AI 划词翻译优先使用 SSE 流式响应，不支持时回退到非流式响应。
 - 💾 **本地缓存**：使用 IndexedDB 保存成功译文，默认保留 30 天，最多 5000 条。
 - 🌍 **多语言界面**：提供简体中文和英文运行时界面。
-- ⌨️ **快捷操作**：使用 `Shift+Alt+A` 切换当前页面翻译状态。
+- ⌨️ **快捷键与触发方式**：页面翻译快捷键的建议默认值为 `Alt+A`，实际绑定以扩展设置页或浏览器快捷键管理页显示为准；选区内联翻译可配置修饰键与触发次数，新安装默认双击 `Ctrl`。
 
 ## 🧑‍🏫 AI 专家翻译
 
@@ -162,7 +162,7 @@ VAST_E2E_PROXY=http://127.0.0.1:7890 npm run e2e:network
 
 ## 🗺️ 当前状态与路线
 
-当前版本：`0.12.0` · MVP
+当前版本：`0.13.0` · MVP
 
 - ✅ Google / Bing 网页与划词翻译
 - ✅ 多个 OpenAI 兼容 AI 实例
@@ -173,8 +173,15 @@ VAST_E2E_PROXY=http://127.0.0.1:7890 npm run e2e:network
 - ✅ 29 个预设领域 AI 专家与版本化离线快照
 - ✅ 用户自定义专家的新建、编辑、启停和删除
 - ✅ 按 AI 底座保存当前专家选择
+- ✅ 页面翻译真实快捷键展示与选区内联触发设置
 
 当前不包含账号同步、云端配置、PDF 翻译、字幕翻译、术语库管理和自动整站翻译。
+
+## 0.13.0 更新
+
+- ⌨️ **统一快捷键设置**：Options 集中展示浏览器管理的页面翻译快捷键与网页内选区触发方式，Popup 同步显示浏览器实际绑定。
+- 🛡️ **更安全的新安装默认值**：选区内联翻译改为双击 `Ctrl` 触发；旧用户和旧导入配置保留原有触发次数。
+- 🔗 **两种入口互不影响**：关闭划词悬浮按钮后，键盘内联触发仍可继续使用。
 
 ## 0.12.0 更新
 

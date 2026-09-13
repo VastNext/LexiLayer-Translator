@@ -35,11 +35,14 @@ describe('manifest', () => {
       ],
       matches: ['<all_urls>'],
     }]);
+    expect(Object.keys(manifest.commands ?? {})).toEqual(['translate_page']);
     expect(manifest.commands?.translate_page?.suggested_key?.default).toBe('Alt+A');
+    expect(manifest.permissions).not.toContain('commands');
   });
 
   it('声明当前包版本、本地化名称描述和全尺寸原创图标', () => {
     expect(manifest.version).toBe(packageJson.version);
+    expect(packageJson.version).toBe('0.13.0');
     expect(manifest.name).toBe('__MSG_extensionName__');
     expect(manifest.description).toBe('__MSG_extensionDescription__');
     expect(manifest.default_locale).toBe('zh_CN');

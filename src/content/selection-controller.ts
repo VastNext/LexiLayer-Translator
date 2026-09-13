@@ -67,7 +67,8 @@ export function createSelectionController(dependencies: SelectionDependencies) {
   let activeRequestEngineId: string | undefined;
   let remembered: RememberedSelection | undefined;
   let pending = false;
-  let config: Awaited<ReturnType<SelectionDependencies['getPublicConfig']>> = { targetLanguage: 'en', selectionContext: true, selectionPopupEnabled: true, inlineSelectionModifier: 'Control', inlineSelectionTriggerCount: 1, activeEngineId: 'google', activeExpertByEngine: {}, engines: [] };
+  let config: Awaited<ReturnType<SelectionDependencies['getPublicConfig']>> = { targetLanguage: 'en', selectionContext: true, selectionPopupEnabled: true, inlineSelectionModifier: 'Off', inlineSelectionTriggerCount: 2, activeEngineId: 'google', activeExpertByEngine: {}, engines: [] };
+  let configLoaded = false;
   let selectionGeneration = 0;
   let triggerCount = 0;
   let triggerTimer: number | undefined;
@@ -85,10 +86,8 @@ export function createSelectionController(dependencies: SelectionDependencies) {
     const generation = ++selectionGeneration;
     if (config.selectionPopupEnabled) showRemembered();
     void dependencies.getPublicConfig().then((value) => {
-      config = value;
-      targetLanguage = value.targetLanguage;
-      engineId = value.activeEngineId;
       if (generation !== selectionGeneration) return;
+      applyConfig(value);
       if (!value.selectionPopupEnabled) close();
       else if (!view) showRemembered();
       else { view.setTargetLanguage(value.targetLanguage); view.setIncludeContext(value.selectionContext); view.setEngines(value.engines, value.activeEngineId); }
@@ -96,7 +95,7 @@ export function createSelectionController(dependencies: SelectionDependencies) {
   };
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === 'Escape') return close();
-    if (event.repeat || config.inlineSelectionModifier === 'Off') return;
+    if (!configLoaded || event.repeat || config.inlineSelectionModifier === 'Off') return;
     if (event.key !== config.inlineSelectionModifier) {
       triggerCount = 0;
       if (triggerTimer !== undefined) { window.clearTimeout(triggerTimer); triggerTimer = undefined; }
@@ -113,6 +112,15 @@ export function createSelectionController(dependencies: SelectionDependencies) {
     triggerTimer = undefined;
     void toggleInline();
   };
+
+  function applyConfig(value: Awaited<ReturnType<SelectionDependencies['getPublicConfig']>>): void {
+    config = value;
+    targetLanguage = value.targetLanguage;
+    engineId = value.activeEngineId;
+    configLoaded = true;
+    triggerCount = 0;
+    if (triggerTimer !== undefined) { window.clearTimeout(triggerTimer); triggerTimer = undefined; }
+  }
   const onMouseDown = (event: MouseEvent) => {
     if (view && !event.composedPath().includes(view.host)) close();
   };
@@ -281,7 +289,11 @@ export function createSelectionController(dependencies: SelectionDependencies) {
   }
 
   function register(): void {
-    void dependencies.getPublicConfig().then((value) => { config = value; targetLanguage = value.targetLanguage; engineId = value.activeEngineId; }).catch((error) => { if (isContextInvalidated(error)) close(); });
+    const generation = ++selectionGeneration;
+    void dependencies.getPublicConfig().then((value) => {
+      if (generation !== selectionGeneration) return;
+      applyConfig(value);
+    }).catch((error) => { if (isContextInvalidated(error)) close(); });
     events.addEventListener('mouseup', onMouseUp as EventListener);
     document.addEventListener('keydown', onKeyDown);
     document.addEventListener('mousedown', onMouseDown);

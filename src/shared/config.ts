@@ -84,7 +84,7 @@ export const DEFAULT_SETTINGS: Settings = {
     selectionContext: true,
     selectionPopupEnabled: true,
     inlineSelectionModifier: 'Control',
-    inlineSelectionTriggerCount: 1,
+    inlineSelectionTriggerCount: 2,
     rendererMode: 'inline',
   },
   engines: [

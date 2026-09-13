@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import enMessages from '../../public/_locales/en/messages.json';
@@ -9,7 +9,7 @@ import zhMessages from '../../public/_locales/zh_CN/messages.json';
 import { OptionsApp, type OptionsApi } from '../../src/options/OptionsApp';
 import { PopupApp, type PopupApi } from '../../src/popup/PopupApp';
 import { createTranslator, type Translator } from '../../src/shared/i18n';
-import { DEFAULT_SETTINGS } from '../../src/shared/config';
+import { DEFAULT_SETTINGS, type OptionsSettings } from '../../src/shared/config';
 
 type Messages = Record<string, { message: string }>;
 
@@ -25,12 +25,16 @@ const popupApi: PopupApi = {
   sendToPage: async () => undefined,
   setTranslationBadge: async () => undefined,
   openOptions: () => undefined,
+  getPageTranslationShortcut: async () => ({ status: 'unassigned' }),
   getProgress: async () => undefined,
   subscribeProgress: () => () => undefined,
 };
 
 const optionsApiStub = {
-  load: async () => DEFAULT_SETTINGS,
+  load: async (): Promise<OptionsSettings> => ({
+    ...structuredClone(DEFAULT_SETTINGS),
+    engines: structuredClone(DEFAULT_SETTINGS.engines.filter((engine) => engine.kind !== 'custom-ai')),
+  }),
   getEngineApiKey: async () => '',
   savePreferences: async () => undefined,
   upsertEngine: async () => undefined,
@@ -44,7 +48,9 @@ const optionsApiStub = {
   clearCache: async () => undefined,
   exportSettings: () => undefined,
   saveTheme: async () => undefined,
-} as unknown as OptionsApi;
+  getPageTranslationShortcut: async () => ({ status: 'unassigned' as const }),
+  openShortcutSettings: async () => ({ ok: true as const, manualUrl: 'chrome://extensions/shortcuts' }),
+} satisfies OptionsApi;
 
 describe('品牌文案运行时本地化', () => {
   it('中英文 locale 提供完整品牌、短品牌和 Options 窗口标题', () => {
@@ -54,6 +60,26 @@ describe('品牌文案运行时本地化', () => {
     expect(enMessages.brandShort.message).toBe('LexiLayer');
     expect(zhMessages.optionsDocumentTitle.message).toBe('语层翻译设置');
     expect(enMessages.optionsDocumentTitle.message).toBe('LexiLayer Translator Settings');
+  });
+
+  it('中英文与 fallback 都说明相同触发方式会移除当前内联译文', () => {
+    expect(zh('triggerIndependenceHelp')).toContain('再次使用相同触发方式会移除当前内联译文');
+    expect(en('triggerIndependenceHelp')).toContain('Using the same trigger again removes the current inline translation');
+    expect(createTranslator()('triggerIndependenceHelp')).toContain('再次使用相同触发方式会移除当前内联译文');
+  });
+
+  it('Options 使用英文 i18n 展示快捷键设置页打开失败文案', async () => {
+    const view = render(<OptionsApp api={{
+      ...optionsApiStub,
+      getPageTranslationShortcut: async () => ({ status: 'assigned', shortcut: 'Alt+A', displayShortcut: 'Alt + A' }),
+      openShortcutSettings: async () => ({ ok: false, manualUrl: 'chrome://extensions/shortcuts' }),
+    }} t={en} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Change in browser Page translation shortcut' }));
+
+    expect(await screen.findByText('Unable to open browser shortcut settings. Open the address below manually.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Shortcut settings manual address')).toHaveValue('chrome://extensions/shortcuts');
+    view.unmount();
   });
 
   it('Popup 品牌区按当前语言渲染完整品牌和 BrandMark aria', () => {

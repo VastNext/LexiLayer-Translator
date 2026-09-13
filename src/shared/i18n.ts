@@ -3,7 +3,7 @@ export type Translator = (key: string, substitutions?: string | string[]) => str
 const fallbackMessages: Record<string, string> = {
   popupKicker: '双语校样台', popupCurrentPage: '当前页面', translationEngine: '翻译引擎', sourceLanguage: '源语言', targetLanguage: '目标语言', translationScope: '翻译范围', displayMode: '显示模式',
   mainContent: '主要内容', wholePage: '整个页面', bilingual: '双语对照', translationOnly: '仅译文', ready: '就绪',
-  actionTranslatePage: '翻译当前页面', actionRestore: '恢复原文', actionRetry: '重试', actionSettings: '设置', statusTranslating: '翻译中…',
+  actionTranslatePage: '翻译当前页面', actionShowOriginal: '显示当前页面原文', actionTranslate: '翻译', actionRestore: '恢复原文', actionRetry: '重试', actionSettings: '设置', statusTranslating: '翻译中…',
   statusStarted: '已开始翻译，关闭窗口不会中断', statusFailed: '翻译失败', statusPartial: '已完成 $1/$2，失败 $3',
   statusProgress: '翻译中 $1/$2', statusError: '翻译失败 $1/$2', statusComplete: '已完成 $1/$2', shortcut: '快捷切换',
   optionsKicker: '连接与阅读偏好', optionsApiConnection: 'API 连接', model: '模型', connectionDestination: '连接目的：', invalidAddress: '无效地址',
@@ -24,9 +24,21 @@ const fallbackMessages: Record<string, string> = {
   customAiEngines: '自定义 AI', customAiDescription: '可添加多个 OpenAI 兼容服务，每个实例独立保存连接与密钥。', engineName: '名称', saveEngine: '保存实例', moveUp: '上移', moveDown: '下移', deleteEngine: '删除实例', confirmDeleteEngine: '再次点击确认删除', confirmDeleteEngineAction: '确认删除实例', addCustomAi: '新增自定义 AI', newCustomAi: '自定义 AI',
   engineOriginChanged: 'Base URL 来源已变化，旧 API Key 不会沿用，请重新输入 API Key。', instructionCustomOnly: '自定义翻译要求仅对自定义 AI 生效；Google 和 Bing 会忽略此项。', retrySave: '重试保存',
   statusEngineSaved: '实例已保存', statusEngineUpdated: '引擎状态已更新', statusActiveChanged: '默认引擎已更新', statusOrderSaved: '引擎顺序已保存', statusEngineDeleted: '实例已删除', importApplied: '配置已安全导入',
-  translateShortcut: '翻译 (Alt + A)', showOriginal: '显示原文 (Alt + A)', modeToggleHelp: '切换双语对照与仅译文', settingsNavigation: '设置导航', optionsTitle: '翻译设置', appearanceTheme: '外观主题', dataPrivacy: '数据隐私', themeDescription: '五套主题共享相同功能结构，点击后立即保存。', themeSaved: '主题已保存',
+  translateShortcut: '翻译', showOriginal: '显示原文', modeToggleHelp: '切换双语对照与仅译文', settingsNavigation: '设置导航', optionsTitle: '翻译设置', appearanceTheme: '外观主题', dataPrivacy: '数据隐私', themeDescription: '五套主题共享相同功能结构，点击后立即保存。', themeSaved: '主题已保存',
   themePearlDescription: '浅蓝珍珠，安静轻盈的默认阅读主题。', themeCommandDescription: '深色命令台，快速且键盘优先。', themeSageDescription: '鼠尾草绿，温暖友好的全球阅读感。', themeEditorialDescription: '奶油紫与衬线标题，内容编辑感更强。', themePrecisionDescription: '高精度蓝，理性、可靠且更方正。',
   rendererMode: '渲染器模式', rendererInline: '内联模式', rendererLegacy: '兼容模式', rendererModeHelp: '内联模式在原文内部渲染译文，不改变页面布局；兼容模式保持旧版行为。修改在下次全新页面翻译时生效。',
+  shortcutsAndTriggers: '快捷键与触发方式', shortcutsAndTriggersDescription: '查看与配置页面翻译全局快捷键，以及网页内选区取词触发方式。',
+  pageTranslationShortcut: '页面翻译快捷键', pageTranslationShortcutHelp: '由浏览器底层快捷键系统管理。修改或重新绑定请前往浏览器快捷键管理页。',
+  openShortcutSettings: '在浏览器中修改', assignShortcut: '分配或修复', recheckShortcut: '重新检查',
+  shortcutSettingsOpenFailed: '无法打开浏览器快捷键设置页，请手动打开以下地址',
+  shortcutChecking: '正在检查…', shortcutLastKnown: '上次读取：$1（暂无法更新）', shortcutUnassigned: '未分配页面快捷键', shortcutUnassignedHelp: '当前未分配快捷键，可点击下方按钮在浏览器设置中绑定。',
+  shortcutUnavailable: '暂不可用', shortcutUnavailableHelp: '暂时无法读取浏览器快捷键状态，请点击重新检查或前往浏览器设置查看。',
+  shortcutUnassignedPopup: '未设置页面快捷键，仍可点击按钮翻译', shortcutUnavailablePopup: '暂时无法读取页面快捷键，按钮仍可使用',
+  inlineSelectionTrigger: '选区内联快速触发', triggerCountSingleRisk: '单击修饰键可能在触发其他组合快捷键时产生误触，建议使用双击。',
+  triggerCountDisabledForOff: '快捷键已关闭，重新启用后恢复上次次数。', triggerIndependenceTitle: '触发机制与独立性说明',
+  triggerIndependenceHelp: '页面翻译快捷键由浏览器全局管理；选区内联触发由页面脚本监听。输入框与可编辑区域会自动排除。悬浮按钮与选区内联触发互不控制，关闭悬浮按钮不会影响快捷键触发。再次使用相同触发方式会移除当前内联译文。',
+  selectionPreferencesMigrationHint: '选区内联快捷键与触发方式已迁移至「快捷键与触发方式」栏目。',
+  manualShortcutSettingsHelp: '快捷键设置手动地址',
 };
 
 function substitute(message: string, substitutions?: string | string[]): string {
