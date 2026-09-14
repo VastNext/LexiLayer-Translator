@@ -253,39 +253,52 @@ export function createContentController(dependencies: ContentControllerDependenc
   async function translate(command: PageCommand): Promise<void> {
     const currentGeneration = await beginSession();
     if (currentGeneration === undefined) return;
-    command = await resolveCommand(command);
-    if (currentGeneration !== generation) return;
-    lastCommand = { ...lastCommand, ...command, type: 'translate-page' };
-    // 渲染器模式在每次全新页面翻译时读取一次：会话内动态更新与重试固定本次模式。
-    dependencies.setRendererMode?.(command.rendererMode ?? 'legacy');
-    for (const paragraph of paragraphs.values()) dependencies.restore(paragraph);
-    dependencies.cleanupPage();
-    paragraphs.clear();
-    store.clear();
-    completedIds.clear();
-    failedIds.clear();
-    const taskId = `page-${currentGeneration}`;
-    activeTaskId = taskId;
-    const rule = await dependencies.loadRule();
-    const elements = dependencies.scan(rule, command.scope ?? lastCommand.scope ?? 'main-content');
-    for (const element of elements) {
-      const paragraph = store.refresh(element);
-      if (!paragraph.sourceText) continue;
-      paragraphs.set(paragraph.id, paragraph);
-      dependencies.renderLoading(paragraph);
-    }
-    active = true;
-    dependencies.startObserver(rule, store, command.scope ?? 'main-content', createObserverHandler(currentGeneration, taskId));
-    report('translating');
-
     try {
+      report('translating');
+      command = await resolveCommand(command);
+      if (currentGeneration !== generation) return;
+      lastCommand = { ...lastCommand, ...command, type: 'translate-page' };
+      // 渲染器模式在每次全新页面翻译时读取一次：会话内动态更新与重试固定本次模式。
+      dependencies.setRendererMode?.(command.rendererMode ?? 'legacy');
+      for (const paragraph of paragraphs.values()) dependencies.restore(paragraph);
+      dependencies.cleanupPage();
+      paragraphs.clear();
+      store.clear();
+      completedIds.clear();
+      failedIds.clear();
+      const taskId = `page-${currentGeneration}`;
+      activeTaskId = taskId;
+      const rule = await dependencies.loadRule();
+      if (currentGeneration !== generation) return;
+      const elements = dependencies.scan(rule, command.scope ?? lastCommand.scope ?? 'main-content');
+      if (currentGeneration !== generation) return;
+      for (const element of elements) {
+        const paragraph = store.refresh(element);
+        if (!paragraph.sourceText) continue;
+        paragraphs.set(paragraph.id, paragraph);
+        dependencies.renderLoading(paragraph);
+      }
+      active = true;
+      dependencies.startObserver(rule, store, command.scope ?? 'main-content', createObserverHandler(currentGeneration, taskId));
+      report('translating');
       await processParagraphs([...paragraphs.values()], currentGeneration, taskId);
       if (currentGeneration !== generation) return;
       reportCurrent();
     } catch (error) {
       if (currentGeneration !== generation) return;
-      markFailed([...paragraphs.values()], readableError(error));
-      report('error', 0, paragraphs.size);
+      dependencies.stopObserver();
+      const taskId = activeTaskId;
+      activeTaskId = undefined;
+      if (taskId) void dependencies.cancel(taskId).catch(() => undefined);
+      for (const paragraph of paragraphs.values()) dependencies.restore(paragraph);
+      dependencies.cleanupPage();
+      paragraphs.clear();
+      store.clear();
+      completedIds.clear();
+      failedIds.clear();
+      active = false;
+      // fatal 准备错误以 0/0 收口，避免页面已清理后继续宣称仍有可恢复段落。
+      report('error', 0, 0);
     }
   }
 

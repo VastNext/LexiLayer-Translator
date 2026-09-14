@@ -231,6 +231,23 @@ describe('精简 Popup', () => {
     expect(api.setTranslationBadge).toHaveBeenLastCalledWith(false);
   });
 
+  it('翻译命令确认后立即解除 busy，页面活动状态等待进度事件', async () => {
+    let progressListener: ((progress: { status: string; completed: number; failed: number; total: number }) => void) | undefined;
+    const api = createApi({
+      sendToPage: vi.fn(async () => ({ accepted: true })),
+      subscribeProgress: vi.fn((listener) => { progressListener = listener; return () => undefined; }),
+    });
+    await renderAndAwaitLoaded(api);
+
+    const button = screen.getByRole('button', { name: '翻译当前页面' });
+    await userEvent.click(button);
+
+    await waitFor(() => expect(button).toBeEnabled());
+    expect(screen.getByRole('button', { name: '翻译当前页面' })).toBeInTheDocument();
+    progressListener?.({ status: 'translating', completed: 0, failed: 0, total: 0 });
+    await waitFor(() => expect(screen.getByRole('button', { name: '显示当前页面原文' })).toBeInTheDocument());
+  });
+
   it('重新打开时使用后台保存的偏好', async () => {
     const api = createApi({ getConfig: vi.fn(async () => ({
       preferences: { ...preferences, targetLanguage: 'de', displayMode: 'translation' }, activeEngineId: 'bing', theme: 'command-translator' as const,

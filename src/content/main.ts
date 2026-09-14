@@ -39,7 +39,13 @@ export function createRuntimeDependencies(): ContentControllerDependencies {
   return {
     addMessageListener(listener) {
       chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-        void listener(message).then(sendResponse);
+        const type = (message as { type?: unknown } | null)?.type;
+        if (type === 'translate-page') {
+          void listener(message).catch(() => undefined);
+          sendResponse({ accepted: true });
+          return false;
+        }
+        void listener(message).then(sendResponse, (error) => sendResponse({ error: error instanceof Error ? error.message : '页面命令执行失败' }));
         return true;
       });
     },
@@ -63,8 +69,9 @@ export function createRuntimeDependencies(): ContentControllerDependencies {
     },
     async cancel(taskId) { await chrome.runtime.sendMessage({ type: 'cancel-task', taskId }); },
     async getConfig() {
-      const response = await chrome.runtime.sendMessage({ type: 'get-public-config' }) as { data?: PublicConfig };
-      return response.data ?? { preferences: { targetLanguage: 'en', displayMode: 'bilingual', translationPosition: 'after', scanScope: 'main-content', rendererMode: 'legacy' }, activeEngineId: 'google', availableEngines: [] };
+      const response = await chrome.runtime.sendMessage({ type: 'get-public-config' }) as { ok?: boolean; data?: PublicConfig; error?: string } | undefined;
+      if (!response || response.ok === false || !response.data) throw new Error(response?.error ?? '页面配置响应无效');
+      return response.data;
     },
     getPageLanguage: () => document.documentElement.lang || 'auto',
     showSelectionText: () => undefined,

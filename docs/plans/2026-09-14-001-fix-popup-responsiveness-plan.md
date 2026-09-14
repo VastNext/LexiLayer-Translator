@@ -62,7 +62,7 @@ origin: docs/brainstorms/2026-09-14-popup-responsiveness-requirements.md
 
 ## Implementation Units
 
-- [ ] U1. **翻译命令立即确认并完整收口异步错误**
+- [x] U1. **翻译命令立即确认并完整收口异步错误**
 
 **Goal:** Popup 只等待页面接受命令，不等待扫描或翻译完成。
 

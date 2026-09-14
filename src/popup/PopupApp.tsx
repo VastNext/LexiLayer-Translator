@@ -142,9 +142,9 @@ export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: T
       } else {
         await api.setTranslationBadge(true);
         await api.sendToPage(translationCommand());
-        setPageActive(true);
       }
     } catch (error) {
+      if (!pageActive) await api.setTranslationBadge(false).catch(() => undefined);
       setStatus(error instanceof Error ? error.message : t('statusFailed'));
     } finally { setBusy(false); }
   }

@@ -898,6 +898,85 @@ describe('网页翻译控制器', () => {
 });
 
 describe('运行时可见性接线', () => {
+  it('真实消息适配层收到翻译命令后立即确认，不等待页面任务完成', async () => {
+    const originalChrome = globalThis.chrome;
+    let onMessage!: (message: unknown, sender: chrome.runtime.MessageSender, respond: (response: unknown) => void) => boolean;
+    Object.defineProperty(globalThis, 'chrome', { configurable: true, value: {
+      runtime: {
+        onMessage: { addListener: (listener: typeof onMessage) => { onMessage = listener; } },
+        sendMessage: vi.fn(),
+      },
+    } });
+    try {
+      const dependencies = createRuntimeDependencies();
+      let finishTask!: () => void;
+      const pendingTask = new Promise<void>((resolve) => { finishTask = resolve; });
+      dependencies.addMessageListener(async () => { await pendingTask; return { complete: true }; });
+      const respond = vi.fn();
+
+      expect(onMessage({ type: 'translate-page' }, {}, respond)).toBe(false);
+      expect(respond).toHaveBeenCalledWith({ accepted: true });
+      finishTask();
+      await pendingTask;
+    } finally {
+      Object.defineProperty(globalThis, 'chrome', { configurable: true, value: originalChrome });
+    }
+  });
+
+  it('无法预判 toggle 是翻译还是恢复，因此等待控制器返回', async () => {
+    const originalChrome = globalThis.chrome;
+    let onMessage!: (message: unknown, sender: chrome.runtime.MessageSender, respond: (response: unknown) => void) => boolean;
+    Object.defineProperty(globalThis, 'chrome', { configurable: true, value: {
+      runtime: {
+        onMessage: { addListener: (listener: typeof onMessage) => { onMessage = listener; } },
+        sendMessage: vi.fn(),
+      },
+    } });
+    try {
+      const dependencies = createRuntimeDependencies();
+      dependencies.addMessageListener(async () => ({ toggled: true }));
+      const respond = vi.fn();
+
+      expect(onMessage({ type: 'toggle-page-translation' }, {}, respond)).toBe(true);
+      await vi.waitFor(() => expect(respond).toHaveBeenCalledWith({ toggled: true }));
+    } finally {
+      Object.defineProperty(globalThis, 'chrome', { configurable: true, value: originalChrome });
+    }
+  });
+
+  it('真实消息适配层仍等待恢复命令完成后再响应', async () => {
+    const originalChrome = globalThis.chrome;
+    let onMessage!: (message: unknown, sender: chrome.runtime.MessageSender, respond: (response: unknown) => void) => boolean;
+    Object.defineProperty(globalThis, 'chrome', { configurable: true, value: {
+      runtime: {
+        onMessage: { addListener: (listener: typeof onMessage) => { onMessage = listener; } },
+        sendMessage: vi.fn(),
+      },
+    } });
+    try {
+      const dependencies = createRuntimeDependencies();
+      dependencies.addMessageListener(async () => ({ restored: true }));
+      const respond = vi.fn();
+
+      expect(onMessage({ type: 'restore-page' }, {}, respond)).toBe(true);
+      await vi.waitFor(() => expect(respond).toHaveBeenCalledWith({ restored: true }));
+    } finally {
+      Object.defineProperty(globalThis, 'chrome', { configurable: true, value: originalChrome });
+    }
+  });
+
+  it('页面公开配置响应失败时拒绝继续使用 fallback 配置', async () => {
+    const originalChrome = globalThis.chrome;
+    Object.defineProperty(globalThis, 'chrome', { configurable: true, value: {
+      runtime: { sendMessage: vi.fn(async () => ({ ok: false, error: '配置读取失败' })) },
+    } });
+    try {
+      await expect(createRuntimeDependencies().getConfig()).rejects.toThrow('配置读取失败');
+    } finally {
+      Object.defineProperty(globalThis, 'chrome', { configurable: true, value: originalChrome });
+    }
+  });
+
   it('扩展重载后进度上报失败不会产生未处理的 Promise rejection', () => {
     const originalChrome = globalThis.chrome;
     const catchRejection = vi.fn();
