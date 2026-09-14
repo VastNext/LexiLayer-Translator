@@ -147,9 +147,12 @@ describe('文档发布契约', () => {
     expect(latestNotes).toContain(`# 语层翻译（LexiLayer Translator）${pkg.version}`);
     expect(latestNotes).toMatch(/^## /m);
     expect(latestNotes).toContain('## ✅ 验证');
-    expect(latestNotes).toMatch(/浏览器.*快捷键/s);
-    expect(latestNotes).toMatch(/双击.*Ctrl|Ctrl.*双击/s);
-    expect(latestNotes).toMatch(/旧用户.*(?:保留|覆盖)|不会覆盖.*旧用户/s);
+
+    // 0.13.0 快捷键发布契约固定检查对应历史版本，不要求后续每版重复同一功能说明。
+    const shortcutNotes = await readFile(resolve('docs/release-notes/0.13.0.md'), 'utf8');
+    expect(shortcutNotes).toMatch(/浏览器.*快捷键/s);
+    expect(shortcutNotes).toMatch(/双击.*Ctrl|Ctrl.*双击/s);
+    expect(shortcutNotes).toMatch(/旧用户.*(?:保留|覆盖)|不会覆盖.*旧用户/s);
 
     // 历史修复记录不随当前版本变化。
     const legacyNotes = await readFile(resolve('docs/release-notes/0.7.4.md'), 'utf8');

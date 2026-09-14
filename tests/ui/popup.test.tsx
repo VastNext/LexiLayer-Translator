@@ -27,7 +27,6 @@ function createApi(overrides: Partial<PopupApi> = {}): PopupApi {
     setTranslationBadge: vi.fn(async () => undefined),
     openOptions: vi.fn(),
     getPageTranslationShortcut: vi.fn(async () => ({ status: 'assigned' as const, shortcut: 'Alt+A', displayShortcut: 'Alt + A' })),
-    getProgress: vi.fn(async () => undefined),
     subscribeProgress: vi.fn(() => () => undefined),
     ...overrides,
   };
@@ -180,7 +179,12 @@ describe('精简 Popup', () => {
   });
 
   it('已翻译页面切换引擎后使用新引擎立即重译', async () => {
-    const api = createApi({ getProgress: vi.fn(async () => ({ status: 'complete', completed: 2, failed: 0, total: 2 })) });
+    const api = createApi({
+      subscribeProgress: vi.fn((listener) => {
+        listener({ status: 'complete', completed: 2, failed: 0, total: 2 });
+        return () => undefined;
+      }),
+    });
     render(<PopupApp api={api} />);
     await screen.findByRole('button', { name: '显示当前页面原文' });
     await waitFor(() => expect(screen.getByLabelText('翻译引擎')).toBeEnabled());
@@ -195,14 +199,38 @@ describe('精简 Popup', () => {
   });
 
   it('translating 即使尚未扫描到段落也视为当前页面已翻译', async () => {
-    const api = createApi({ getProgress: vi.fn(async () => ({ status: 'translating', completed: 0, failed: 0, total: 0 })) });
+    const api = createApi({
+      subscribeProgress: vi.fn((listener) => {
+        listener({ status: 'translating', completed: 0, failed: 0, total: 0 });
+        return () => undefined;
+      }),
+    });
     render(<PopupApp api={api} />);
 
     expect(await screen.findByRole('button', { name: '显示当前页面原文' })).toBeInTheDocument();
   });
 
+  it('fatal error 或空页面完成时保持翻译按钮，非空错误仍可恢复原文', async () => {
+    let progressListener: ((progress: { status: string; completed: number; failed: number; total: number }) => void) | undefined;
+    const api = createApi({ subscribeProgress: vi.fn((listener) => { progressListener = listener; return () => undefined; }) });
+    render(<PopupApp api={api} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: '翻译当前页面' })).toBeEnabled());
+
+    progressListener?.({ status: 'error', completed: 0, failed: 0, total: 0 });
+    expect(screen.getByRole('button', { name: '翻译当前页面' })).toBeInTheDocument();
+    progressListener?.({ status: 'complete', completed: 0, failed: 0, total: 0 });
+    expect(screen.getByRole('button', { name: '翻译当前页面' })).toBeInTheDocument();
+    progressListener?.({ status: 'error', completed: 0, failed: 2, total: 2 });
+    await waitFor(() => expect(screen.getByRole('button', { name: '显示当前页面原文' })).toBeInTheDocument());
+  });
+
   it('已翻译页面切换显示模式后立即重译并保持显示原文按钮', async () => {
-    const api = createApi({ getProgress: vi.fn(async () => ({ status: 'complete', completed: 2, failed: 0, total: 2 })) });
+    const api = createApi({
+      subscribeProgress: vi.fn((listener) => {
+        listener({ status: 'complete', completed: 2, failed: 0, total: 2 });
+        return () => undefined;
+      }),
+    });
     render(<PopupApp api={api} />);
     await screen.findByRole('button', { name: '显示当前页面原文' });
     await waitFor(() => expect(screen.getByRole('button', { name: '双语对照' })).toBeEnabled());
@@ -229,6 +257,23 @@ describe('精简 Popup', () => {
     await userEvent.click(await screen.findByRole('button', { name: '显示当前页面原文' }));
     expect(api.sendToPage).toHaveBeenLastCalledWith({ type: 'restore-page' });
     expect(api.setTranslationBadge).toHaveBeenLastCalledWith(false);
+  });
+
+  it('翻译命令确认后立即解除 busy，页面活动状态等待进度事件', async () => {
+    let progressListener: ((progress: { status: string; completed: number; failed: number; total: number }) => void) | undefined;
+    const api = createApi({
+      sendToPage: vi.fn(async () => ({ accepted: true })),
+      subscribeProgress: vi.fn((listener) => { progressListener = listener; return () => undefined; }),
+    });
+    await renderAndAwaitLoaded(api);
+
+    const button = screen.getByRole('button', { name: '翻译当前页面' });
+    await userEvent.click(button);
+
+    await waitFor(() => expect(button).toBeEnabled());
+    expect(screen.getByRole('button', { name: '翻译当前页面' })).toBeInTheDocument();
+    progressListener?.({ status: 'translating', completed: 0, failed: 0, total: 0 });
+    await waitFor(() => expect(screen.getByRole('button', { name: '显示当前页面原文' })).toBeInTheDocument());
   });
 
   it('重新打开时使用后台保存的偏好', async () => {
@@ -308,6 +353,82 @@ describe('精简 Popup', () => {
     expect(screen.getByRole('button', { name: '翻译当前页面' })).toBeDisabled();
     expect(screen.getByRole('button', { name: '设置' })).toBeEnabled();
   });
+
+  it('Popup 初始化仅通过 subscribeProgress 订阅进度，不调用 getProgress', async () => {
+    const getProgressSpy = vi.fn(async () => undefined);
+    const subscribeProgressSpy = vi.fn(() => () => undefined);
+    const api = createApi({
+      subscribeProgress: subscribeProgressSpy,
+      ...( { getProgress: getProgressSpy } as Record<string, unknown> ),
+    });
+    render(<PopupApp api={api} />);
+    await waitFor(() => expect(subscribeProgressSpy).toHaveBeenCalledTimes(1));
+    expect(getProgressSpy).not.toHaveBeenCalled();
+  });
+
+  it('配置挂起时展示“正在加载设置”弱提示，控件禁用且设置入口可用', async () => {
+    const api = createApi({
+      getConfig: vi.fn(() => new Promise<never>(() => {})),
+    });
+    render(<PopupApp api={api} />);
+    expect(await screen.findByText('正在加载设置')).toBeInTheDocument();
+    expect(screen.getByLabelText('源语言')).toBeDisabled();
+    expect(screen.getByLabelText('目标语言')).toBeDisabled();
+    expect(screen.getByLabelText('翻译引擎')).toBeDisabled();
+    expect(screen.getByRole('button', { name: '双语对照' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '翻译当前页面' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '设置' })).toBeEnabled();
+  });
+
+  it('配置加载失败时展示错误提示与重试按钮，重试成功后恢复就绪且不执行 fallback 保存', async () => {
+    let callCount = 0;
+    const api = createApi({
+      getConfig: vi.fn(async () => {
+        callCount++;
+        if (callCount === 1) throw new Error('网络超时');
+        return {
+          preferences: { ...preferences, rendererMode: 'inline' as const, targetLanguage: 'ja' },
+          activeEngineId: 'bing',
+          theme: 'pearl-reader' as const,
+          availableEngines: [
+            { id: 'google', kind: 'google', name: 'Google', ready: true, capabilities: { streaming: false } },
+            { id: 'bing', kind: 'bing', name: 'Bing', ready: true, capabilities: { streaming: false } },
+          ],
+        };
+      }),
+    });
+    render(<PopupApp api={api} />);
+    expect(await screen.findByText('网络超时')).toBeInTheDocument();
+    const retryButton = screen.getByRole('button', { name: '重试' });
+    expect(retryButton).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '翻译当前页面' })).toBeDisabled();
+
+    await userEvent.click(retryButton);
+
+    await waitFor(() => expect(screen.getByLabelText('翻译引擎')).toBeEnabled());
+    expect(screen.getByLabelText('翻译引擎')).toHaveValue('bing');
+    expect(screen.getByLabelText('目标语言')).toHaveValue('ja');
+    expect(screen.queryByRole('button', { name: '重试' })).not.toBeInTheDocument();
+    expect(api.savePopupState).not.toHaveBeenCalled();
+    expect(api.savePreferences).not.toHaveBeenCalled();
+  });
+
+  it('实时 translating 先到、旧快照后到时 UI 保持显示原文不倒退', async () => {
+    let progressListener!: (p: { status: string; completed: number; failed: number; total: number }) => void;
+    const api = createApi({
+      subscribeProgress: vi.fn((listener) => {
+        progressListener = listener;
+        return () => undefined;
+      }),
+    });
+    render(<PopupApp api={api} />);
+    await waitFor(() => expect(progressListener).toBeDefined());
+
+    // 实时 translating 先到
+    progressListener({ status: 'translating', completed: 1, failed: 0, total: 5 });
+    await waitFor(() => expect(screen.getByRole('button', { name: '显示当前页面原文' })).toBeInTheDocument());
+    expect(screen.getByText('翻译中 1/5')).toBeInTheDocument();
+  });
 });
 
 describe('Popup 消息恢复', () => {
@@ -329,7 +450,8 @@ describe('Popup 消息恢复', () => {
     await expect(api.sendToPage({ type: 'translate-page' })).resolves.toEqual({ ok: true });
     // 样式必须先于脚本注入，且两套样式与三个脚本按 manifest 声明顺序补全。
     expect(insertCSS).toHaveBeenCalledWith({ target: { tabId: 7 }, files: ['content.css', 'content-inline.css'] });
-    expect(executeScript).toHaveBeenCalledWith({ target: { tabId: 7 }, files: ['content.js', 'content-inline.js', 'content-main.js'] });
+    expect(executeScript).toHaveBeenNthCalledWith(1, { target: { tabId: 7, allFrames: true }, files: ['input-translation.js'] });
+    expect(executeScript).toHaveBeenNthCalledWith(2, { target: { tabId: 7 }, files: ['content.js', 'content-inline.js', 'content-main.js'] });
     expect(insertCSS.mock.invocationCallOrder[0]).toBeLessThan(executeScript.mock.invocationCallOrder[0]);
     expect(sendMessage).toHaveBeenCalledTimes(2);
   });

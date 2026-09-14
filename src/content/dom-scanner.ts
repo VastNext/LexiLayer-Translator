@@ -51,33 +51,32 @@ function queryRoots(root: Document | Element, rule: SiteRule, scope: ScanScope):
   return roots.length > 0 ? Array.from(new Set(roots)) : [document.body];
 }
 
-function isExcluded(element: Element, rule: SiteRule): boolean {
-  const selectors = [...hardExclusions, ...semanticContainerExclusions, ...(rule.excludeSelectors ?? [])];
-  if (selectors.some((selector) => element.closest(selector))) return true;
-  if ((element as HTMLElement).inert || element.closest('[inert]')) return true;
-
-  const view = element.ownerDocument.defaultView;
-  for (let current: Element | null = element; current; current = current.parentElement) {
-    if ((current as HTMLElement).inert || current.hasAttribute('inert')) return true;
-    const style = view?.getComputedStyle(current);
-    if (style?.display === 'none' || style?.visibility === 'hidden') return true;
-  }
-  return false;
+function isHiddenByStyle(element: Element, cache?: WeakMap<Element, boolean>): boolean {
+  if (cache?.has(element)) return cache.get(element)!;
+  const parent = element.parentElement;
+  const hidden = (element as HTMLElement).inert
+    || element.hasAttribute('inert')
+    || (parent ? isHiddenByStyle(parent, cache) : false)
+    || (() => {
+      const style = element.ownerDocument.defaultView?.getComputedStyle(element);
+      return style?.display === 'none' || style?.visibility === 'hidden';
+    })();
+  cache?.set(element, hidden);
+  return hidden;
 }
 
-function isTextLeafExcluded(element: Element, rule: SiteRule): boolean {
+function isExcluded(element: Element, rule: SiteRule, visibilityCache?: WeakMap<Element, boolean>): boolean {
+  const selectors = [...hardExclusions, ...semanticContainerExclusions, ...(rule.excludeSelectors ?? [])];
+  if (selectors.some((selector) => element.closest(selector))) return true;
+  return isHiddenByStyle(element, visibilityCache);
+}
+
+function isTextLeafExcluded(element: Element, rule: SiteRule, visibilityCache?: WeakMap<Element, boolean>): boolean {
   const selectors = [...hardExclusions, ...(rule.excludeSelectors ?? [])];
   if (selectors.some((selector) => element.closest(selector))) return true;
-  if ((element as HTMLElement).inert || element.closest('[inert]')) return true;
   const interactive = element.closest('button,[role="button"]');
   if (interactive === element) return true;
-  const view = element.ownerDocument.defaultView;
-  for (let current: Element | null = element; current; current = current.parentElement) {
-    if ((current as HTMLElement).inert || current.hasAttribute('inert')) return true;
-    const style = view?.getComputedStyle(current);
-    if (style?.display === 'none' || style?.visibility === 'hidden') return true;
-  }
-  return false;
+  return isHiddenByStyle(element, visibilityCache);
 }
 
 function hasText(element: Element): element is HTMLElement {
@@ -112,13 +111,13 @@ export function unwrapAllTextLeaves(root: Element | Document = document): void {
   }
 }
 
-function textLeafCandidates(root: Element, covered: Set<HTMLElement>, rule: SiteRule): HTMLElement[] {
+function textLeafCandidates(root: Element, covered: Set<HTMLElement>, rule: SiteRule, visibilityCache: WeakMap<Element, boolean>): HTMLElement[] {
   const document = root.ownerDocument;
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
       if (!node.textContent?.trim()) return NodeFilter.FILTER_REJECT;
       const parent = node.parentElement;
-      if (!parent || isTextLeafExcluded(parent, rule)) return NodeFilter.FILTER_REJECT;
+      if (!parent || isTextLeafExcluded(parent, rule, visibilityCache)) return NodeFilter.FILTER_REJECT;
       if (parent.closest('ga-help-tooltip,xap-icon-trigger,[aria-haspopup="dialog"][role="button"]')) return NodeFilter.FILTER_REJECT;
       if (parent.matches('[class*="ripple" i],[class*="focus-indicator" i],[class*="touch-target" i]')) return NodeFilter.FILTER_REJECT;
       for (let current: Element | null = parent; current; current = current.parentElement) {
@@ -167,6 +166,7 @@ export function scanParagraphElements(
   metrics?: ScanMetrics,
 ): HTMLElement[] {
   const results = new Set<HTMLElement>();
+  const visibilityCache = new WeakMap<Element, boolean>();
   const forced = new Set(
     (rule.includeSelectors ?? []).flatMap((selector) => Array.from(root.querySelectorAll(selector))),
   );
@@ -180,16 +180,16 @@ export function scanParagraphElements(
       if (candidate.matches('li') && !hasDirectText(candidate)) continue;
       // 包含按钮或交互控件的语义块不可作为整体候选（避免隐藏/破坏按钮），留由文本叶下钻
       if (candidate.querySelector('button, [role="button"]') !== null) continue;
-      if (hasText(candidate) && isWithinTranslationLimit(candidate) && !isExcluded(candidate, rule)) results.add(candidate);
+    if (hasText(candidate) && isWithinTranslationLimit(candidate) && !isExcluded(candidate, rule, visibilityCache)) results.add(candidate);
     }
-    for (const candidate of textLeafCandidates(scanRoot, results, rule)) results.add(candidate);
+    for (const candidate of textLeafCandidates(scanRoot, results, rule, visibilityCache)) results.add(candidate);
   }
 
   for (const candidate of forced) {
     const hasDirectText = Array.from(candidate.childNodes).some(
       (node) => node.nodeType === node.TEXT_NODE && Boolean(node.textContent?.trim()),
     );
-    if (hasDirectText && hasText(candidate) && isWithinTranslationLimit(candidate) && !isExcluded(candidate, rule)) results.add(candidate);
+    if (hasDirectText && hasText(candidate) && isWithinTranslationLimit(candidate) && !isExcluded(candidate, rule, visibilityCache)) results.add(candidate);
   }
 
   const redundant = new Set<HTMLElement>();

@@ -26,7 +26,6 @@ const popupApi: PopupApi = {
   setTranslationBadge: async () => undefined,
   openOptions: () => undefined,
   getPageTranslationShortcut: async () => ({ status: 'unassigned' }),
-  getProgress: async () => undefined,
   subscribeProgress: () => () => undefined,
 };
 

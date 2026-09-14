@@ -19,7 +19,6 @@ export interface PopupApi {
   setTranslationBadge(active: boolean): Promise<void>;
   openOptions(): void;
   getPageTranslationShortcut(): Promise<ShortcutState>;
-  getProgress(): Promise<Progress | undefined>;
   subscribeProgress(listener: (progress: Progress) => void): (() => void) | Promise<() => void>;
 }
 
@@ -42,16 +41,16 @@ export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: T
   // 配置加载门禁：真实 getConfig 完成前禁止任何保存，防止 fallback 默认值
   // （含 rendererMode: 'legacy'）覆盖存储中的真实偏好，违反渲染器模式 Options-only。
   const [configLoaded, setConfigLoaded] = useState(false);
+  const [configError, setConfigError] = useState<string | null>(null);
   const [theme, setTheme] = useState<Theme>('pearl-reader');
   const [experts, setExperts] = useState<NonNullable<PopupConfigResponse['experts']>>([]);
   const [activeExpertByEngine, setActiveExpertByEngine] = useState<Record<string, string>>({});
   const [shortcutState, setShortcutState] = useState<ShortcutState | null>(null);
 
-  useEffect(() => {
-    let disposed = false;
-    let unsubscribe: (() => void) | undefined;
-    void api.getConfig().then((config) => {
-      if (disposed) return;
+  async function loadConfig(): Promise<void> {
+    setConfigError(null);
+    try {
+      const config = await api.getConfig();
       if (config.preferences) setPreferences(config.preferences);
       const nextTheme = config.theme ?? 'pearl-reader';
       setTheme(nextTheme);
@@ -61,12 +60,25 @@ export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: T
       setExperts(config.experts?.filter((expert) => expert.enabled) ?? []);
       setActiveExpertByEngine(config.activeExpertByEngine ?? {});
       setConfigLoaded(true);
-    }).catch((error) => setStatus(error instanceof Error ? error.message : t('statusFailed')));
+      setConfigError(null);
+      setStatus((prev) => (configError && prev === configError ? t('ready') : prev));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('statusFailed');
+      setConfigError(message);
+      setStatus(message);
+    }
+  }
+
+  useEffect(() => {
+    let disposed = false;
+    let unsubscribe: (() => void) | undefined;
+    void loadConfig();
     void api.getPageTranslationShortcut()
       .then((state) => { if (!disposed) setShortcutState(state); })
       .catch(() => { if (!disposed) setShortcutState({ status: 'unavailable', reason: 'api-error' }); });
-    void api.getProgress().then((progress) => { if (!disposed && progress) applyProgress(progress); }).catch(() => undefined);
-    void Promise.resolve(api.subscribeProgress((progress) => applyProgress(progress)))
+    void Promise.resolve(api.subscribeProgress((progress) => {
+      if (!disposed) applyProgress(progress);
+    }))
       .then((cleanup) => { if (disposed) cleanup(); else unsubscribe = cleanup; })
       .catch(() => undefined);
     return () => { disposed = true; unsubscribe?.(); };
@@ -82,7 +94,7 @@ export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: T
 
   function applyProgress(progress: Progress): void {
     setStatus(formatProgress(progress));
-    setPageActive(progress.status !== 'idle');
+    setPageActive(progress.status === 'translating' || progress.total > 0 && progress.status !== 'idle');
   }
 
   function translationCommand(nextEngineId = engineId, nextPreferences = preferences, nextExpertId = activeExpertByEngine[nextEngineId]) {
@@ -142,9 +154,9 @@ export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: T
       } else {
         await api.setTranslationBadge(true);
         await api.sendToPage(translationCommand());
-        setPageActive(true);
       }
     } catch (error) {
+      if (!pageActive) await api.setTranslationBadge(false).catch(() => undefined);
       setStatus(error instanceof Error ? error.message : t('statusFailed'));
     } finally { setBusy(false); }
   }
@@ -168,7 +180,11 @@ export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: T
        }}>{engines.map((engine) => <option key={engine.id} value={engine.id} disabled={!engine.ready}>{engineDisplayName(engine as Parameters<typeof engineDisplayName>[0])}</option>)}</select></label>
        {isAiEngine(engineId, engines.find((engine) => engine.id === engineId)?.kind) && experts.length > 0 && <label className="engine-control expert-control"><span className="engine-label">AI 专家</span><select aria-label="AI 专家" disabled={!configLoaded} value={activeExpertByEngine[engineId] ?? ''} onChange={(event) => void changeExpert(event.target.value)}><option value="">不使用专家</option>{experts.map((expert) => <option key={expert.id} value={expert.id}>{expert.name}</option>)}</select></label>}
     </div>
-    <p className="status translation-status" role="status"><span className="status-dot" aria-hidden="true" />{status}</p>
+    <p className="status translation-status" role="status">
+      <span className="status-dot" aria-hidden="true" />
+      <span>{!configLoaded && !configError ? t('statusLoadingSettings') : status}</span>
+      {configError && <button type="button" className="secondary popup-retry" onClick={() => void loadConfig()}>{t('actionRetry')}</button>}
+    </p>
     <div className="primary-actions">
       <button className="mode-icon" aria-label={preferences.displayMode === 'bilingual' ? t('bilingual') : t('translationOnly')} title={t('modeToggleHelp')} disabled={!configLoaded} onClick={() => void savePreferences({ ...preferences, displayMode: preferences.displayMode === 'bilingual' ? 'translation' : 'bilingual' }, true)}>{preferences.displayMode === 'bilingual' ? '◫' : '▣'}</button>
       <button className="primary primary--wide" aria-label={pageActive ? t('actionShowOriginal') : t('actionTranslatePage')} aria-describedby={shortcutState?.status === 'assigned' ? 'popup-page-shortcut-description' : undefined} disabled={busy || !configLoaded} aria-busy={busy} onClick={() => void togglePage()}>

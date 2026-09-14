@@ -765,7 +765,7 @@ describe('Options v2 多引擎设置', () => {
       .mockResolvedValueOnce({ status: 'unavailable', reason: 'api-error' });
     render(<OptionsApp api={api} />);
     const region = await screen.findByRole('region', { name: '快捷键与触发方式' });
-    expect(within(region).getByText('Alt + A')).toBeInTheDocument();
+    expect(await within(region).findByText('Alt + A')).toBeInTheDocument();
 
     window.dispatchEvent(new Event('focus'));
     await waitFor(() => expect(within(region).getByText('未分配页面快捷键')).toBeInTheDocument());
@@ -848,7 +848,7 @@ describe('Options v2 多引擎设置', () => {
 
     render(<OptionsApp api={api} />);
     const region = await screen.findByRole('region', { name: '快捷键与触发方式' });
-    expect(within(region).getByText('Alt + A')).toBeInTheDocument();
+    expect(await within(region).findByText('Alt + A')).toBeInTheDocument();
 
     window.dispatchEvent(new Event('focus'));
     document.dispatchEvent(new Event('visibilitychange'));

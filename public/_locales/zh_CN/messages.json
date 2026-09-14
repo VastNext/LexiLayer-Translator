@@ -24,6 +24,7 @@
   "bilingual": { "message": "双语对照" },
   "translationOnly": { "message": "仅译文" },
   "ready": { "message": "就绪" },
+  "statusLoadingSettings": { "message": "正在加载设置" },
   "statusStarted": { "message": "已开始翻译，关闭窗口不会中断" },
   "statusFailed": { "message": "翻译失败" },
   "statusPartial": { "message": "已完成 $1/$2，失败 $3" },

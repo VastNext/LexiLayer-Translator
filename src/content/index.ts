@@ -43,6 +43,8 @@ export interface ContentControllerDependencies {
   addMessageListener(listener: (message: unknown) => Promise<unknown>): void;
   loadRule(): Promise<SiteRule>;
   scan(rule: SiteRule, scope: ScanScope): HTMLElement[];
+  yieldControl?(): Promise<void>;
+  now?(): number;
   translate(request: TranslationRequest & { taskId: string; engineId: string }): Promise<TranslationResult[]>;
   cancel(taskId: string): Promise<void>;
   getConfig(): Promise<PublicConfig>;
@@ -57,7 +59,7 @@ export interface ContentControllerDependencies {
   restore(paragraph: ParagraphRecord): void;
   setRendererMode?(mode: RendererMode): void;
   cleanupPage(): void;
-  startObserver(rule: SiteRule, store: ParagraphStore, scope: ScanScope, onChanges: (changes: ObserverChanges) => Promise<void>): void;
+  startObserver(rule: SiteRule, store: ParagraphStore, scope: ScanScope, onChanges: (changes: ObserverChanges) => Promise<void>, onFatal?: (error: unknown) => void): void;
   stopObserver(): void;
   report(progress: ProgressState): void;
 }
@@ -76,6 +78,7 @@ export function createContentController(dependencies: ContentControllerDependenc
   let activeTaskId: string | undefined;
   let lastCommand: PageCommand = { type: 'translate-page' };
   let lastProgressKey = '';
+  const fatalGenerations = new Set<number>();
 
   function report(status: ProgressState['status'], completed = 0, failed = 0): void {
     const progress = { status, completed, failed, total: paragraphs.size, ...(lastCommand.engineId ? { engineId: lastCommand.engineId } : {}) };
@@ -86,6 +89,7 @@ export function createContentController(dependencies: ContentControllerDependenc
   }
 
   function reportCurrent(): void {
+    if (fatalGenerations.has(generation)) return;
     const completed = completedIds.size;
     const failed = failedIds.size;
     const isTranslating = dependencies.hasWaiting() || (completed + failed < paragraphs.size);
@@ -158,7 +162,7 @@ export function createContentController(dependencies: ContentControllerDependenc
     }
     if (batch.length) batches.push(batch);
     const failures = await dependencies.schedule(batches, async (batchParagraphs) => {
-      if (currentGeneration !== generation) return;
+      if (currentGeneration !== generation || fatalGenerations.has(currentGeneration)) return;
       const activeBatch = batchParagraphs.filter((paragraph) => paragraphs.has(paragraph.id) && paragraph.element.isConnected);
       if (activeBatch.length === 0) return;
       const tokens = new Map(activeBatch.map((paragraph) => [paragraph.id, dependencies.beginRender(paragraph)]));
@@ -169,12 +173,12 @@ export function createContentController(dependencies: ContentControllerDependenc
           targetLanguage: lastCommand.targetLanguage!, segments: activeBatch.map((paragraph) => ({ id: paragraph.id, text: paragraph.sourceText })),
         });
       } catch (error) {
-        if (currentGeneration !== generation) return;
+        if (currentGeneration !== generation || fatalGenerations.has(currentGeneration)) return;
         markFailed(activeBatch, readableError(error), tokens);
         reportCurrent();
         return;
       }
-      if (currentGeneration !== generation) return;
+      if (currentGeneration !== generation || fatalGenerations.has(currentGeneration)) return;
       const byId = new Map(results.map((result) => [result.id, result.text]));
       for (const paragraph of activeBatch) {
         if (!paragraphs.has(paragraph.id) || !paragraph.element.isConnected) continue;
@@ -200,18 +204,18 @@ export function createContentController(dependencies: ContentControllerDependenc
     }, (items, error) => {
       // 批次请求失败（含滚动后才可见的晚批）即时渲染错误并刷新进度；
       // 代际已更替的旧队列失败在此被隔离，不会污染新任务。
-      if (currentGeneration !== generation) return;
+      if (currentGeneration !== generation || fatalGenerations.has(currentGeneration)) return;
       markFailed(items, readableError(error));
       reportCurrent();
     });
-    if (currentGeneration !== generation) return { completed: 0, failed: 0 };
+    if (currentGeneration !== generation || fatalGenerations.has(currentGeneration)) return { completed: 0, failed: 0 };
     for (const failure of failures) markFailed(failure.item, readableError(failure.error));
     return { completed, failed: failed + failures.reduce((count, failure) => count + failure.item.length, 0) };
   }
 
   function createObserverHandler(currentGeneration: number, taskId: string): (changes: ObserverChanges) => Promise<void> {
     return async ({ added, invalidated, removed = [] }) => {
-      if (currentGeneration !== generation) return;
+      if (currentGeneration !== generation || fatalGenerations.has(currentGeneration)) return;
       if (added.length === 0 && invalidated.length === 0 && removed.length === 0) return;
       const removedSet = new Set(removed);
       for (const paragraph of removed) { paragraphs.delete(paragraph.id); completedIds.delete(paragraph.id); failedIds.delete(paragraph.id); }
@@ -234,12 +238,50 @@ export function createContentController(dependencies: ContentControllerDependenc
     };
   }
 
-  async function restore(): Promise<void> {
-    generation += 1;
+  async function handleFatal(currentGeneration: number): Promise<void> {
+    if (currentGeneration !== generation) return;
+    fatalGenerations.add(currentGeneration);
     dependencies.stopObserver();
     const taskId = activeTaskId;
     activeTaskId = undefined;
-    for (const paragraph of paragraphs.values()) dependencies.restore(paragraph);
+    if (taskId) void dependencies.cancel(taskId).catch(() => undefined);
+    const now = dependencies.now ?? (() => performance.now());
+    let sliceStarted = now();
+    for (const paragraph of [...paragraphs.values()]) {
+      dependencies.restore(paragraph);
+      if (dependencies.yieldControl && now() - sliceStarted >= 6) {
+        await dependencies.yieldControl();
+        if (currentGeneration !== generation) return;
+        sliceStarted = now();
+      }
+    }
+    if (currentGeneration !== generation) return;
+    dependencies.cleanupPage();
+    paragraphs.clear();
+    store.clear();
+    completedIds.clear();
+    failedIds.clear();
+    active = false;
+    report('error', 0, 0);
+  }
+
+  async function restore(): Promise<void> {
+    const restoreGeneration = ++generation;
+    dependencies.stopObserver();
+    const taskId = activeTaskId;
+    activeTaskId = undefined;
+    const now = dependencies.now ?? (() => performance.now());
+    let sliceStarted = now();
+    const restoreParagraphs = [...paragraphs.values()];
+    for (const paragraph of restoreParagraphs) {
+      dependencies.restore(paragraph);
+      if (dependencies.yieldControl && now() - sliceStarted >= 6) {
+        await dependencies.yieldControl();
+        if (restoreGeneration !== generation) return;
+        sliceStarted = now();
+      }
+    }
+    if (restoreGeneration !== generation) return;
     dependencies.cleanupPage();
     paragraphs.clear();
     completedIds.clear();
@@ -253,39 +295,51 @@ export function createContentController(dependencies: ContentControllerDependenc
   async function translate(command: PageCommand): Promise<void> {
     const currentGeneration = await beginSession();
     if (currentGeneration === undefined) return;
-    command = await resolveCommand(command);
-    if (currentGeneration !== generation) return;
-    lastCommand = { ...lastCommand, ...command, type: 'translate-page' };
-    // 渲染器模式在每次全新页面翻译时读取一次：会话内动态更新与重试固定本次模式。
-    dependencies.setRendererMode?.(command.rendererMode ?? 'legacy');
-    for (const paragraph of paragraphs.values()) dependencies.restore(paragraph);
-    dependencies.cleanupPage();
-    paragraphs.clear();
-    store.clear();
-    completedIds.clear();
-    failedIds.clear();
-    const taskId = `page-${currentGeneration}`;
-    activeTaskId = taskId;
-    const rule = await dependencies.loadRule();
-    const elements = dependencies.scan(rule, command.scope ?? lastCommand.scope ?? 'main-content');
-    for (const element of elements) {
-      const paragraph = store.refresh(element);
-      if (!paragraph.sourceText) continue;
-      paragraphs.set(paragraph.id, paragraph);
-      dependencies.renderLoading(paragraph);
-    }
-    active = true;
-    dependencies.startObserver(rule, store, command.scope ?? 'main-content', createObserverHandler(currentGeneration, taskId));
-    report('translating');
-
+    fatalGenerations.delete(currentGeneration);
     try {
+      report('translating');
+      command = await resolveCommand(command);
+      if (currentGeneration !== generation) return;
+      lastCommand = { ...lastCommand, ...command, type: 'translate-page' };
+      // 渲染器模式在每次全新页面翻译时读取一次：会话内动态更新与重试固定本次模式。
+      dependencies.setRendererMode?.(command.rendererMode ?? 'legacy');
+      for (const paragraph of paragraphs.values()) dependencies.restore(paragraph);
+      dependencies.cleanupPage();
+      paragraphs.clear();
+      store.clear();
+      completedIds.clear();
+      failedIds.clear();
+      const taskId = `page-${currentGeneration}`;
+      activeTaskId = taskId;
+      const rule = await dependencies.loadRule();
+      if (currentGeneration !== generation) return;
+      const scanScope = command.scope ?? lastCommand.scope ?? 'main-content';
+      const elements = dependencies.scan(rule, scanScope);
+      if (currentGeneration !== generation) return;
+      const now = dependencies.now ?? (() => performance.now());
+      let sliceStarted = now();
+      for (const element of elements) {
+        if (currentGeneration !== generation) return;
+        if (!element.isConnected) continue;
+        const paragraph = store.refresh(element);
+        if (!paragraph.sourceText) continue;
+        paragraphs.set(paragraph.id, paragraph);
+        dependencies.renderLoading(paragraph);
+        if (dependencies.yieldControl && now() - sliceStarted >= 6) {
+          await dependencies.yieldControl();
+          sliceStarted = now();
+        }
+      }
+      if (currentGeneration !== generation) return;
+      active = true;
+      const observerHandler = createObserverHandler(currentGeneration, taskId);
+      dependencies.startObserver(rule, store, scanScope, observerHandler, () => { void handleFatal(currentGeneration); });
+      report('translating');
       await processParagraphs([...paragraphs.values()], currentGeneration, taskId);
       if (currentGeneration !== generation) return;
       reportCurrent();
     } catch (error) {
-      if (currentGeneration !== generation) return;
-      markFailed([...paragraphs.values()], readableError(error));
-      report('error', 0, paragraphs.size);
+      await handleFatal(currentGeneration);
     }
   }
 

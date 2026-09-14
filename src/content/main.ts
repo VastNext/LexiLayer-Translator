@@ -39,12 +39,20 @@ export function createRuntimeDependencies(): ContentControllerDependencies {
   return {
     addMessageListener(listener) {
       chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-        void listener(message).then(sendResponse);
+        const type = (message as { type?: unknown } | null)?.type;
+        if (type === 'translate-page') {
+          void listener(message).catch(() => undefined);
+          sendResponse({ accepted: true });
+          return true;
+        }
+        void listener(message).then(sendResponse, (error) => sendResponse({ error: error instanceof Error ? error.message : '页面命令执行失败' }));
         return true;
       });
     },
     loadRule: () => matchSiteRule(new URL(location.href)),
     scan: (rule, scope) => scanParagraphElements(document, rule, scope),
+    yieldControl: () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
+    now: () => performance.now(),
     async translate(request) {
       let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
       const timeoutPromise = new Promise<never>((_, reject) => {
@@ -63,8 +71,9 @@ export function createRuntimeDependencies(): ContentControllerDependencies {
     },
     async cancel(taskId) { await chrome.runtime.sendMessage({ type: 'cancel-task', taskId }); },
     async getConfig() {
-      const response = await chrome.runtime.sendMessage({ type: 'get-public-config' }) as { data?: PublicConfig };
-      return response.data ?? { preferences: { targetLanguage: 'en', displayMode: 'bilingual', translationPosition: 'after', scanScope: 'main-content', rendererMode: 'legacy' }, activeEngineId: 'google', availableEngines: [] };
+      const response = await chrome.runtime.sendMessage({ type: 'get-public-config' }) as { ok?: boolean; data?: PublicConfig; error?: string } | undefined;
+      if (!response || response.ok === false || !response.data) throw new Error(response?.error ?? '页面配置响应无效');
+      return response.data;
     },
     getPageLanguage: () => document.documentElement.lang || 'auto',
     showSelectionText: () => undefined,
@@ -123,7 +132,7 @@ export function createRuntimeDependencies(): ContentControllerDependencies {
       for (const inline of document.querySelectorAll<HTMLElement>('[data-vast-inline]')) delete inline.dataset.vastInline;
       unwrapAllTextLeaves(document);
     },
-    startObserver(rule, store, scope, onChanges) {
+    startObserver(rule, store, scope, onChanges, onFatal) {
       observer?.stop();
       observer = new DynamicPageObserver(document.body, {
         debounceMs: 150,
@@ -137,6 +146,7 @@ export function createRuntimeDependencies(): ContentControllerDependencies {
           }
           Promise.resolve(onChanges(changes)).catch(() => {
             console.error('语层翻译: 动态页面变更处理失败');
+            onFatal?.(new Error('动态页面变更处理失败'));
           });
         },
       });
