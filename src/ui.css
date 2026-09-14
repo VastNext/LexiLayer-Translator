@@ -89,6 +89,7 @@ h1, h2, h3 { font-family: var(--font-title); color: var(--ink); }
 .engine-label { color: var(--muted); font-size: 11px; font-weight: 700; }
 .translation-status { display: flex; align-items: center; gap: 7px; min-height: 28px; margin: 9px 1px 5px; padding: 0; border: 0; background: transparent; color: var(--muted); font-size: 11px; }
 .status-dot { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: var(--success); }
+.popup-retry { margin-left: auto; min-height: 24px; padding: 2px 8px; font-size: 11px; font-weight: normal; border-radius: var(--radius-input); }
 .primary-actions { display: grid; grid-template-columns: 43px 1fr; gap: 7px; }
 .mode-icon { width: 43px; height: 43px; padding: 0; border: 1px solid var(--input-line); border-radius: var(--radius-button); background: var(--mode-bg); color: var(--mode-fg); font-size: 19px; }
 .primary, .secondary, .danger { min-height: 38px; padding: 8px 12px; border: 1px solid var(--input-line); border-radius: var(--radius-button); font-size: 14px; font-weight: 700; }

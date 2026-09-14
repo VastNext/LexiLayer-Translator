@@ -2,7 +2,7 @@ export type Translator = (key: string, substitutions?: string | string[]) => str
 
 const fallbackMessages: Record<string, string> = {
   popupKicker: '双语校样台', popupCurrentPage: '当前页面', translationEngine: '翻译引擎', sourceLanguage: '源语言', targetLanguage: '目标语言', translationScope: '翻译范围', displayMode: '显示模式',
-  mainContent: '主要内容', wholePage: '整个页面', bilingual: '双语对照', translationOnly: '仅译文', ready: '就绪',
+  mainContent: '主要内容', wholePage: '整个页面', bilingual: '双语对照', translationOnly: '仅译文', ready: '就绪', statusLoadingSettings: '正在加载设置',
   actionTranslatePage: '翻译当前页面', actionShowOriginal: '显示当前页面原文', actionTranslate: '翻译', actionRestore: '恢复原文', actionRetry: '重试', actionSettings: '设置', statusTranslating: '翻译中…',
   statusStarted: '已开始翻译，关闭窗口不会中断', statusFailed: '翻译失败', statusPartial: '已完成 $1/$2，失败 $3',
   statusProgress: '翻译中 $1/$2', statusError: '翻译失败 $1/$2', statusComplete: '已完成 $1/$2', shortcut: '快捷切换',

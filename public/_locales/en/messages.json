@@ -22,6 +22,7 @@
   "bilingual": { "message": "Bilingual" },
   "translationOnly": { "message": "Translation only" },
   "ready": { "message": "Ready" },
+  "statusLoadingSettings": { "message": "Loading settings…" },
   "statusStarted": { "message": "Translation started; closing this popup will not interrupt it" },
   "statusFailed": { "message": "Translation failed" },
   "statusPartial": { "message": "Completed $1/$2, failed $3" },

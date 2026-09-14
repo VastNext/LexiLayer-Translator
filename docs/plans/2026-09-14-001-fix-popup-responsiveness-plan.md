@@ -98,7 +98,7 @@ origin: docs/brainstorms/2026-09-14-popup-responsiveness-requirements.md
 
 ---
 
-- [ ] U2. **统一 Popup 目标页与进度初始化**
+- [x] U2. **统一 Popup 目标页与进度初始化**
 
 **Goal:** 减少 Action Popup 冷启动 IPC，并防止旧快照或旧文档状态覆盖当前状态。
 

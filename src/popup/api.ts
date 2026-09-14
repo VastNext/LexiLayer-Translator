@@ -47,6 +47,8 @@ export interface PopupConfigResponse {
 }
 
 export function createPopupApi(api: PopupChromeApi) {
+  let cachedTabIdPromise: Promise<number | undefined> | undefined;
+
   async function backgroundRequest<T>(message: unknown, invalidMessage: string): Promise<T> {
     const response = await api.runtime.sendMessage(message) as { ok?: boolean; data?: T; error?: string } | undefined;
     if (!response || response.ok === false) throw new Error(response?.error ?? invalidMessage);
@@ -69,6 +71,13 @@ export function createPopupApi(api: PopupChromeApi) {
     return tab?.id;
   }
 
+  function getTargetTabId(): Promise<number | undefined> {
+    if (!cachedTabIdPromise) {
+      cachedTabIdPromise = activeTabId();
+    }
+    return cachedTabIdPromise;
+  }
+
   return {
     async getConfig() {
       return backgroundRequest<PopupConfigResponse>({ type: 'get-popup-config' }, 'Popup 配置响应无效');
@@ -83,7 +92,7 @@ export function createPopupApi(api: PopupChromeApi) {
       await backgroundAction({ type: 'save-popup-preferences', engineId, readingPreferences, ...(expertId !== undefined ? { expertId } : {}) }, '快捷设置保存失败');
     },
     async sendToPage(message: unknown) {
-      const tabId = await activeTabId();
+      const tabId = await getTargetTabId();
       if (tabId === undefined) throw new Error(createTranslator(api.i18n.getMessage.bind(api.i18n))('pageUnavailable'));
       try {
         return await api.tabs.sendMessage(tabId, message);
@@ -104,7 +113,7 @@ export function createPopupApi(api: PopupChromeApi) {
       }
     },
     async setTranslationBadge(active: boolean) {
-      const tabId = await activeTabId();
+      const tabId = await getTargetTabId();
       if (tabId === undefined || !api.action) return;
       if (active) await api.action.setBadgeBackgroundColor({ tabId, color: '#16a34a' });
       await api.action.setBadgeText({ tabId, text: active ? '✓' : '' });
@@ -118,26 +127,55 @@ export function createPopupApi(api: PopupChromeApi) {
         return { status: 'unavailable', reason: 'api-error' };
       }
     },
-    async getProgress() {
-      const tabId = await activeTabId();
-      if (tabId === undefined) return undefined;
-      const response = await api.runtime.sendMessage({ type: 'get-page-progress', tabId, frameId: 0 }) as { ok?: boolean; data?: Progress; error?: string } | undefined;
-      if (!response || response.ok === false) throw new Error(response?.error ?? '页面进度响应无效');
-      return response.data;
-    },
     async subscribeProgress(listener: (progress: Progress) => void) {
-      const tabId = await activeTabId();
+      let hasReceivedRealtime = false;
+      let unsubscribed = false;
+      let tabId: number | undefined;
+      const bufferedMessages: Array<{ tabId?: number; frameId?: number; progress?: Progress }> = [];
+
       const onMessage = (message: unknown) => {
+        if (unsubscribed) return;
         const value = message as { type?: string; tabId?: number; frameId?: number; progress?: Progress };
-        if (value.type === 'page-progress' && value.tabId === tabId && value.frameId === 0 && value.progress) listener(value.progress);
+        if (value.type !== 'page-progress' || value.frameId !== 0 || !value.progress) return;
+        if (tabId === undefined) {
+          bufferedMessages.push(value);
+          return;
+        }
+        if (value.tabId === tabId) {
+          hasReceivedRealtime = true;
+          listener(value.progress);
+        }
       };
+
       api.runtime.onMessage.addListener(onMessage);
-      if (tabId !== undefined) {
-        const response = await api.runtime.sendMessage({ type: 'get-page-progress', tabId, frameId: 0 }) as { ok?: boolean; data?: Progress; error?: string } | undefined;
-        if (!response || response.ok === false) throw new Error(response?.error ?? '页面进度响应无效');
-        if (response.data) listener(response.data);
+
+      try {
+        tabId = await getTargetTabId();
+        if (unsubscribed) {
+          api.runtime.onMessage.removeListener(onMessage);
+          return () => undefined;
+        }
+        for (const value of bufferedMessages.splice(0)) {
+          if (value.tabId === tabId && value.progress) {
+            hasReceivedRealtime = true;
+            listener(value.progress);
+          }
+        }
+        if (tabId !== undefined) {
+          const response = await api.runtime.sendMessage({ type: 'get-page-progress', tabId, frameId: 0 }) as { ok?: boolean; data?: Progress; error?: string } | undefined;
+          if (!response || response.ok === false) throw new Error(response?.error ?? '页面进度响应无效');
+          if (!unsubscribed && !hasReceivedRealtime && response.data) {
+            listener(response.data);
+          }
+        }
+      } catch {
+        // 快照读取失败时不阻断实时监听
       }
-      return () => api.runtime.onMessage.removeListener(onMessage);
+
+      return () => {
+        unsubscribed = true;
+        api.runtime.onMessage.removeListener(onMessage);
+      };
     },
   };
 }
