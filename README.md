@@ -5,7 +5,11 @@
   A browser translator that turns configurable AI prompts into domain-aware translation.
 </p>
 
-当前版本：`0.13.0`。
+当前版本：`0.13.1`。
+
+## 0.13.1 更新
+
+- 修复表单内部说明性文本被硬编码排除的问题：允许翻译 `<form>` 容器内部的段落、说明、提示及列表文字（如 SaaSHub 等产品提交页面），同时持续排除输入框、按钮等交互控件。
 
 ## 0.13.0 更新
 

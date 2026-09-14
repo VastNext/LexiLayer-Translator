@@ -32,7 +32,7 @@ describe('scanParagraphElements', () => {
         <pre>预格式文本</pre>
         <code>代码文本</code>
         <button>按钮文本</button>
-        <form><p>表单文本</p></form>
+        <form><input aria-label="搜索框"></form>
         <p hidden>隐藏文本</p>
         <p aria-hidden="true">辅助隐藏文本</p>
         <div contenteditable="true"><p>编辑文本</p></div>
@@ -577,5 +577,78 @@ describe('scanParagraphElements', () => {
     unwrapAllTextLeaves(document);
     expect(document.querySelectorAll('[data-vast-text-leaf]')).toHaveLength(0);
     expect(document.querySelector('button > span')?.innerHTML).toBe('Hello <svg></svg>');
+  });
+
+  it('提取表单内的说明性段落、标签和列表等文本（如 saashub 提交表单）', () => {
+    document.body.innerHTML = `
+      <form class="default-form boxed boxed--extra-space" action="/services/new" accept-charset="UTF-8" method="get">
+        <div class="field is-horizontal">
+          <div class="field-label is-normal">
+            <label class="label">Website URL</label>
+          </div>
+          <div class="field-body">
+            <div class="field">
+              <div class="control">
+                <input autocomplete="off" class="input" name="url" placeholder="https://" type="url" value="">
+                <div class="help">A URL to the product website or a product page on your company's website.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="field is-horizontal">
+          <div class="field-body">
+            <div class="field">
+              <div class="control">
+                <div class="prose">
+                  <span class="gradient-highlight">Please note that all submitted products go through an approval process.</span>
+                  <br>
+                  <ul>
+                    <li>
+                      <strong>These types of products are not accepted:</strong>
+                      <br>
+                      <ul>
+                        <li>Software development agencies.</li>
+                        <li>Landing pages with an email form for a waiting list.</li>
+                        <li>Products that are not released yet will be rejected immediately.</li>
+                        <li>Products using free subdomains (e.g. my-cool-app.vercel.com; myproduct.saasify.com).</li>
+                        <li>Products that are not in English.</li>
+                        <li>We do not accept product submissions via Email.</li>
+                      </ul>
+                    </li>
+                  </ul>
+                  <p><span class="gradient-highlight">We are accepting these types of products</span></p>
+                  <ul>
+                    <li>SaaS, IaaS &amp; PaaS products and services.</li>
+                    <li>Most software products and apps.</li>
+                    <li>Mobile apps (with decent websites).</li>
+                    <li>Websites and services that are leaders in a specific niche (e.g. Airbnb).</li>
+                  </ul>
+                  <p>Sometimes we could be a bit too liberal or relaxed when approving products. However, we preserve the right to reject or remove products even if they have been approved already.</p>
+                  <p>By continuing you agree with the <strong>terms of service</strong> and <strong>privacy policy</strong> of the website.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="field is-horizontal">
+          <div class="field-body">
+            <div class="field">
+              <div class="control"><div class="mt-8"><input type="submit" name="commit" value="Continue" class="btn btn--success"></div></div>
+            </div>
+          </div>
+        </div>
+      </form>
+    `;
+
+    const elements = scanParagraphElements(document, { id: 'general', mainContentSelectors: ['main', 'article', '[role="main"]'] }, 'main-content');
+    const texts = elements.map((el) => el.textContent?.replace(/\s+/g, ' ').trim());
+
+    expect(texts).toContain('Website URL');
+    expect(texts).toContain("A URL to the product website or a product page on your company's website.");
+    expect(texts).toContain('Please note that all submitted products go through an approval process.');
+    expect(texts).toContain('Software development agencies.');
+    expect(texts).toContain('We are accepting these types of products');
+    expect(texts).toContain('SaaS, IaaS & PaaS products and services.');
+    expect(texts).toContain('By continuing you agree with the terms of service and privacy policy of the website.');
   });
 });

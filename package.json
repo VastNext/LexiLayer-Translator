@@ -1,6 +1,6 @@
 {
   "name": "lexilayer-translator-chrome-plugin",
-  "version": "0.13.0",
+  "version": "0.13.1",
   "private": true,
   "license": "SEE LICENSE IN LICENSE",
   "type": "module",
@@ -13,7 +13,7 @@
     "release:validate": "node scripts/validate-release.mjs",
     "experts:sync": "python scripts/sync-experts.py",
     "experts:check": "python scripts/sync-experts.py --check",
-    "test": "vitest run",
+    "test": "vitest run --pool=threads",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
