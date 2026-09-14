@@ -210,6 +210,20 @@ describe('精简 Popup', () => {
     expect(await screen.findByRole('button', { name: '显示当前页面原文' })).toBeInTheDocument();
   });
 
+  it('fatal error 或空页面完成时保持翻译按钮，非空错误仍可恢复原文', async () => {
+    let progressListener: ((progress: { status: string; completed: number; failed: number; total: number }) => void) | undefined;
+    const api = createApi({ subscribeProgress: vi.fn((listener) => { progressListener = listener; return () => undefined; }) });
+    render(<PopupApp api={api} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: '翻译当前页面' })).toBeEnabled());
+
+    progressListener?.({ status: 'error', completed: 0, failed: 0, total: 0 });
+    expect(screen.getByRole('button', { name: '翻译当前页面' })).toBeInTheDocument();
+    progressListener?.({ status: 'complete', completed: 0, failed: 0, total: 0 });
+    expect(screen.getByRole('button', { name: '翻译当前页面' })).toBeInTheDocument();
+    progressListener?.({ status: 'error', completed: 0, failed: 2, total: 2 });
+    await waitFor(() => expect(screen.getByRole('button', { name: '显示当前页面原文' })).toBeInTheDocument());
+  });
+
   it('已翻译页面切换显示模式后立即重译并保持显示原文按钮', async () => {
     const api = createApi({
       subscribeProgress: vi.fn((listener) => {
@@ -436,7 +450,8 @@ describe('Popup 消息恢复', () => {
     await expect(api.sendToPage({ type: 'translate-page' })).resolves.toEqual({ ok: true });
     // 样式必须先于脚本注入，且两套样式与三个脚本按 manifest 声明顺序补全。
     expect(insertCSS).toHaveBeenCalledWith({ target: { tabId: 7 }, files: ['content.css', 'content-inline.css'] });
-    expect(executeScript).toHaveBeenCalledWith({ target: { tabId: 7 }, files: ['content.js', 'content-inline.js', 'content-main.js'] });
+    expect(executeScript).toHaveBeenNthCalledWith(1, { target: { tabId: 7, allFrames: true }, files: ['input-translation.js'] });
+    expect(executeScript).toHaveBeenNthCalledWith(2, { target: { tabId: 7 }, files: ['content.js', 'content-inline.js', 'content-main.js'] });
     expect(insertCSS.mock.invocationCallOrder[0]).toBeLessThan(executeScript.mock.invocationCallOrder[0]);
     expect(sendMessage).toHaveBeenCalledTimes(2);
   });

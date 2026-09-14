@@ -19,7 +19,7 @@ interface PopupChromeApi {
     sendMessage(tabId: number, message: unknown): Promise<unknown>;
   };
   scripting?: {
-    executeScript(injection: { target: { tabId: number }; files: string[] }): Promise<unknown>;
+    executeScript(injection: { target: { tabId: number; allFrames?: boolean }; files: string[] }): Promise<unknown>;
     insertCSS(injection: { target: { tabId: number }; files: string[] }): Promise<unknown>;
   };
   action?: {
@@ -105,6 +105,9 @@ export function createPopupApi(api: PopupChromeApi) {
           // 再 executeScript（控制器库 → 内联渲染器 → 装配层）。样式缺失会导致
           // 译文与划词节点无排版，脚本缺一会导致渲染器或装配层未就绪。
           await api.scripting.insertCSS({ target: { tabId }, files: ['content.css', 'content-inline.css'] });
+          // 输入翻译是独立的 all_frames content script；旧标签页补注入时必须同步恢复，
+          // 其自身全局 guard 可安全忽略已声明式注入的 frame。
+          await api.scripting.executeScript({ target: { tabId, allFrames: true }, files: ['input-translation.js'] });
           await api.scripting.executeScript({ target: { tabId }, files: ['content.js', 'content-inline.js', 'content-main.js'] });
           return await api.tabs.sendMessage(tabId, message);
         } catch {

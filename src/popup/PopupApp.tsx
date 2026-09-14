@@ -94,7 +94,7 @@ export function PopupApp({ api, t = createTranslator() }: { api: PopupApi; t?: T
 
   function applyProgress(progress: Progress): void {
     setStatus(formatProgress(progress));
-    setPageActive(progress.status !== 'idle');
+    setPageActive(progress.status === 'translating' || progress.total > 0 && progress.status !== 'idle');
   }
 
   function translationCommand(nextEngineId = engineId, nextPreferences = preferences, nextExpertId = activeExpertByEngine[nextEngineId]) {
