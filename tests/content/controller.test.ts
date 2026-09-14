@@ -158,6 +158,56 @@ describe('网页翻译控制器', () => {
     expect(dependencies.startObserver).not.toHaveBeenCalled();
   });
 
+  it('异步扫描期间恢复会作废旧任务并阻止后续 loading', async () => {
+    document.body.innerHTML = `<main>${Array.from({ length: 10 }, (_, index) => `<p>p${index}</p>`).join('')}</main>`;
+    let releaseScan!: (elements: HTMLElement[]) => void;
+    dependencies.scanAsync = vi.fn((_rule, _scope, shouldContinue) => new Promise<HTMLElement[]>((resolve) => {
+      releaseScan = (elements) => resolve(shouldContinue() ? elements : []);
+    }));
+    const pending = dependencies.listeners[0]({ type: 'translate-page' });
+    await vi.waitFor(() => expect(dependencies.scanAsync).toHaveBeenCalled());
+
+    await dependencies.listeners[0]({ type: 'restore-page' });
+    releaseScan([...document.querySelectorAll('p')] as HTMLElement[]);
+    await pending;
+
+    expect(dependencies.renderLoading).not.toHaveBeenCalled();
+    expect(dependencies.startObserver).not.toHaveBeenCalled();
+  });
+
+  it('loading 安装超过时间预算时会让出并继续完成', async () => {
+    document.body.innerHTML = `<main>${Array.from({ length: 20 }, (_, index) => `<p>p${index}</p>`).join('')}</main>`;
+    dependencies.scanAsync = vi.fn(async () => [...document.querySelectorAll('p')] as HTMLElement[]);
+    dependencies.yieldControl = vi.fn(async () => undefined);
+    let clock = 0;
+    dependencies.now = () => clock += 4;
+    await dependencies.listeners[0]({ type: 'translate-page' });
+
+    expect(dependencies.renderLoading).toHaveBeenCalledTimes(20);
+    expect(dependencies.yieldControl).toHaveBeenCalled();
+  });
+
+  it('分片恢复被新翻译抢占后不会清空新会话状态', async () => {
+    document.body.innerHTML = '<main><p>old</p></main>';
+    await dependencies.listeners[0]({ type: 'translate-page' });
+    let releaseRestore!: () => void;
+    dependencies.yieldControl = vi.fn(() => new Promise<void>((resolve) => { releaseRestore = resolve; }));
+    let clock = 0;
+    dependencies.now = () => clock += 10;
+    const restoring = dependencies.listeners[0]({ type: 'restore-page' });
+    await vi.waitFor(() => expect(dependencies.yieldControl).toHaveBeenCalled());
+
+    dependencies.yieldControl = vi.fn(async () => undefined);
+    document.body.innerHTML = '<main><p>new</p></main>';
+    vi.mocked(dependencies.scan).mockReturnValue([document.querySelector('p') as HTMLElement]);
+    const translating = dependencies.listeners[0]({ type: 'translate-page' });
+    releaseRestore();
+    await Promise.all([restoring, translating]);
+
+    expect(dependencies.startObserver).toHaveBeenCalledTimes(2);
+    expect(dependencies.report).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'complete' }));
+  });
+
   it('translate 首次启动闭环并传递范围、语言和模式', async () => {
     await dependencies.listeners[0]({
       type: 'translate-page',

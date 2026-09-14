@@ -1,7 +1,7 @@
 import type { TranslationResult } from '../shared/messages';
 import { DomRenderer } from './dom-renderer';
 import type { InlineRenderer } from './inline-renderer';
-import { scanParagraphElements, unwrapAllTextLeaves } from './dom-scanner';
+import { scanParagraphElements, scanParagraphElementsAsync, unwrapAllTextLeaves } from './dom-scanner';
 import { DynamicPageObserver } from './dynamic-observer';
 import type { ParagraphRecord } from './paragraph-store';
 import { matchSiteRule } from './rule-matcher';
@@ -51,6 +51,13 @@ export function createRuntimeDependencies(): ContentControllerDependencies {
     },
     loadRule: () => matchSiteRule(new URL(location.href)),
     scan: (rule, scope) => scanParagraphElements(document, rule, scope),
+    scanAsync: (rule, scope, shouldContinue, ownerId) => scanParagraphElementsAsync(document, rule, scope, {
+      shouldContinue,
+      yieldControl: () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
+      ownerId,
+    }),
+    yieldControl: () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
+    now: () => performance.now(),
     async translate(request) {
       let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
       const timeoutPromise = new Promise<never>((_, reject) => {

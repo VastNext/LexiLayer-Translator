@@ -134,7 +134,7 @@ origin: docs/brainstorms/2026-09-14-popup-responsiveness-requirements.md
 
 ---
 
-- [ ] U3. **分片扫描与 loading 安装**
+- [x] U3. **分片扫描与 loading 安装**
 
 **Goal:** 消除扩展主动翻译造成的长同步任务，使 Action Popup、恢复和新命令获得调度机会。
 

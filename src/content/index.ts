@@ -43,6 +43,9 @@ export interface ContentControllerDependencies {
   addMessageListener(listener: (message: unknown) => Promise<unknown>): void;
   loadRule(): Promise<SiteRule>;
   scan(rule: SiteRule, scope: ScanScope): HTMLElement[];
+  scanAsync?(rule: SiteRule, scope: ScanScope, shouldContinue: () => boolean, ownerId: string): Promise<HTMLElement[]>;
+  yieldControl?(): Promise<void>;
+  now?(): number;
   translate(request: TranslationRequest & { taskId: string; engineId: string }): Promise<TranslationResult[]>;
   cancel(taskId: string): Promise<void>;
   getConfig(): Promise<PublicConfig>;
@@ -235,11 +238,22 @@ export function createContentController(dependencies: ContentControllerDependenc
   }
 
   async function restore(): Promise<void> {
-    generation += 1;
+    const restoreGeneration = ++generation;
     dependencies.stopObserver();
     const taskId = activeTaskId;
     activeTaskId = undefined;
-    for (const paragraph of paragraphs.values()) dependencies.restore(paragraph);
+    const now = dependencies.now ?? (() => performance.now());
+    let sliceStarted = now();
+    const restoreParagraphs = [...paragraphs.values()];
+    for (const paragraph of restoreParagraphs) {
+      dependencies.restore(paragraph);
+      if (dependencies.yieldControl && now() - sliceStarted >= 6) {
+        await dependencies.yieldControl();
+        if (restoreGeneration !== generation) return;
+        sliceStarted = now();
+      }
+    }
+    if (restoreGeneration !== generation) return;
     dependencies.cleanupPage();
     paragraphs.clear();
     completedIds.clear();
@@ -270,16 +284,40 @@ export function createContentController(dependencies: ContentControllerDependenc
       activeTaskId = taskId;
       const rule = await dependencies.loadRule();
       if (currentGeneration !== generation) return;
-      const elements = dependencies.scan(rule, command.scope ?? lastCommand.scope ?? 'main-content');
+      const scanScope = command.scope ?? lastCommand.scope ?? 'main-content';
+      const elements = dependencies.scanAsync
+        ? await dependencies.scanAsync(rule, scanScope, () => currentGeneration === generation, taskId)
+        : dependencies.scan(rule, scanScope);
       if (currentGeneration !== generation) return;
+      const now = dependencies.now ?? (() => performance.now());
+      let sliceStarted = now();
       for (const element of elements) {
+        if (currentGeneration !== generation) return;
         const paragraph = store.refresh(element);
         if (!paragraph.sourceText) continue;
         paragraphs.set(paragraph.id, paragraph);
         dependencies.renderLoading(paragraph);
+        if (dependencies.yieldControl && now() - sliceStarted >= 6) {
+          await dependencies.yieldControl();
+          sliceStarted = now();
+        }
       }
+      if (currentGeneration !== generation) return;
       active = true;
-      dependencies.startObserver(rule, store, command.scope ?? 'main-content', createObserverHandler(currentGeneration, taskId));
+      const observerHandler = createObserverHandler(currentGeneration, taskId);
+      dependencies.startObserver(rule, store, scanScope, observerHandler);
+      // 异步初始扫描会让页面脚本在切片间运行；observer 启动后补扫一次当前 DOM，
+      // 将扫描期间新增且仍未入 store 的节点交给既有动态处理链。
+      if (dependencies.scanAsync) {
+        const reconciled = dependencies.scan(rule, scanScope).filter((element) => !store.get(element));
+        for (const element of reconciled) {
+          if (currentGeneration !== generation || !element.isConnected) return;
+          const paragraph = store.getOrCreate(element);
+          if (!paragraph.sourceText) continue;
+          paragraphs.set(paragraph.id, paragraph);
+          dependencies.renderLoading(paragraph);
+        }
+      }
       report('translating');
       await processParagraphs([...paragraphs.values()], currentGeneration, taskId);
       if (currentGeneration !== generation) return;

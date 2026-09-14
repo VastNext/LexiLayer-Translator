@@ -2,6 +2,13 @@ import type { SiteRule } from '../rules/types';
 
 export type ScanScope = 'main-content' | 'whole-page';
 export interface ScanMetrics { normalizedTexts: number; ancestorChecks: number }
+export interface AsyncScanOptions {
+  shouldContinue(): boolean;
+  yieldControl(): Promise<void>;
+  now?(): number;
+  budgetMs?: number;
+  ownerId?: string;
+}
 const MAX_TRANSLATABLE_TEXT_LENGTH = 6000;
 
 const paragraphSelector = 'h1, h2, h3, h4, h5, h6, p, li, blockquote, figcaption, td, th';
@@ -202,4 +209,119 @@ export function scanParagraphElements(
     }
   }
   return Array.from(results).filter((candidate) => !redundant.has(candidate));
+}
+
+/**
+ * 初始整页翻译专用的协作式扫描入口。
+ * 保留同步扫描的结果语义，但在候选规模较大时按宏任务切片，避免长时间独占 renderer。
+ */
+export async function scanParagraphElementsAsync(
+  root: Document | Element,
+  rule: SiteRule,
+  scope: ScanScope,
+  options: AsyncScanOptions,
+): Promise<HTMLElement[]> {
+  const now = options.now ?? (() => performance.now());
+  const budgetMs = options.budgetMs ?? 6;
+  let sliceStarted = now();
+  const checkpoint = (): boolean | Promise<boolean> => {
+    if (!options.shouldContinue()) return false;
+    if (now() - sliceStarted < budgetMs) return true;
+    return options.yieldControl().then(() => {
+      sliceStarted = now();
+      return options.shouldContinue();
+    });
+  };
+
+  const results = new Set<HTMLElement>();
+  const forced = new Set<HTMLElement>();
+  const createdTextLeaves: HTMLElement[] = [];
+  const cancel = () => {
+    for (const leaf of createdTextLeaves) {
+      if (leaf.dataset.vastScanOwner === options.ownerId) leaf.replaceWith(...leaf.childNodes);
+    }
+    return [] as HTMLElement[];
+  };
+  for (const selector of rule.includeSelectors ?? []) {
+    for (const element of root.querySelectorAll<HTMLElement>(selector)) {
+      forced.add(element);
+      { const next = checkpoint(); if (next === false || (next !== true && !await next)) return cancel(); }
+    }
+  }
+
+  for (const scanRoot of queryRoots(root, rule, scope)) {
+    const candidates = scanRoot.matches(paragraphSelector)
+      ? [scanRoot as HTMLElement, ...scanRoot.querySelectorAll<HTMLElement>(paragraphSelector)]
+      : Array.from(scanRoot.querySelectorAll<HTMLElement>(paragraphSelector));
+    for (const candidate of candidates) {
+      if (candidate.matches('li') && !hasDirectText(candidate)) continue;
+      if (candidate.querySelector('button, [role="button"]') !== null) continue;
+      if (hasText(candidate) && isWithinTranslationLimit(candidate) && !isExcluded(candidate, rule)) results.add(candidate);
+      { const next = checkpoint(); if (next === false || (next !== true && !await next)) return cancel(); }
+    }
+
+    const document = scanRoot.ownerDocument;
+    const walker = document.createTreeWalker(scanRoot, NodeFilter.SHOW_TEXT);
+    const textNodes: Text[] = [];
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (node.textContent?.trim()) textNodes.push(node as Text);
+      { const next = checkpoint(); if (next === false || (next !== true && !await next)) return cancel(); }
+    }
+    const textCandidates = new Set<HTMLElement>();
+    for (const node of textNodes) {
+      let parent = node.parentElement;
+      if (!parent || parent.closest('[data-vast-source], [data-vast-translator]') || isTextLeafExcluded(parent, rule)) continue;
+      if (parent.closest('ga-help-tooltip,xap-icon-trigger,[aria-haspopup="dialog"][role="button"]')) continue;
+      if (parent.matches('[class*="ripple" i],[class*="focus-indicator" i],[class*="touch-target" i]')) continue;
+      let covered = false;
+      for (let current: Element | null = parent; current; current = current.parentElement) {
+        if (results.has(current as HTMLElement)) { covered = true; break; }
+      }
+      if (covered) continue;
+      if (parent.matches('[data-vast-text-leaf]')) {
+        delete parent.dataset.vastScanOwner;
+        textCandidates.add(parent);
+      }
+      else if (isWithinTranslationLimit(parent)) {
+        const hasSiblingElements = Array.from(parent.children).some(
+          (child) => !child.matches('[data-vast-translator], [data-vast-source], [data-vast-text-leaf]'),
+        );
+        const isControlContainer = parent.closest('label, button, [role="button"]') !== null;
+        if ((isControlContainer && hasSiblingElements) || parent.matches('label')) {
+          const leaf = wrapDirectTextNode(node);
+          if (options.ownerId) leaf.dataset.vastScanOwner = options.ownerId;
+          createdTextLeaves.push(leaf);
+          textCandidates.add(leaf);
+        }
+        else if (hasDirectText(parent)) textCandidates.add(parent);
+      }
+      { const next = checkpoint(); if (next === false || (next !== true && !await next)) return cancel(); }
+    }
+    const grouped = [...textCandidates];
+    for (const candidate of grouped) {
+      if (!grouped.some((ancestor) => ancestor !== candidate && ancestor.contains(candidate) && hasDirectText(ancestor))) results.add(candidate);
+      { const next = checkpoint(); if (next === false || (next !== true && !await next)) return cancel(); }
+    }
+  }
+
+  for (const candidate of forced) {
+    const direct = Array.from(candidate.childNodes).some((node) => node.nodeType === node.TEXT_NODE && Boolean(node.textContent?.trim()));
+    if (direct && hasText(candidate) && isWithinTranslationLimit(candidate) && !isExcluded(candidate, rule)) results.add(candidate);
+    { const next = checkpoint(); if (next === false || (next !== true && !await next)) return cancel(); }
+  }
+  const redundant = new Set<HTMLElement>();
+  for (const candidate of results) {
+    for (let ancestor = candidate.parentElement; ancestor; ancestor = ancestor.parentElement) {
+      if (results.has(ancestor as HTMLElement)) redundant.add(ancestor as HTMLElement);
+    }
+    { const next = checkpoint(); if (next === false || (next !== true && !await next)) return cancel(); }
+  }
+  const currentRoots = queryRoots(root, rule, scope);
+  for (const leaf of createdTextLeaves) delete leaf.dataset.vastScanOwner;
+  return [...results].filter((candidate) => (
+    !redundant.has(candidate)
+    && candidate.isConnected
+    && currentRoots.some((scanRoot) => scanRoot === candidate || scanRoot.contains(candidate))
+    && !isExcluded(candidate, rule)
+  ));
 }
