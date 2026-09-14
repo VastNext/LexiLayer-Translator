@@ -13,7 +13,7 @@
     "release:validate": "node scripts/validate-release.mjs",
     "experts:sync": "python scripts/sync-experts.py",
     "experts:check": "python scripts/sync-experts.py --check",
-    "test": "vitest run",
+    "test": "vitest run --pool=threads",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

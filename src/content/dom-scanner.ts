@@ -16,7 +16,6 @@ const hardExclusions = [
     '[data-section="tabs"]',
     '[role="tablist"]',
     '[role="tab"]',
-    'form',
   'input',
   'textarea',
   'select',
