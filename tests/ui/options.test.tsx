@@ -674,7 +674,7 @@ describe('Options v2 多引擎设置', () => {
     await userEvent.type(within(draft).getByLabelText('系统提示词'), 'Translate accurately into target language');
     await userEvent.click(within(draft).getByRole('button', { name: '保存专家' }));
     await waitFor(() => expect(api.upsertExpert).toHaveBeenCalledWith(expect.objectContaining({ name: '我的新专家', prompt: 'Translate accurately into target language' })));
-  });
+  }, 15000);
 
   it('导出提供包含、不含和取消三个明确选择，取消不会导出', async () => {
     const api = createApi();

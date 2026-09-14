@@ -43,7 +43,7 @@ describe('manifest', () => {
 
   it('声明当前包版本、本地化名称描述和全尺寸原创图标', () => {
     expect(manifest.version).toBe(packageJson.version);
-    expect(packageJson.version).toBe('0.13.1');
+    expect(packageJson.version).toBe('0.13.2');
     expect(manifest.name).toBe('__MSG_extensionName__');
     expect(manifest.description).toBe('__MSG_extensionDescription__');
     expect(manifest.default_locale).toBe('zh_CN');
