@@ -206,7 +206,7 @@ test('MV3、Popup 与 Options 无错误加载，自定义实例可测试并在�
   await options.close();
   const reopened = await openExtensionPage('options.html');
   const reopenedCard = reopened.getByRole('group', { name: 'E2E 自定义 AI' });
-  await reopenedCard.getByRole('button', { name: '展开' }).click();
+  await reopenedCard.getByRole('button', { name: /展开$/ }).click();
   await expect(reopenedCard.getByLabel('Base URL')).toHaveValue(server.baseUrl);
   await expect(reopenedCard.getByLabel('模型')).toHaveValue('e2e-model');
   await expect(reopenedCard.getByLabel('API Key', { exact: true })).toHaveValue(API_KEY);
@@ -249,8 +249,8 @@ test('新安装默认 Google 且有 Bing，多实例排序、默认、密钥、�
   await expect(options.getByRole('group', { name: '实例乙' }).getByText('当前默认')).toBeVisible();
   const alpha = options.getByRole('group', { name: '实例甲' });
   const betaAfterReload = options.getByRole('group', { name: '实例乙' });
-  await alpha.getByRole('button', { name: '展开' }).click();
-  await betaAfterReload.getByRole('button', { name: '展开' }).click();
+  await alpha.getByRole('button', { name: /展开$/ }).click();
+  await betaAfterReload.getByRole('button', { name: /展开$/ }).click();
   await expect(alpha.getByText('已保存 API Key；留空会保留现有密钥。')).toBeVisible();
   await expect(betaAfterReload.getByText('已保存 API Key；留空会保留现有密钥。')).toBeVisible();
 
@@ -441,7 +441,7 @@ test('真实鼠标划词使用 closed shadow，输入框选区不触发，结果
 test('长页面底部划词面板始终在视口内，可拖动关闭，Ctrl 内联切换且 popup 可关闭', async ({ context, server, openExtensionPage }) => {
   const options = await openExtensionPage('options.html');
   await saveConfiguration(options, server.baseUrl);
-  await options.getByLabel('目标语言').selectOption('zh-Hans');
+  await options.getByLabel('目标语言', { exact: true }).selectOption('zh-Hans');
   await expect(options.getByRole('status')).toHaveText('设置已保存');
   await options.close();
   const page = await openFixture(context, server.selectionFixtureUrl);
@@ -717,7 +717,7 @@ test('局部重试不打断在途与离屏任务，恢复后再翻译命中缓�
 test('德语划词遇畸形 SSE 自动回退非流式', async ({ context, server, openExtensionPage }) => {
   const options = await openExtensionPage('options.html');
   await saveConfiguration(options, server.baseUrl);
-  await options.getByLabel('目标语言').selectOption('de');
+  await options.getByLabel('目标语言', { exact: true }).selectOption('de');
   await expect(options.getByRole('status')).toHaveText('设置已保存');
   await options.close();
   server.setMode('invalid-sse');

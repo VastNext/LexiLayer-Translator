@@ -7,6 +7,15 @@
 
 当前版本：`0.13.1`。
 
+## 0.13.0 更新
+
+- 新增输入框选区翻译：选中普通文本输入框、textarea 或 contenteditable 中的文字，按 `Alt+Shift+X`，使用当前引擎仅替换选中部分。
+- 在设置的阅读偏好中独立选择“输入框目标语言”，默认英语，不跟随网页目标语言自动切换。旧配置和导入配置自动补齐默认值。
+- 无需先翻译页面；只发送选中文字（最多 5000 字符），不附带输入框其余文字或邻近上下文。自定义 AI 沿用当前专家与翻译要求。
+- 密码、只读、禁用控件不处理；中文输入法组合期间不触发，在途重复按键不重复请求。失败保留原文；等待期间内容、选区或焦点改变时放弃回填。
+- 支持已获站点权限的普通网页和同源/跨源 HTTP(S) frame 内的独立选区；不支持跨 frame 选区、about:blank/srcdoc/data/blob frame、浏览器内部页和商店受限页。安装或更新后，已打开网页需刷新以加载新脚本。
+- 支持可获取选区的 input 类型：text、search、url、tel。email/number 等无标准选区 API 的控件、Shadow DOM 编辑器、嵌套编辑器及包含不可编辑区域的选区不处理。复杂富文本框架可能拒绝合成输入事件；不保证其内部状态和撤销历史兼容，不承诺任意编辑器支持。
+
 <p align="center">
   <a href="https://github.com/VastNext/LexiLayer-Translator"><img src="https://img.shields.io/badge/status-MVP-orange.svg" alt="MVP status"></a>
   <a href="https://github.com/VastNext/LexiLayer-Translator"><img src="https://img.shields.io/badge/Manifest-V3-4285F4.svg" alt="Manifest V3"></a>
@@ -179,6 +188,7 @@ VAST_E2E_PROXY=http://127.0.0.1:7890 npm run e2e:network
 
 ## 0.13.0 更新
 
+- ✍️ **输入框选区快捷翻译**：在普通输入框中选中文字后按 `Alt+Shift+X`，使用当前引擎仅替换选中部分；输入框目标语言独立配置，默认英语。
 - ⌨️ **统一快捷键设置**：Options 集中展示浏览器管理的页面翻译快捷键与网页内选区触发方式，Popup 同步显示浏览器实际绑定。
 - 🛡️ **更安全的新安装默认值**：选区内联翻译改为双击 `Ctrl` 触发；旧用户和旧导入配置保留原有触发次数。
 - 🔗 **两种入口互不影响**：关闭划词悬浮按钮后，键盘内联触发仍可继续使用。

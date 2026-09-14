@@ -31,6 +31,11 @@ export const manifest = {
   content_scripts: [
     {
       matches: ['<all_urls>'],
+      js: ['input-translation.js'],
+      all_frames: true,
+    },
+    {
+      matches: ['<all_urls>'],
       // 单条目内 js 数组按声明顺序执行：控制器库 → 内联渲染器 → 装配层。
       // 拆成多个条目时 Chrome 不保证条目间顺序，合并才能锁定注入顺序。
       js: ['content.js', 'content-inline.js', 'content-main.js'],

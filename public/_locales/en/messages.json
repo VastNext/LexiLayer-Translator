@@ -1,4 +1,6 @@
 {
+  "inputTargetLanguage": { "message": "Input translation language" },
+  "inputTranslationHelp": { "message": "Select text in an input and press Alt+Shift+X to translate and replace it using the current engine. Defaults to English, independently of page translation. Changes to content or selection prevent replacement." },
   "extensionName": { "message": "LexiLayer Translator" },
   "brandShort": { "message": "LexiLayer" },
   "extensionDescription": { "message": "Bilingual page and selection translation with Google, Bing, or multiple custom AI services." },

@@ -103,7 +103,7 @@ test('旧 v2 存档缺渲染器模式字段时首次打开 Options 受控回退�
   const options = await openExtensionPage('options.html');
   await expect(options.getByLabel('渲染器模式')).toHaveValue('legacy');
   // 缺字段只受控补齐渲染器模式，其余偏好保留不被重置。
-  await expect(options.getByLabel('目标语言')).toHaveValue('ja');
+  await expect(options.getByLabel('目标语言', { exact: true })).toHaveValue('ja');
 });
 
 test('旧版 translatorConfig 迁移：偏好保留并生成迁移自定义引擎', async ({ openExtensionPage, server }) => {
@@ -117,7 +117,7 @@ test('旧版 translatorConfig 迁移：偏好保留并生成迁移自定义引�
 
   const options = await openExtensionPage('options.html');
   await expect(options.getByLabel('渲染器模式')).toHaveValue('legacy');
-  await expect(options.getByLabel('目标语言')).toHaveValue('ja');
+  await expect(options.getByLabel('目标语言', { exact: true })).toHaveValue('ja');
   await expect(options.getByLabel('默认模式')).toHaveValue('translation');
   await expect(options.getByRole('group', { name: '迁移的自定义 AI' })).toBeVisible();
 });

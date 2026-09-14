@@ -1,4 +1,5 @@
 import { assertSafeBaseUrl } from './url';
+import { SUPPORTED_LANGUAGES } from './languages';
 import { canonicalExpertId, defaultExperts, MAX_EXPERTS, MAX_EXPERT_PROMPT_LENGTH, type Expert } from './experts';
 
 export type DisplayMode = 'bilingual' | 'translation';
@@ -12,6 +13,7 @@ export const THEMES: Theme[] = ['pearl-reader', 'command-translator', 'sage-glob
 export interface ReadingPreferences {
   sourceLanguage?: string;
   targetLanguage: string;
+  inputTargetLanguage?: string;
   displayMode: DisplayMode;
   userInstruction: string;
   translationPosition: 'before' | 'after';
@@ -77,6 +79,7 @@ export const DEFAULT_SETTINGS: Settings = {
   readingPreferences: {
     sourceLanguage: 'auto',
     targetLanguage: 'auto',
+    inputTargetLanguage: 'en',
     displayMode: 'bilingual',
     userInstruction: '',
     translationPosition: 'after',
@@ -112,6 +115,7 @@ function validatePreferences(value: unknown): string[] {
   const errors: string[] = [];
   if (value.sourceLanguage !== undefined && (typeof value.sourceLanguage !== 'string' || !value.sourceLanguage.trim())) errors.push('源语言不能为空');
   if (typeof value.targetLanguage !== 'string' || !value.targetLanguage.trim()) errors.push('目标语言不能为空');
+  if (value.inputTargetLanguage !== undefined && !SUPPORTED_LANGUAGES.includes(value.inputTargetLanguage as typeof SUPPORTED_LANGUAGES[number])) errors.push('输入框目标语言无效');
   if (value.displayMode !== 'bilingual' && value.displayMode !== 'translation') errors.push('显示模式无效');
   if (typeof value.userInstruction !== 'string') errors.push('用户要求必须是字符串');
   if (value.translationPosition !== 'before' && value.translationPosition !== 'after') errors.push('译文位置无效');
@@ -232,6 +236,7 @@ export function normalizeSettings(value: unknown): Settings {
   const normalizedValue = structuredClone(value) as Record<string, unknown>;
   if (normalizedValue.theme === undefined) normalizedValue.theme = DEFAULT_SETTINGS.theme;
   migrateExpertDefaults(normalizedValue);
+  if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.inputTargetLanguage === undefined) normalizedValue.readingPreferences.inputTargetLanguage = 'en';
   if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.sourceLanguage === undefined) normalizedValue.readingPreferences.sourceLanguage = 'auto';
   if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.selectionPopupEnabled === undefined) normalizedValue.readingPreferences.selectionPopupEnabled = true;
   if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.inlineSelectionModifier === undefined) normalizedValue.readingPreferences.inlineSelectionModifier = 'Control';
@@ -290,6 +295,7 @@ export function importSettings(value: unknown, current: Settings = DEFAULT_SETTI
   if (input.experts === undefined) input.experts = defaultExperts();
   if (input.activeExpertByEngine === undefined) input.activeExpertByEngine = {};
   migrateExpertDefaults(input);
+  if (isRecord(input.readingPreferences) && input.readingPreferences.inputTargetLanguage === undefined) input.readingPreferences.inputTargetLanguage = 'en';
   if (isRecord(input.readingPreferences) && input.readingPreferences.selectionPopupEnabled === undefined) input.readingPreferences.selectionPopupEnabled = true;
   if (isRecord(input.readingPreferences) && input.readingPreferences.inlineSelectionModifier === undefined) input.readingPreferences.inlineSelectionModifier = 'Control';
   if (isRecord(input.readingPreferences) && input.readingPreferences.inlineSelectionTriggerCount === undefined) input.readingPreferences.inlineSelectionTriggerCount = 1;
@@ -343,6 +349,7 @@ export function migrateSettings(value: unknown): Settings {
   if (!isRecord(value)) return cloneDefaults();
   const migrated = cloneDefaults();
   const legacyPreferences: ReadingPreferences = {
+      inputTargetLanguage: 'en',
       targetLanguage: value.targetLanguage as string,
       displayMode: value.displayMode as DisplayMode,
       userInstruction: value.userInstruction as string,

@@ -23,13 +23,16 @@ interface ExtensionFixtures {
 }
 
 export const test = base.extend<ExtensionFixtures>({
-  server: async ({}, use) => {
+  server: async ({}, use, testInfo) => {
     const server = await startMockServer();
     await use(server);
+    if (testInfo.status !== testInfo.expectedStatus) {
+      await testInfo.attach('mock-request-diagnostics', { body: JSON.stringify({ hits: server.hits, requests: server.requests.map(({ path, body }) => ({ path, body })), maxConcurrency: server.maxConcurrency() }), contentType: 'application/json' });
+    }
     server.releaseDelay();
     await server.close();
   },
-  context: async ({ server }, use) => {
+  context: async ({ server }, use, testInfo) => {
     const userDataDir = await mkdtemp(resolve(tmpdir(), 'vast-e2e-'));
     const extensionPath = resolve(import.meta.dirname, '../../dist');
     const proxy = process.env.VAST_E2E_PROXY;
@@ -47,6 +50,10 @@ export const test = base.extend<ExtensionFixtures>({
       ],
     });
     await use(context);
+    if (testInfo.status !== testInfo.expectedStatus) {
+      const pages = await Promise.all(context.pages().map(async (page) => ({ url: page.url(), state: await page.evaluate(() => ({ visibility: document.visibilityState, focus: document.hasFocus(), selection: getSelection()?.toString(), loading: [...document.querySelectorAll('[data-vast-state="loading"]')].map((node) => node.outerHTML) })).catch(() => '页面不可访问') })));
+      await testInfo.attach('page-diagnostics', { body: JSON.stringify(pages), contentType: 'application/json' });
+    }
     await context.close();
     await rm(userDataDir, { recursive: true, force: true });
     void server;
