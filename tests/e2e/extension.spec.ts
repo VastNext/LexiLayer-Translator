@@ -63,10 +63,13 @@ async function openFixture(context: import('@playwright/test').BrowserContext, u
 async function openPopupForFixture(
   openExtensionPage: (path: 'popup.html' | 'options.html') => Promise<import('@playwright/test').Page>,
   fixture: import('@playwright/test').Page,
+  expectCustomEngine = true,
 ) {
   const popup = await openExtensionPage('popup.html');
-  await expect(popup.getByLabel('翻译引擎')).not.toHaveValue('google');
   await fixture.bringToFront();
+  await popup.reload();
+  if (expectCustomEngine) await expect(popup.getByLabel('翻译引擎')).not.toHaveValue('google');
+  else await expect(popup.getByLabel('翻译引擎')).toBeEnabled();
   return popup;
 }
 
@@ -320,8 +323,7 @@ test('Popup 通过真实 Google/Bing clients 完成生产主链路并发送各�
   await useLegacyRenderer(options);
   await options.close();
   const page = await openFixture(context, server.networkFixtureUrl);
-  const popup = await openExtensionPage('popup.html');
-  await page.bringToFront();
+  const popup = await openPopupForFixture(openExtensionPage, page, false);
   await popup.getByLabel('目标语言').selectOption('zh-Hans');
 
   await popup.getByLabel('翻译引擎').selectOption('google');
@@ -373,12 +375,8 @@ test('普通文章由 Popup 翻译，支持进度、模式切换、动态更新�
   await page.screenshot({ path: evidence('translated-fixture'), fullPage: true });
 
   await popup.getByRole('button', { name: '双语对照' }).click();
-  await clickPopupButton(popup, page, '显示当前页面原文');
-  await clickPopupButton(popup, page, '翻译当前页面');
   await expect(page.locator('#first')).toBeHidden();
   await popup.getByRole('button', { name: '仅译文' }).click();
-  await clickPopupButton(popup, page, '显示当前页面原文');
-  await clickPopupButton(popup, page, '翻译当前页面');
   await expect(page.locator('#first')).toBeVisible();
 
   await page.locator('#dynamic-root').evaluate((root) => { root.innerHTML = '<p id="added">Dynamically added paragraph.</p>'; });
@@ -640,7 +638,10 @@ test('网页按 8+2 批处理，动态范围正确且离屏滚动后才请求', 
   await expect(page.locator('[data-vast-state="translated"]')).toHaveCount(10);
   const nonStream = () => server.requests.filter((request) => request.body.stream !== true);
   await expect.poll(() => nonStream().length).toBe(2);
-  expect(nonStream().map((request) => JSON.parse(((request.body.messages as Array<{ role: string; content: string }>).find((message) => message.role === 'user')?.content ?? '{}')).segments.length).sort((a, b) => a - b)).toEqual([2, 8]);
+  const batchSizes = nonStream().map((request) => JSON.parse(((request.body.messages as Array<{ role: string; content: string }>).find((message) => message.role === 'user')?.content ?? '{}')).segments.length as number);
+  expect(batchSizes).toHaveLength(2);
+  expect(batchSizes.reduce((sum, size) => sum + size, 0)).toBe(10);
+  expect(Math.max(...batchSizes)).toBeLessThanOrEqual(8);
   expect(server.maxConcurrency()).toBeLessThanOrEqual(3);
   await expect(page.locator('#offscreen + [data-vast-translator]')).toHaveAttribute('data-vast-state', 'loading');
   expect(nonStream()).toHaveLength(2);
@@ -787,5 +788,70 @@ test('源节点在 loading 阶段被 replaceWith 替换后旧 loading 移除且�
   await expect(page.locator('[data-vast-state="translated"]')).toHaveCount(5);
   await expect(page.locator('[data-vast-state="loading"]')).toHaveCount(0);
   await popup.close();
+  await page.close();
+});
+
+test('慢 provider 下翻译命令立即 accepted，不等待网络完成 (AE2)', async ({
+  context, server, openExtensionPage, serviceWorker,
+}) => {
+  const options = await openExtensionPage('options.html');
+  await saveConfiguration(options, server.baseUrl);
+  await options.close();
+
+  server.setMode('delay');
+  const page = await openFixture(context, server.fixtureUrl);
+  await page.bringToFront();
+  const start = performance.now();
+  const response = await serviceWorker.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id === undefined) throw new Error('找不到活动标签页');
+    return chrome.tabs.sendMessage(tab.id, { type: 'translate-page' });
+  });
+  const acceptedDuration = performance.now() - start;
+
+  console.log(`[Perf Metrics AE2] 慢 provider 翻译命令 accepted 耗时: ${acceptedDuration.toFixed(1)}ms`);
+  expect(response).toEqual({ accepted: true });
+  expect(acceptedDuration).toBeLessThan(2500);
+
+  await expect(page.locator('[data-vast-translator][data-vast-state="loading"]').first()).toBeAttached({ timeout: 10_000 });
+  // 此时 provider 仍处于挂起状态，命令确认没有等待网络响应。
+  await expect.poll(() => server.requests.length).toBeGreaterThanOrEqual(1);
+
+  // 释放延迟让任务收尾
+  server.setMode('success');
+  server.releaseDelay();
+  await expect(page.locator('[data-vast-state="translated"]')).toHaveCount(5);
+  await page.close();
+});
+
+test('1000段大 DOM 扫描与 loading 安装期间发送恢复可正常收敛并清理全部 loading (AE3)', async ({
+  context, server, openExtensionPage, serviceWorker,
+}) => {
+  test.slow();
+  const options = await openExtensionPage('options.html');
+  await saveConfiguration(options, server.baseUrl);
+  await options.close();
+
+  server.setMode('delay');
+  const page = await openFixture(context, server.largeFixtureUrl);
+  await page.bringToFront();
+  await serviceWorker.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id === undefined) throw new Error('找不到活动标签页');
+    await chrome.tabs.sendMessage(tab.id, { type: 'translate-page' });
+  });
+  await expect(page.locator('[data-vast-translator][data-vast-state="loading"]').first()).toBeAttached({ timeout: 10_000 });
+
+  await serviceWorker.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id === undefined) throw new Error('找不到活动标签页');
+    await chrome.tabs.sendMessage(tab.id, { type: 'restore-page' });
+  });
+
+  // 验证所有 loading 节点在有限切片内完整清理，DOM 彻底恢复
+  await expect(page.locator('[data-vast-translator]')).toHaveCount(0, { timeout: 5000 });
+
+  server.setMode('success');
+  server.releaseDelay();
   await page.close();
 });

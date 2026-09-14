@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
-import { scanParagraphElements, scanParagraphElementsAsync, unwrapAllTextLeaves, type ScanMetrics } from '../../src/content/dom-scanner';
+import { scanParagraphElements, unwrapAllTextLeaves, type ScanMetrics } from '../../src/content/dom-scanner';
 import type { SiteRule } from '../../src/rules/types';
 import { rule as githubRule } from '../../src/rules/sites/github';
 import { rule as googleSearchRule } from '../../src/rules/sites/google-search';
@@ -493,40 +493,6 @@ describe('scanParagraphElements', () => {
     expect(scanParagraphElements(document, rule, 'main-content', metrics)).toHaveLength(1000);
     expect(metrics.normalizedTexts).toBe(1000);
     expect(metrics.ancestorChecks).toBeLessThan(5000);
-  });
-
-  it('异步扫描大页面会多次让出宏任务且结果与同步扫描一致', { timeout: 15_000 }, async () => {
-    document.body.innerHTML = `<main>${Array.from({ length: 1000 }, (_, index) => `<p id="p${index}">text ${index}</p>`).join('')}</main>`;
-    const expected = scanParagraphElements(document, rule, 'main-content').map((element) => element.id);
-    let clock = 0;
-    const yieldControl = vi.fn(async () => undefined);
-
-    const actual = await scanParagraphElementsAsync(document, rule, 'main-content', {
-      shouldContinue: () => true,
-      now: () => clock += 2,
-      budgetMs: 6,
-      yieldControl,
-    });
-
-    expect(actual.map((element) => element.id)).toEqual(expected);
-    expect(yieldControl.mock.calls.length).toBeGreaterThan(10);
-  });
-
-  it('异步扫描在任务失效后停止并返回空结果', async () => {
-    document.body.innerHTML = `<main>${Array.from({ length: 100 }, (_, index) => `<p>text ${index}</p>`).join('')}</main>`;
-    let active = true;
-    const yieldControl = vi.fn(async () => { active = false; });
-    let clock = 0;
-
-    const actual = await scanParagraphElementsAsync(document, rule, 'main-content', {
-      shouldContinue: () => active,
-      now: () => clock += 4,
-      budgetMs: 6,
-      yieldControl,
-    });
-
-    expect(actual).toEqual([]);
-    expect(yieldControl).toHaveBeenCalledOnce();
   });
 
   it('includeSelectors 命中的直接文本 div/span 是强制候选', () => {

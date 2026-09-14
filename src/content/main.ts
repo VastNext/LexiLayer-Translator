@@ -1,7 +1,7 @@
 import type { TranslationResult } from '../shared/messages';
 import { DomRenderer } from './dom-renderer';
 import type { InlineRenderer } from './inline-renderer';
-import { scanParagraphElements, scanParagraphElementsAsync, unwrapAllTextLeaves } from './dom-scanner';
+import { scanParagraphElements, unwrapAllTextLeaves } from './dom-scanner';
 import { DynamicPageObserver } from './dynamic-observer';
 import type { ParagraphRecord } from './paragraph-store';
 import { matchSiteRule } from './rule-matcher';
@@ -43,7 +43,7 @@ export function createRuntimeDependencies(): ContentControllerDependencies {
         if (type === 'translate-page') {
           void listener(message).catch(() => undefined);
           sendResponse({ accepted: true });
-          return false;
+          return true;
         }
         void listener(message).then(sendResponse, (error) => sendResponse({ error: error instanceof Error ? error.message : '页面命令执行失败' }));
         return true;
@@ -51,11 +51,6 @@ export function createRuntimeDependencies(): ContentControllerDependencies {
     },
     loadRule: () => matchSiteRule(new URL(location.href)),
     scan: (rule, scope) => scanParagraphElements(document, rule, scope),
-    scanAsync: (rule, scope, shouldContinue, ownerId) => scanParagraphElementsAsync(document, rule, scope, {
-      shouldContinue,
-      yieldControl: () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
-      ownerId,
-    }),
     yieldControl: () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
     now: () => performance.now(),
     async translate(request) {
@@ -137,7 +132,7 @@ export function createRuntimeDependencies(): ContentControllerDependencies {
       for (const inline of document.querySelectorAll<HTMLElement>('[data-vast-inline]')) delete inline.dataset.vastInline;
       unwrapAllTextLeaves(document);
     },
-    startObserver(rule, store, scope, onChanges) {
+    startObserver(rule, store, scope, onChanges, onFatal) {
       observer?.stop();
       observer = new DynamicPageObserver(document.body, {
         debounceMs: 150,
@@ -151,6 +146,7 @@ export function createRuntimeDependencies(): ContentControllerDependencies {
           }
           Promise.resolve(onChanges(changes)).catch(() => {
             console.error('语层翻译: 动态页面变更处理失败');
+            onFatal?.(new Error('动态页面变更处理失败'));
           });
         },
       });

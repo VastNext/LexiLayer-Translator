@@ -18,6 +18,7 @@ export interface MockServer {
   inlineFixtureUrl: string;
   accordionFixtureUrl: string;
   adminFixtureUrl: string;
+  largeFixtureUrl: string;
   requests: RecordedRequest[];
   hits: string[];
   maxConcurrency: () => number;
@@ -129,6 +130,14 @@ function adminFixtureHtml(): string {
   </main></body></html>`;
 }
 
+function largeFixtureHtml(count = 1000): string {
+  const paragraphs = Array.from({ length: count }, (_, index) => `<p id="large-${index}">Paragraph ${index} for large DOM testing.</p>`).join('\n');
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Large DOM Fixture</title></head><body><main><article>
+    <h1>Large DOM Article (${count} paragraphs)</h1>
+    ${paragraphs}
+  </article></main></body></html>`;
+}
+
 function segmentsFrom(body: Record<string, unknown>): Array<{ id: string; text: string }> {
   const messages = body.messages as Array<{ role?: string; content?: string }> | undefined;
   const user = messages?.find((message) => message.role === 'user')?.content ?? '';
@@ -215,6 +224,9 @@ export async function startMockServer(): Promise<MockServer> {
     if (request.method === 'GET' && url.pathname === '/fixture-admin') {
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); response.end(adminFixtureHtml()); return;
     }
+    if (request.method === 'GET' && url.pathname === '/fixture-large') {
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); response.end(largeFixtureHtml()); return;
+    }
     if (request.method === 'GET' && url.pathname === '/favicon.ico') {
       response.writeHead(204).end();
       return;
@@ -280,6 +292,7 @@ export async function startMockServer(): Promise<MockServer> {
     inlineFixtureUrl: `${origin}/fixture-inline`,
     accordionFixtureUrl: `${origin}/fixture-accordion`,
     adminFixtureUrl: `${origin}/fixture-admin`,
+    largeFixtureUrl: `${origin}/fixture-large`,
     requests,
     hits,
     maxConcurrency: () => maxConcurrency,
