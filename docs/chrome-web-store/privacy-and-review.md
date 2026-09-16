@@ -1,10 +1,10 @@
 # 隐私披露与审核测试说明
 
-## 输入框翻译审核补充（0.13.0）
+## 输入框翻译审核补充（0.13.1）
 
-在普通 input（text/search/url/tel）、textarea 和 contenteditable 内选中部分文字，按 Alt+Shift+X。默认目标语言为英语，可在 Options 的阅读偏好中独立修改；使用当前引擎，仅替换选区。密码、只读、禁用控件不处理。等待期间修改内容、移动选区或切换焦点后，不应回填迟到结果；请求失败应保留原文。
+在普通 input（text/search/url/tel）、textarea 和 contenteditable 内选中部分文字，按 Alt+Shift+X。默认目标语言为英语，可在 Options 的阅读偏好中独立修改；使用当前引擎，仅替换选区。触发后在控件附近显示隔离的翻译状态提示，上方空间不足时放到下方；提示不写入表单内容。密码、只读、禁用控件不处理。等待期间修改内容、移动选区或切换焦点后，不应回填迟到结果；请求失败应保留原文。
 
-Website content 披露也包含用户主动要求翻译的输入框选中文字。输入框其余内容快照只在 frame 内存中用于防止陈旧回填，不传给翻译服务、不持久化，不附带邻近上下文。自定义 AI 沿用当前专家与翻译要求。新脚本 `input-translation.js` 在获授权的普通网页 frame 内独立运行，无需先翻译整页；不支持受限页面、跨 frame 选区、about:blank/srcdoc/data/blob frame 或复杂编辑器内部状态适配。安装或更新后刷新既有网页。
+Website content 披露也包含用户主动要求翻译的输入框选中文字。输入框其余内容快照只在 frame 内存中用于防止陈旧回填，不传给翻译服务、不持久化，不附带邻近上下文。自定义 AI 沿用当前专家与翻译要求。新脚本 `input-translation.js` 在获授权的普通网页 frame 内独立运行，无需先翻译整页；状态提示使用 closed Shadow DOM 隔离样式，同一 frame 只保留一个实例，完成、失败或取消后短暂显示再移除。重复快捷键不重复请求，迟到旧任务不能覆盖新任务状态。不支持受限页面、跨 frame 选区、about:blank/srcdoc/data/blob frame 或复杂编辑器内部状态适配。安装或更新后刷新既有网页。
 
 ## Privacy Practices 填写原则
 

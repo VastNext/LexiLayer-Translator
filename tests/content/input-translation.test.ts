@@ -2,7 +2,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { registerInputTranslation } from '../../src/content/input-translation';
 
 const cleanups: Array<() => void> = [];
-afterEach(() => { cleanups.splice(0).forEach((cleanup) => cleanup()); document.body.innerHTML = ''; });
+afterEach(() => { cleanups.splice(0).forEach((cleanup) => cleanup()); document.body.innerHTML = ''; vi.useRealTimers(); vi.restoreAllMocks(); });
+
+function getStatus() {
+  return document.querySelector<HTMLElement>('[data-lexilayer-input-translation-status]');
+}
 
 function setup(html = '<textarea>前你好后</textarea>') {
   document.body.innerHTML = html;
@@ -19,6 +23,201 @@ function setup(html = '<textarea>前你好后</textarea>') {
 }
 
 describe('输入框选区翻译', () => {
+  it('触发后显示隔离的翻译中状态且不提前修改内容', async () => {
+    const fixture = setup();
+    fixture.element.getBoundingClientRect = () => ({ top: 80, right: 300, bottom: 120, left: 100, width: 200, height: 40, x: 100, y: 80, toJSON() {} });
+    const pending = fixture.press();
+    await vi.waitFor(() => expect(fixture.translate).toHaveBeenCalledTimes(1));
+    const status = getStatus();
+    expect(status).not.toBeNull();
+    expect(status?.shadowRoot).toBeNull();
+    expect(status?.getAttribute('role')).toBe('status');
+    expect(status?.getAttribute('aria-label')).toBe('翻译中…');
+    expect(status?.dataset.state).toBe('loading');
+    expect(status?.style.top).toBe('44px');
+    expect(fixture.element.value).toBe('前你好后');
+    fixture.resolve('hello'); await pending;
+  });
+
+  it('控件上方空间不足时将状态放在下方', async () => {
+    const fixture = setup();
+    fixture.element.getBoundingClientRect = () => ({ top: 8, right: 300, bottom: 48, left: 100, width: 200, height: 40, x: 100, y: 8, toJSON() {} });
+    const pending = fixture.press();
+    await vi.waitFor(() => expect(getStatus()?.style.top).toBe('56px'));
+    fixture.resolve('hello'); await pending;
+  });
+
+  it('测量浮层后在窄视口内钳制位置并优先选择空间足够的上方', async () => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if ((this as HTMLElement).dataset.lexilayerInputTranslationStatus !== undefined) {
+        return { top: 0, right: 120, bottom: 28, left: 0, width: 120, height: 28, x: 0, y: 0, toJSON() {} };
+      }
+      return { top: 70, right: 155, bottom: 100, left: 130, width: 25, height: 30, x: 130, y: 70, toJSON() {} };
+    });
+    vi.stubGlobal('innerWidth', 160); vi.stubGlobal('innerHeight', 120);
+    const fixture = setup();
+    const pending = fixture.press();
+    await vi.waitFor(() => expect(getStatus()?.style.left).toBe('32px'));
+    expect(getStatus()?.style.top).toBe('34px');
+    fixture.resolve('hello'); await pending;
+    vi.unstubAllGlobals();
+  });
+
+  it('减少动态效果时停止 spinner 动画', async () => {
+    const attachShadow = HTMLElement.prototype.attachShadow;
+    vi.spyOn(HTMLElement.prototype, 'attachShadow').mockImplementation(function (this: HTMLElement) {
+      return attachShadow.call(this, { mode: 'open' });
+    });
+    const fixture = setup(); const pending = fixture.press();
+    await vi.waitFor(() => expect(getStatus()).not.toBeNull());
+    expect(getStatus()?.shadowRoot?.querySelector('style')?.textContent).toMatch(/prefers-reduced-motion[\s\S]*animation:\s*none/);
+    fixture.resolve('hello'); await pending;
+  });
+
+  it.each([
+    ['成功', 'hello', '翻译完成', 'success'],
+    ['空响应', '', '翻译失败，原文已保留', 'error'],
+  ])('%s 后显示短暂终态并移除', async (_name, translated, label, state) => {
+    vi.useFakeTimers();
+    const fixture = setup();
+    const pending = fixture.press();
+    await vi.advanceTimersByTimeAsync(0);
+    fixture.resolve(translated); await pending;
+    expect(getStatus()?.getAttribute('aria-label')).toBe(label);
+    expect(getStatus()?.dataset.state).toBe(state);
+    await vi.advanceTimersByTimeAsync(1600);
+    expect(getStatus()).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('异常失败显示保留原文状态', async () => {
+    const fixture = setup();
+    fixture.translate.mockRejectedValueOnce(new Error('失败'));
+    await fixture.press();
+    expect(fixture.element.value).toBe('前你好后');
+    expect(getStatus()?.getAttribute('aria-label')).toBe('翻译失败，原文已保留');
+    expect(getStatus()?.dataset.state).toBe('error');
+  });
+
+  it.each(['内容', '选区', '焦点'])('%s变化时显示取消原因', async (reason) => {
+    const fixture = setup(); const pending = fixture.press();
+    await vi.waitFor(() => expect(fixture.translate).toHaveBeenCalled());
+    if (reason === '内容') fixture.element.dispatchEvent(new Event('input'));
+    if (reason === '选区') { fixture.element.setSelectionRange(0, 1); document.dispatchEvent(new Event('selectionchange')); }
+    if (reason === '焦点') fixture.element.blur();
+    expect(getStatus()?.getAttribute('aria-label')).toBe('翻译已取消');
+    expect(getStatus()?.dataset.state).toBe('cancelled');
+    fixture.resolve('旧译文'); await pending;
+  });
+
+  it('旧任务结束不得覆盖新任务的翻译中状态', async () => {
+    const fixture = setup();
+    let finishOld!: (text: string) => void;
+    let finishNew!: (text: string) => void;
+    fixture.translate
+      .mockImplementationOnce(() => new Promise((resolve) => { finishOld = resolve; }))
+      .mockImplementationOnce(() => new Promise((resolve) => { finishNew = resolve; }));
+    const old = fixture.press(); await vi.waitFor(() => expect(fixture.translate).toHaveBeenCalledTimes(1));
+    fixture.element.dispatchEvent(new Event('input'));
+    const next = fixture.press(); await vi.waitFor(() => expect(fixture.translate).toHaveBeenCalledTimes(2));
+    finishOld('旧译文'); await old;
+    expect(getStatus()?.getAttribute('aria-label')).toBe('翻译中…');
+    expect(getStatus()?.dataset.state).toBe('loading');
+    finishNew('新译文'); await next;
+  });
+
+  it.each([
+    ['移除控件', (element: HTMLTextAreaElement) => element.remove()],
+    ['程序化修改值', (element: HTMLTextAreaElement) => { element.value = '程序改写'; }],
+    ['程序化修改选区', (element: HTMLTextAreaElement) => element.setSelectionRange(0, 1)],
+    ['切换只读', (element: HTMLTextAreaElement) => { element.readOnly = true; }],
+    ['切换禁用', (element: HTMLTextAreaElement) => { element.disabled = true; }],
+  ])('%s即使没有事件也进入取消终态并移除', async (_name, change) => {
+    vi.useFakeTimers();
+    const fixture = setup(); const pending = fixture.press();
+    await vi.advanceTimersByTimeAsync(0);
+    change(fixture.element);
+    fixture.resolve('hello'); await pending;
+    expect(getStatus()?.getAttribute('aria-label')).toBe('翻译已取消');
+    await vi.advanceTimersByTimeAsync(1600);
+    expect(getStatus()).toBeNull();
+  });
+
+  it('待处理 mutation record 永久取消任务并定时移除', async () => {
+    vi.useFakeTimers();
+    const fixture = setup('<div contenteditable="true">你好</div>');
+    const range = document.createRange(); range.selectNodeContents(fixture.element);
+    document.getSelection()!.removeAllRanges(); document.getSelection()!.addRange(range);
+    const pending = fixture.press(); await vi.advanceTimersByTimeAsync(0);
+    fixture.element.firstChild!.textContent = '改动';
+    fixture.resolve('hello'); await pending;
+    expect(getStatus()?.getAttribute('aria-label')).toBe('翻译已取消');
+    await vi.advanceTimersByTimeAsync(1600);
+    expect(getStatus()).toBeNull();
+  });
+
+  it('自身提交的 input 不产生取消状态，ARIA 状态仅从加载进入成功', async () => {
+    const fixture = setup(); const pending = fixture.press();
+    await vi.waitFor(() => expect(getStatus()?.getAttribute('aria-label')).toBe('翻译中…'));
+    const labels: string[] = [];
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        if (record.attributeName === 'aria-label') labels.push(record.oldValue ?? '');
+      }
+    });
+    observer.observe(getStatus()!, { attributes: true, attributeFilter: ['aria-label'], attributeOldValue: true });
+    fixture.resolve('hello'); await pending; await Promise.resolve(); observer.disconnect();
+    expect(labels).toEqual(['翻译中…']);
+    expect(getStatus()?.getAttribute('aria-label')).toBe('翻译完成');
+  });
+
+  it.each(['回滚', '改写'])('站点 input handler 同步%s提交结果时不报告成功', async (behavior) => {
+    const fixture = setup();
+    fixture.element.addEventListener('input', () => {
+      fixture.element.value = behavior === '回滚' ? '前你好后' : '站点改写';
+      fixture.element.setSelectionRange(1, 3);
+    });
+    const pending = fixture.press(); await vi.waitFor(() => expect(fixture.translate).toHaveBeenCalled());
+    fixture.resolve('hello'); await pending;
+    expect(getStatus()?.getAttribute('aria-label')).toBe('翻译已取消');
+    expect(getStatus()?.dataset.state).toBe('cancelled');
+  });
+
+  it('状态宿主被页面删除后重复快捷键恢复单实例提示且不重复请求', async () => {
+    const fixture = setup(); const pending = fixture.press();
+    await vi.waitFor(() => expect(fixture.translate).toHaveBeenCalledTimes(1));
+    getStatus()!.remove();
+    await fixture.press();
+    expect(fixture.translate).toHaveBeenCalledTimes(1);
+    expect(getStatus()?.getAttribute('aria-label')).toBe('翻译中…');
+    expect(document.querySelectorAll('[data-lexilayer-input-translation-status]')).toHaveLength(1);
+    fixture.resolve('hello'); await pending;
+  });
+
+  it('重复快捷键不重复请求且维持同一个提示', async () => {
+    const fixture = setup();
+    const first = fixture.press(); await vi.waitFor(() => expect(fixture.translate).toHaveBeenCalledTimes(1));
+    const status = getStatus();
+    await fixture.press();
+    expect(fixture.translate).toHaveBeenCalledTimes(1);
+    expect(getStatus()).toBe(status);
+    expect(getStatus()?.getAttribute('aria-label')).toBe('翻译中…');
+    fixture.resolve('hello'); await first;
+  });
+
+  it('dispose 清理状态宿主和终态计时器', async () => {
+    vi.useFakeTimers();
+    const fixture = setup();
+    const pending = fixture.press(); await vi.advanceTimersByTimeAsync(0);
+    fixture.resolve('hello'); await pending;
+    expect(getStatus()).not.toBeNull();
+    cleanups.splice(0).forEach((cleanup) => cleanup());
+    expect(getStatus()).toBeNull();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(getStatus()).toBeNull();
+    vi.useRealTimers();
+  });
+
   it.each(['textarea', 'contenteditable'])('%s 选区移开又选回永久作废旧结果', async (kind) => {
     const fixture = setup(kind === 'textarea' ? undefined : '<div contenteditable="true">前你好后</div>');
     const select = (start: number, end: number) => {
