@@ -425,7 +425,6 @@ describe('service worker 消息编排', () => {
       pageProgress: expect.objectContaining({ '5:0': { status: 'idle', completed: 0, failed: 0, total: 0 } }),
     });
   });
-
   it('命令与右键菜单只发送批准的页面动作', async () => {
     chromeApi.commands[0]('translate_page');
     chromeApi.menus[0]({ menuItemId: 'vast-restore-page' } as chrome.contextMenus.OnClickData, { id: 9 } as chrome.tabs.Tab);

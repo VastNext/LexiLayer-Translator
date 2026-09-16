@@ -35,8 +35,9 @@ async function openPopupForFixture(
   fixture: import('@playwright/test').Page,
 ) {
   const popup = await openExtensionPage('popup.html');
-  await expect(popup.getByLabel('翻译引擎')).not.toHaveValue('google');
   await fixture.bringToFront();
+  await popup.reload();
+  await expect(popup.getByLabel('翻译引擎')).not.toHaveValue('google');
   return popup;
 }
 

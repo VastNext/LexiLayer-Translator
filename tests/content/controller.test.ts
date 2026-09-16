@@ -107,6 +107,32 @@ describe('网页翻译控制器', () => {
     expect(dependencies.translate).toHaveBeenCalledTimes(1);
   });
 
+  it('动态 observer 后续失败时统一清理并上报 error', async () => {
+    await dependencies.listeners[0]({ type: 'translate-page' });
+    const onFatal = vi.mocked(dependencies.startObserver).mock.calls[0][4];
+
+    onFatal?.(new Error('动态失败'));
+
+    await vi.waitFor(() => expect(dependencies.report).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'error', total: 0 })));
+    expect(dependencies.stopObserver).toHaveBeenCalled();
+    expect(dependencies.cleanupPage).toHaveBeenCalled();
+  });
+
+  it('动态 fatal 后在途批次迟到失败不会把 error 覆盖为 complete', async () => {
+    let rejectTranslation!: (error: Error) => void;
+    vi.mocked(dependencies.translate).mockReturnValue(new Promise((_resolve, reject) => { rejectTranslation = reject; }));
+    const pending = dependencies.listeners[0]({ type: 'translate-page' });
+    await vi.waitFor(() => expect(dependencies.translate).toHaveBeenCalled());
+    const onFatal = vi.mocked(dependencies.startObserver).mock.calls[0][4];
+
+    onFatal?.(new Error('动态失败'));
+    await vi.waitFor(() => expect(dependencies.report).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'error' })));
+    rejectTranslation(new Error('迟到失败'));
+    await pending;
+
+    expect(dependencies.report).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'error' }));
+  });
+
   it('字符边界按 6000 字符切批且不拆段', async () => {
     document.body.innerHTML = `<main><p>${'a'.repeat(4000)}</p><p>${'b'.repeat(2000)}</p><p>c</p></main>`;
     vi.mocked(dependencies.scan).mockReturnValue([...document.querySelectorAll('p')] as HTMLElement[]);
@@ -156,6 +182,39 @@ describe('网页翻译控制器', () => {
     expect(dependencies.loadRule).not.toHaveBeenCalled();
     expect(dependencies.scan).not.toHaveBeenCalled();
     expect(dependencies.startObserver).not.toHaveBeenCalled();
+  });
+
+  it('loading 安装超过时间预算时会让出并继续完成', async () => {
+    document.body.innerHTML = `<main>${Array.from({ length: 20 }, (_, index) => `<p>p${index}</p>`).join('')}</main>`;
+    vi.mocked(dependencies.scan).mockReturnValue([...document.querySelectorAll('p')] as HTMLElement[]);
+    dependencies.yieldControl = vi.fn(async () => undefined);
+    let clock = 0;
+    dependencies.now = () => clock += 4;
+    await dependencies.listeners[0]({ type: 'translate-page' });
+
+    expect(dependencies.renderLoading).toHaveBeenCalledTimes(20);
+    expect(dependencies.yieldControl).toHaveBeenCalled();
+  });
+
+  it('分片恢复被新翻译抢占后不会清空新会话状态', async () => {
+    document.body.innerHTML = '<main><p>old</p></main>';
+    await dependencies.listeners[0]({ type: 'translate-page' });
+    let releaseRestore!: () => void;
+    dependencies.yieldControl = vi.fn(() => new Promise<void>((resolve) => { releaseRestore = resolve; }));
+    let clock = 0;
+    dependencies.now = () => clock += 10;
+    const restoring = dependencies.listeners[0]({ type: 'restore-page' });
+    await vi.waitFor(() => expect(dependencies.yieldControl).toHaveBeenCalled());
+
+    dependencies.yieldControl = vi.fn(async () => undefined);
+    document.body.innerHTML = '<main><p>new</p></main>';
+    vi.mocked(dependencies.scan).mockReturnValue([document.querySelector('p') as HTMLElement]);
+    const translating = dependencies.listeners[0]({ type: 'translate-page' });
+    releaseRestore();
+    await Promise.all([restoring, translating]);
+
+    expect(dependencies.startObserver).toHaveBeenCalledTimes(2);
+    expect(dependencies.report).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'complete' }));
   });
 
   it('translate 首次启动闭环并传递范围、语言和模式', async () => {
@@ -898,6 +957,85 @@ describe('网页翻译控制器', () => {
 });
 
 describe('运行时可见性接线', () => {
+  it('真实消息适配层收到翻译命令后立即确认，不等待页面任务完成', async () => {
+    const originalChrome = globalThis.chrome;
+    let onMessage!: (message: unknown, sender: chrome.runtime.MessageSender, respond: (response: unknown) => void) => boolean;
+    Object.defineProperty(globalThis, 'chrome', { configurable: true, value: {
+      runtime: {
+        onMessage: { addListener: (listener: typeof onMessage) => { onMessage = listener; } },
+        sendMessage: vi.fn(),
+      },
+    } });
+    try {
+      const dependencies = createRuntimeDependencies();
+      let finishTask!: () => void;
+      const pendingTask = new Promise<void>((resolve) => { finishTask = resolve; });
+      dependencies.addMessageListener(async () => { await pendingTask; return { complete: true }; });
+      const respond = vi.fn();
+
+      expect(onMessage({ type: 'translate-page' }, {}, respond)).toBe(true);
+      expect(respond).toHaveBeenCalledWith({ accepted: true });
+      finishTask();
+      await pendingTask;
+    } finally {
+      Object.defineProperty(globalThis, 'chrome', { configurable: true, value: originalChrome });
+    }
+  });
+
+  it('无法预判 toggle 是翻译还是恢复，因此等待控制器返回', async () => {
+    const originalChrome = globalThis.chrome;
+    let onMessage!: (message: unknown, sender: chrome.runtime.MessageSender, respond: (response: unknown) => void) => boolean;
+    Object.defineProperty(globalThis, 'chrome', { configurable: true, value: {
+      runtime: {
+        onMessage: { addListener: (listener: typeof onMessage) => { onMessage = listener; } },
+        sendMessage: vi.fn(),
+      },
+    } });
+    try {
+      const dependencies = createRuntimeDependencies();
+      dependencies.addMessageListener(async () => ({ toggled: true }));
+      const respond = vi.fn();
+
+      expect(onMessage({ type: 'toggle-page-translation' }, {}, respond)).toBe(true);
+      await vi.waitFor(() => expect(respond).toHaveBeenCalledWith({ toggled: true }));
+    } finally {
+      Object.defineProperty(globalThis, 'chrome', { configurable: true, value: originalChrome });
+    }
+  });
+
+  it('真实消息适配层仍等待恢复命令完成后再响应', async () => {
+    const originalChrome = globalThis.chrome;
+    let onMessage!: (message: unknown, sender: chrome.runtime.MessageSender, respond: (response: unknown) => void) => boolean;
+    Object.defineProperty(globalThis, 'chrome', { configurable: true, value: {
+      runtime: {
+        onMessage: { addListener: (listener: typeof onMessage) => { onMessage = listener; } },
+        sendMessage: vi.fn(),
+      },
+    } });
+    try {
+      const dependencies = createRuntimeDependencies();
+      dependencies.addMessageListener(async () => ({ restored: true }));
+      const respond = vi.fn();
+
+      expect(onMessage({ type: 'restore-page' }, {}, respond)).toBe(true);
+      await vi.waitFor(() => expect(respond).toHaveBeenCalledWith({ restored: true }));
+    } finally {
+      Object.defineProperty(globalThis, 'chrome', { configurable: true, value: originalChrome });
+    }
+  });
+
+  it('页面公开配置响应失败时拒绝继续使用 fallback 配置', async () => {
+    const originalChrome = globalThis.chrome;
+    Object.defineProperty(globalThis, 'chrome', { configurable: true, value: {
+      runtime: { sendMessage: vi.fn(async () => ({ ok: false, error: '配置读取失败' })) },
+    } });
+    try {
+      await expect(createRuntimeDependencies().getConfig()).rejects.toThrow('配置读取失败');
+    } finally {
+      Object.defineProperty(globalThis, 'chrome', { configurable: true, value: originalChrome });
+    }
+  });
+
   it('扩展重载后进度上报失败不会产生未处理的 Promise rejection', () => {
     const originalChrome = globalThis.chrome;
     const catchRejection = vi.fn();
