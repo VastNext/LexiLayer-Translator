@@ -244,7 +244,7 @@ interface VocabularyEntry {
 ### U8. 文档、版本与发布门禁
 
 - **Goal**：数据流与文档同步、可发布。
-- **Files**：Modify `README.md`、`PRIVACY.md`（生效版本 + 新增：本地生词存储含出处 URL、朗读纯本机无网络、Anki 仅回环推送）、`docs/chrome-web-store/README.md`（数据披露补条目）、`docs/ROADMAP.md`（完成后移入已完成）、`package.json`/`package-lock.json`、`docs/release-notes/0.14.0.md`。
+- **Files**：Modify `README.md`、`PRIVACY.md`（生效版本 + 新增：本地生词存储含出处 URL、朗读纯本机无网络、Anki 推送仅限本机回环端点、若用户在 Anki 开启 AnkiWeb 同步则笔记会随 Anki 自身同步到其云端且扩展不参与）、`docs/chrome-web-store/README.md`（数据披露补条目：同步到本机 Anki 应用）、`docs/ROADMAP.md`（完成后移入已完成）、`package.json`/`package-lock.json`、`docs/release-notes/0.14.0.md`。
 - **Approach**：`npm version minor --no-git-tag-version` 到 0.14.0（两项均为新功能，合并发布一个 minor）；若与 U7 拆开发布，则 0.14.0=TTS、0.15.0=生词本。
 - **Gates**：`npm test`、`npm run typecheck`、`npm run build`、`npm run release:validate`、`npm run e2e`；提交前 `git status`/`git diff --check`。
 
@@ -263,6 +263,7 @@ interface VocabularyEntry {
 - **TTS 语音可用性**：headless/精简环境可能无语音包，E2E 只做冒烟（按钮存在、状态翻转、无异常），音频效果靠真机验收；`voiceschanged` 异步需单测覆盖。
 - **content-main 余量紧**：接线代码必须克制（预算测试兜底），超出即触发拆分复盘而不是放宽预算。
 - **AnkiConnect 依赖用户环境**：需桌面端 Anki 运行且装插件；文档写明连接测试入口与 CSV 兜底路径。
+- **AnkiWeb 间接流出**：AnkiConnect 是本机 Anki 桌面应用内的插件（127.0.0.1 回环 HTTP 服务），扩展只与本机端点通信，数据不出设备；但若用户在自己的 Anki 中开启 AnkiWeb 云同步，推送的笔记会随 Anki 自身同步到 AnkiWeb 远端。该路径由用户的 Anki 配置决定，扩展不参与，但 PRIVACY 与商店数据披露需如实说明（见 U8）。
 - **storage 写入超限**：条目极多时报错提示清理，v1 不自动清理（Deferred）。
 - **background 预算上调先例**：以本计划 D8 为依据，实施提交说明中注明理由，防止后续无声膨胀。
 
