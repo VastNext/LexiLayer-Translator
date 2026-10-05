@@ -1,6 +1,7 @@
 import { assertSafeBaseUrl } from './url';
 import { SUPPORTED_LANGUAGES } from './languages';
 import { canonicalExpertId, defaultExperts, MAX_EXPERTS, MAX_EXPERT_PROMPT_LENGTH, type Expert } from './experts';
+import { normalizeAnkiEndpoint, validateAnkiEndpoint, type AnkiNoteType } from './anki';
 
 export type DisplayMode = 'bilingual' | 'translation';
 export type RendererMode = 'legacy' | 'inline';
@@ -51,6 +52,14 @@ export interface CustomAiEngine extends EngineBase {
 
 export type Engine = GoogleEngine | BingEngine | CustomAiEngine;
 
+export interface VocabularySettings {
+  ankiEndpoint: string;
+  ankiDeck: string;
+  ankiNoteType: AnkiNoteType;
+  ankiApiKey: string;
+  exportFolder: string;
+}
+
 export interface Settings {
   schemaVersion: 2;
   mvpDefaultsVersion?: 1;
@@ -61,13 +70,15 @@ export interface Settings {
   activeEngineId: string;
   experts?: Expert[];
   activeExpertByEngine?: Record<string, string>;
+  vocabulary: VocabularySettings;
 }
 
 export type PublicEngineSummary = Pick<Engine, 'id' | 'kind' | 'name' | 'enabled' | 'order'>;
 export type SafeEngine = GoogleEngine | BingEngine | Omit<CustomAiEngine, 'apiKey'>;
-export type SafeSettings = Omit<Settings, 'engines'> & { engines: SafeEngine[] };
+export type SafeVocabularySettings = Omit<VocabularySettings, 'ankiApiKey'> & { hasAnkiApiKey: boolean };
+export type SafeSettings = Omit<Settings, 'engines' | 'vocabulary'> & { engines: SafeEngine[]; vocabulary: SafeVocabularySettings };
 export type OptionsEngine = GoogleEngine | BingEngine | (Omit<CustomAiEngine, 'apiKey'> & { hasApiKey: boolean });
-export type OptionsSettings = Omit<Settings, 'engines'> & { engines: OptionsEngine[] };
+export type OptionsSettings = Omit<Settings, 'engines' | 'vocabulary'> & { engines: OptionsEngine[]; vocabulary: SafeVocabularySettings };
 
 export const MAX_CUSTOM_ENGINES = 20;
 
@@ -97,6 +108,13 @@ export const DEFAULT_SETTINGS: Settings = {
   activeEngineId: 'google',
   experts: defaultExperts(),
   activeExpertByEngine: {},
+  vocabulary: {
+    ankiEndpoint: '',
+    ankiDeck: 'LexiLayer 生词本',
+    ankiNoteType: 'basic',
+    ankiApiKey: '',
+    exportFolder: 'LexiLayer',
+  },
 };
 
 const DANGEROUS_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
@@ -126,6 +144,53 @@ function validatePreferences(value: unknown): string[] {
   if (![1, 2, 3].includes(Number(value.inlineSelectionTriggerCount))) errors.push('选区内联翻译触发次数无效');
   if (value.rendererMode !== 'legacy' && value.rendererMode !== 'inline') errors.push('渲染器模式无效');
   return errors;
+}
+
+function validateVocabularySettings(value: unknown): string[] {
+  if (!isRecord(value)) return ['生词本配置必须是对象'];
+  const errors: string[] = [];
+  if (typeof value.ankiEndpoint !== 'string') errors.push('AnkiConnect 端点必须是字符串');
+  else if (value.ankiEndpoint.trim()) errors.push(...validateAnkiEndpoint(value.ankiEndpoint));
+  if (typeof value.ankiDeck !== 'string') errors.push('Anki deck 必须是字符串');
+  else {
+    const deck = value.ankiDeck.trim();
+    if (deck.length < 1 || deck.length > 120) errors.push('Anki deck 长度必须为 1 到 120 个字符');
+  }
+  if (value.ankiNoteType !== 'basic' && value.ankiNoteType !== 'cloze') errors.push('Anki 笔记类型无效');
+  if (typeof value.ankiApiKey !== 'string') errors.push('Anki API Key 必须是字符串');
+  else if (value.ankiApiKey.trim().length > 512) errors.push('Anki API Key 不得超过 512 个字符');
+  if (typeof value.exportFolder !== 'string' || !isValidExportFolder(normalizeExportFolder(value.exportFolder))) errors.push('导出目录必须是下载目录下的相对子路径');
+  return errors;
+}
+
+// 导出目录是浏览器下载目录下的相对子路径；chrome.downloads 拒绝绝对路径与 ..，
+// 这里同步收紧：允许空串（下载根目录），拒绝盘符、反斜杠、.. 段、控制字符与超长值。
+function normalizeExportFolder(value: string): string {
+  return value.trim().replace(/\/{2,}/gu, '/').replace(/^\/+|\/+$/gu, '');
+}
+
+function isValidExportFolder(value: string): boolean {
+  if (!value) return true;
+  if (value.length > 200) return false;
+  if (/\\/u.test(value) || /^[a-zA-Z]:/u.test(value)) return false;
+  if (/(^|\/)\.\.(?:\/|$)/u.test(value)) return false;
+  if (/[\u0000-\u001f]/u.test(value)) return false;
+  return true;
+}
+
+export function normalizeVocabularySettings(value: unknown): VocabularySettings {
+  if (!isRecord(value)) return structuredClone(DEFAULT_SETTINGS.vocabulary);
+  const endpoint = typeof value.ankiEndpoint === 'string' ? value.ankiEndpoint.trim() : '';
+  const candidate: VocabularySettings = {
+    ankiEndpoint: endpoint ? normalizeAnkiEndpoint(endpoint) : '',
+    ankiDeck: typeof value.ankiDeck === 'string' ? value.ankiDeck.trim() : '',
+    ankiNoteType: value.ankiNoteType as AnkiNoteType,
+    ankiApiKey: typeof value.ankiApiKey === 'string' ? value.ankiApiKey.trim() : '',
+    exportFolder: typeof value.exportFolder === 'string' ? normalizeExportFolder(value.exportFolder) : '',
+  };
+  const errors = validateVocabularySettings(candidate);
+  if (errors.length) throw new Error(errors[0]);
+  return candidate;
 }
 
 export function validateEngine(engine: unknown): string[] {
@@ -162,6 +227,7 @@ export function validateSettings(settings: unknown): string[] {
   if (settings.schemaVersion !== 2) errors.push('设置版本无效');
   if (!THEMES.includes(settings.theme as Theme)) errors.push('外观主题无效');
   errors.push(...validatePreferences(settings.readingPreferences));
+  errors.push(...validateVocabularySettings(settings.vocabulary));
   if (settings.experts !== undefined && (!Array.isArray(settings.experts) || settings.experts.length > MAX_EXPERTS)) errors.push('AI 专家列表无效');
   else if (Array.isArray(settings.experts)) {
     const expertIds = settings.experts.map((expert) => isRecord(expert) ? expert.id : undefined);
@@ -235,6 +301,13 @@ export function normalizeSettings(value: unknown): Settings {
   if (!isRecord(value) || value.schemaVersion !== 2) return cloneDefaults();
   const normalizedValue = structuredClone(value) as Record<string, unknown>;
   if (normalizedValue.theme === undefined) normalizedValue.theme = DEFAULT_SETTINGS.theme;
+  try {
+    normalizedValue.vocabulary = normalizedValue.vocabulary === undefined
+      ? structuredClone(DEFAULT_SETTINGS.vocabulary)
+      : normalizeVocabularySettings(normalizedValue.vocabulary);
+  } catch {
+    return cloneDefaults();
+  }
   migrateExpertDefaults(normalizedValue);
   if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.inputTargetLanguage === undefined) normalizedValue.readingPreferences.inputTargetLanguage = 'en';
   if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.sourceLanguage === undefined) normalizedValue.readingPreferences.sourceLanguage = 'auto';
@@ -264,13 +337,23 @@ function removeApiKeys(value: unknown): unknown {
   if (!isRecord(value)) return value;
   const result: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value)) {
-    if (key.toLowerCase() !== 'apikey') Object.defineProperty(result, key, { value: removeApiKeys(item), enumerable: true, writable: true, configurable: true });
+    if (!['apikey', 'ankiapikey'].includes(key.toLowerCase())) Object.defineProperty(result, key, { value: removeApiKeys(item), enumerable: true, writable: true, configurable: true });
   }
   return result;
 }
 
 export function exportSafeSettings(settings: Settings): SafeSettings {
-  return removeApiKeys(settings) as SafeSettings;
+  const engines = settings.engines.map((engine) => {
+    if (engine.kind !== 'custom-ai') return { ...engine };
+    const { apiKey: _apiKey, ...safe } = engine;
+    return safe;
+  });
+  const { ankiApiKey, ...vocabulary } = settings.vocabulary;
+  return {
+    ...(removeApiKeys(settings) as Omit<SafeSettings, 'engines' | 'vocabulary'>),
+    engines,
+    vocabulary: { ...vocabulary, hasAnkiApiKey: Boolean(ankiApiKey.trim()) },
+  };
 }
 
 export function stripApiKeys(value: unknown): unknown {
@@ -285,13 +368,34 @@ function endpointOrigin(baseUrl: string): string | undefined {
   try { return new URL(baseUrl).origin; } catch { return undefined; }
 }
 
+function sameNormalizedAnkiEndpoint(left: string, right: string): boolean {
+  if (!left.trim() || !right.trim()) return left.trim() === right.trim();
+  try {
+    return endpointOrigin(left) === endpointOrigin(right) && normalizeAnkiEndpoint(left) === normalizeAnkiEndpoint(right);
+  } catch {
+    return false;
+  }
+}
+
 export function importSettings(value: unknown, current: Settings = DEFAULT_SETTINGS, allowApiKeys = false): Settings {
-  if (!allowApiKeys && containsForbiddenKey(value, (key) => key.toLowerCase() === 'apikey')) throw new Error('导入配置不能包含 API Key');
+  if (!allowApiKeys && containsForbiddenKey(value, (key) => ['apikey', 'ankiapikey'].includes(key.toLowerCase()))) throw new Error('导入配置不能包含 API Key');
   if (containsForbiddenKey(value, (key) => DANGEROUS_KEYS.has(key))) throw new Error('配置包含危险字段');
   if (!isRecord(value) || value.schemaVersion !== 2 || !Array.isArray(value.engines)) throw new Error('导入设置格式无效');
 
   const input = structuredClone(value) as Record<string, unknown> & { engines: Array<Record<string, unknown>> };
   if (input.theme === undefined) input.theme = DEFAULT_SETTINGS.theme;
+  const vocabularyInput = isRecord(input.vocabulary) ? input.vocabulary : {};
+  const importedApiKey = allowApiKeys && typeof vocabularyInput.ankiApiKey === 'string' ? vocabularyInput.ankiApiKey.trim() : '';
+  const importedEndpoint = typeof vocabularyInput.ankiEndpoint === 'string' ? vocabularyInput.ankiEndpoint : DEFAULT_SETTINGS.vocabulary.ankiEndpoint;
+  // 与引擎密钥同一语义：导入密钥为空（或未携带）且端点一致时沿用本机密钥，避免备份恢复清空。
+  input.vocabulary = normalizeVocabularySettings({
+    ankiEndpoint: importedEndpoint,
+    ankiDeck: typeof vocabularyInput.ankiDeck === 'string' ? vocabularyInput.ankiDeck : DEFAULT_SETTINGS.vocabulary.ankiDeck,
+    ankiNoteType: vocabularyInput.ankiNoteType ?? DEFAULT_SETTINGS.vocabulary.ankiNoteType,
+    exportFolder: typeof vocabularyInput.exportFolder === 'string' ? vocabularyInput.exportFolder : DEFAULT_SETTINGS.vocabulary.exportFolder,
+    ankiApiKey: importedApiKey
+      || (sameNormalizedAnkiEndpoint(current.vocabulary.ankiEndpoint, importedEndpoint) ? current.vocabulary.ankiApiKey : ''),
+  });
   if (input.experts === undefined) input.experts = defaultExperts();
   if (input.activeExpertByEngine === undefined) input.activeExpertByEngine = {};
   migrateExpertDefaults(input);
@@ -371,5 +475,6 @@ export function migrateSettings(value: unknown): Settings {
   if (validateEngine(candidate).length === 0 && candidate.apiKey.trim()) migrated.engines.push(candidate);
   delete migrated.experts;
   delete migrated.activeExpertByEngine;
+  migrated.vocabulary = structuredClone(DEFAULT_SETTINGS.vocabulary);
   return migrated;
 }

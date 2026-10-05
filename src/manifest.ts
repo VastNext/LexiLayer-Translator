@@ -12,7 +12,7 @@ export const manifest = {
     48: 'icons/icon-48.png',
     128: 'icons/icon-128.png',
   },
-  permissions: ['storage', 'contextMenus', 'scripting'],
+  permissions: ['storage', 'contextMenus', 'scripting', 'downloads'],
   host_permissions: ['<all_urls>'],
   action: {
     default_popup: 'popup.html',
@@ -36,9 +36,9 @@ export const manifest = {
     },
     {
       matches: ['<all_urls>'],
-      // 单条目内 js 数组按声明顺序执行：控制器库 → 内联渲染器 → 装配层。
+      // 单条目内 js 数组按声明顺序执行：控制器库 → 内联渲染器 → 装配层 → 划词能力。
       // 拆成多个条目时 Chrome 不保证条目间顺序，合并才能锁定注入顺序。
-      js: ['content.js', 'content-inline.js', 'content-main.js'],
+      js: ['content.js', 'content-inline.js', 'content-main.js', 'selection-features.js'],
       // 两套样式都是声明式注入的常驻样式：content.css 承载 legacy 渲染器与划词节点，
       // content-inline.css 承载内联渲染器。按需注入（Popup）必须与这里保持一致。
       css: ['content.css', 'content-inline.css'],

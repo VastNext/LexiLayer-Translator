@@ -6,17 +6,19 @@ import { describe, expect, it } from 'vitest';
 
 // 各注入脚本独立预算：新脚本必须有自己的上限，避免在 content.js 之下静默膨胀。
 // content-main.js 承载原 content.js 的装配层（渲染器/观察器/调度），
-// content-inline.js 是内联渲染器与样式。分脚本预算只约束单个文件，不能掩盖总量。
+// content-inline.js 是内联渲染器与样式；selection-features.js 是新能力入口，
+// 单独约束为 6 KiB。分脚本预算只约束单个文件，不能掩盖总量。
 const budgets = {
   'content.js': 38 * 1024,
   'content-main.js': 38 * 1024,
   'content-inline.js': 8 * 1024,
-  'background.js': 32 * 1024,
+  'selection-features.js': 6 * 1024,
+  'background.js': 40 * 1024,
 } as const;
 
-// 真实累计：三个 content 脚本按 manifest 顺序常驻于每个网页的同一个隔离世界，
-// 浏览器实际下载并执行的 JS 总量是三者之和（content.css 与 content-inline.css
-// 为独立样式注入，不计入 JS 预算）。
+// 真实累计口径保持为原页面翻译三个脚本：它们按 manifest 顺序常驻于每个网页的
+// 同一个隔离世界，浏览器实际下载并执行的页面翻译 JS 总量是三者之和；新能力入口
+// selection-features.js 使用独立预算，不计入该既有 52 KiB 口径（CSS 亦不计入）。
 // 0.10.7 经用户确认将项目内部累计预算由 48KiB 调整为 52KiB，容纳挂载归属与
 // 任务生命周期修复；各入口上限不变。本预算不是 Chrome Web Store 的限制。
 const contentScripts = ['content.js', 'content-inline.js', 'content-main.js'] as const;

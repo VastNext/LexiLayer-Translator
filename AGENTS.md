@@ -87,7 +87,11 @@ npm run e2e
 构建预算：
 
 - `content.js < 38 KiB`
-- `background.js < 32 KiB`
+- `content-main.js < 38 KiB`
+- `content-inline.js < 8 KiB`
+- `selection-features.js < 6 KiB`
+- `background.js < 40 KiB`
+- 页面翻译三脚本（`content.js`、`content-inline.js`、`content-main.js`）累计 `< 52 KiB`；`selection-features.js` 作为新能力入口单独约束，不计入该既有累计口径。
 
 只有验证通过后才提交；提交前检查 `git status`、`git diff`、`git diff --check` 和近期提交，只暂存本次任务文件。验证通过后提交并推送当前分支。
 

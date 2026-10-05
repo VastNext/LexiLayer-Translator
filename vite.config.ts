@@ -92,6 +92,20 @@ function buildClassicContentScript(): Plugin {
           outDir: resolve(import.meta.dirname, 'dist'),
         },
       });
+      // 划词新能力使用独立 classic content script，后续 TTS 与生词逻辑在此扩展。
+      await build({
+        configFile: false,
+        build: {
+          emptyOutDir: false,
+          lib: {
+            entry: resolve(import.meta.dirname, 'src/content/selection-features.ts'),
+            formats: ['iife'],
+            name: 'LexiLayerSelectionFeatures',
+            fileName: () => 'selection-features.js',
+          },
+          outDir: resolve(import.meta.dirname, 'dist'),
+        },
+      });
     },
   };
 }
@@ -112,6 +126,7 @@ export default defineConfig({
         chunkFileNames: 'assets/[name]-[hash].js',
         assetFileNames: 'assets/[name]-[hash][extname]',
         manualChunks(id) {
+          if (/src[\\/](?:background[\\/](?:vocabulary-storage|anki-client)|shared[\\/](?:vocabulary|anki))\.ts$/.test(id)) return 'vocabulary-runtime';
           if (/src[\\/]background[\\/](?:custom-ai-adapter|openai-client|sse|retry)\.ts$/.test(id)) return 'custom-ai-runtime';
           if (/src[\\/]background[\\/]expert-commands\.ts$/.test(id)) return 'expert-commands';
         },

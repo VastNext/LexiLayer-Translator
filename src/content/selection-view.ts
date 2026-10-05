@@ -4,15 +4,17 @@ import { engineDisplayName } from '../shared/engine-display';
 
 const selectionMessages: Record<string, string> = {
   selectionTranslate: '翻译选中内容', selectionDialog: '划词翻译', translationEngine: '翻译引擎', targetLanguage: '目标语言',
-  limitedContextHelp: '发送选区所在段落的有限文本帮助消歧，不翻译上下文本身。', actionClose: '关闭', preparing: '准备翻译…', actionCopy: '复制', actionRetry: '重试',
-  copySuccess: '已复制',
+  limitedContextHelp: '发送选区所在段落的有限文本帮助消歧，不翻译上下文本身。', actionClose: '关闭', preparing: '准备翻译…', actionCopy: '复制', actionRetry: '重试', copySuccess: '已复制',
 };
 const selectionTranslator: Translator = (key) => selectionMessages[key] ?? key;
 const VIEWPORT_MARGIN = 8;
 
 export interface SelectionViewActions {
   translate(targetLanguage: string, includeContext: boolean, engineId: string): void;
+  speak(): boolean | void;
+  stopSpeak(): void;
   copy(): void | Promise<void>;
+  addVocabulary(result: string, targetLanguage: string): Promise<'created' | 'duplicate'>;
   close(): void;
 }
 
@@ -33,6 +35,7 @@ export class SelectionView implements SelectionViewHandle {
   readonly host: HTMLElement;
   private readonly shadow: ShadowRoot;
   private result = '';
+  private toastTimer?: number;
   private expectedLeft = 0;
   private expectedTop = 0;
   private expectedWidth = 32;
@@ -43,9 +46,7 @@ export class SelectionView implements SelectionViewHandle {
   private dragging = false;
   private manualPosition = false;
   private resizeObserver?: ResizeObserver;
-  private toastTimer?: number;
   private readonly anchor: DOMRect;
-
   constructor(document: Document, rect: DOMRect, private readonly actions: SelectionViewActions, private readonly t: Translator = selectionTranslator) {
     this.anchor = new DOMRect(rect.x, rect.y, rect.width, rect.height);
     this.host = document.createElement('div');
@@ -86,7 +87,7 @@ export class SelectionView implements SelectionViewHandle {
           <button class="icon close" data-action="close" aria-label="${this.t('actionClose')}">×</button>
         </div>
         <div class="result-wrap"><div class="result" data-result>${this.t('preparing')}</div></div>
-        <div class="result-actions"><button class="result-action" data-action="retry" aria-label="${this.t('actionRetry')}" title="${this.t('actionRetry')}">↻</button><button class="result-action" data-action="copy" aria-label="${this.t('actionCopy')}" title="${this.t('actionCopy')}">⧉</button></div>
+        <div class="result-actions"><button class="result-action" data-action="speak" aria-label="朗读原文" title="朗读原文" aria-pressed="false">🔊</button><button class="result-action" data-action="retry" aria-label="${this.t('actionRetry')}" title="${this.t('actionRetry')}">↻</button><button class="result-action" data-action="copy" aria-label="${this.t('actionCopy')}" title="${this.t('actionCopy')}">⧉</button><button class="result-action" data-action="add-vocabulary" aria-label="加入生词" title="加入生词" aria-pressed="false">+</button></div>
         <span class="copy-toast" role="status" hidden></span>
       </section>`;
     this.bind();
@@ -140,12 +141,12 @@ export class SelectionView implements SelectionViewHandle {
   getResult(): string { return this.result; }
 
   remove(): void {
+    this.actions.stopSpeak();
     const view = this.host.ownerDocument.defaultView;
     view?.removeEventListener('resize', this.onResize);
     view?.removeEventListener('pointermove', this.onPointerMove);
     view?.removeEventListener('pointerup', this.onPointerUp);
     this.resizeObserver?.disconnect();
-    if (this.toastTimer !== undefined) view?.clearTimeout(this.toastTimer);
     this.host.remove();
   }
 
@@ -157,8 +158,26 @@ export class SelectionView implements SelectionViewHandle {
       this.requestTranslation();
     });
     this.shadow.querySelector('[data-action="retry"]')?.addEventListener('click', (event) => { if (event.isTrusted) this.requestTranslation(); });
+    this.shadow.querySelector('[data-action="speak"]')?.addEventListener('click', (event) => {
+      const button = event.currentTarget as HTMLButtonElement;
+      if (button.ariaPressed === 'true') {
+        this.actions.stopSpeak();
+        this.setSpeaking(false);
+        return;
+      }
+      this.setSpeaking(this.actions.speak() === true);
+    });
     this.shadow.querySelector('[data-action="copy"]')?.addEventListener('click', () => {
-      Promise.resolve(this.actions.copy()).then(() => this.showToast(this.t('copySuccess'))).catch(() => undefined);
+      Promise.resolve(this.actions.copy()).then(() => this.showToast(this.t('copySuccess'), 'copied')).catch(() => undefined);
+    });
+    this.shadow.querySelector('[data-action="add-vocabulary"]')?.addEventListener('click', (event) => {
+      const button = event.currentTarget as HTMLButtonElement;
+      if (button.disabled || button.ariaPressed === 'true' || !this.result) return;
+      button.disabled = true;
+      this.actions.addVocabulary(this.result, (this.shadow.querySelector('[name="target-language"]') as HTMLSelectElement).value).then((status) => {
+        button.ariaPressed = 'true';
+        this.showToast(`已${status[0] === 'c' ? '加入' : '在'}生词本`, status);
+      }, () => this.showToast('加入失败', 'failed')).finally(() => { button.disabled = false; });
     });
     this.shadow.querySelector('[data-action="close"]')?.addEventListener('click', () => this.actions.close());
     this.shadow.querySelector('[name="include-context"]')?.addEventListener('click', (event) => {
@@ -177,14 +196,24 @@ export class SelectionView implements SelectionViewHandle {
     }
   }
 
-  private showToast(message: string): void {
+  private setSpeaking(speaking: boolean): void {
+    const button = this.shadow.querySelector('[data-action="speak"]');
+    if (!button) return;
+    const label = speaking ? '停止朗读' : '朗读原文';
+    button.setAttribute('aria-pressed', String(speaking));
+    button.setAttribute('aria-label', label);
+    button.setAttribute('title', label);
+  }
+
+  private showToast(message: string, kind = 'shown'): void {
     const toast = this.shadow.querySelector('.copy-toast') as HTMLElement | null;
     const view = this.host.ownerDocument.defaultView;
     if (!toast || !view) return;
     toast.textContent = message;
     toast.hidden = false;
-    this.host.dataset.vastToast = 'copied';
-    if (this.toastTimer !== undefined) view.clearTimeout(this.toastTimer);
+    // 宿主属性供 E2E 观察 toast 状态；正文在 shadow 内部。
+    this.host.dataset.vastToast = kind;
+    view.clearTimeout(this.toastTimer);
     this.toastTimer = view.setTimeout(() => { toast.hidden = true; delete this.host.dataset.vastToast; }, 1_500);
   }
 

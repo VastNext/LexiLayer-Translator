@@ -1,6 +1,6 @@
 # 语层翻译隐私说明
 
-生效版本：0.13.3
+生效版本：0.14.0
 
 ## 数据处理原则
 
@@ -17,6 +17,8 @@
 - 用户启用的 AI 专家配置、随扩展离线打包的 VastNext 专家快照和自定义专家系统提示词
 - 为消歧而附带的有限邻近文本（仅在该选项开启时）
 - 翻译结果及其缓存键
+- 用户主动加入生词本的单词、所在整句、当时的译文、出处页面 URL 与标题及时间戳（仅本地保存，除非用户主动同步）
+- 用户配置的 AnkiConnect 端点、deck、笔记类型与可选 AnkiConnect API Key
 
 ## 数据流向
 
@@ -25,6 +27,10 @@ Google 是默认引擎，请求发送到 `https://translate.googleapis.com/trans
 自定义 AI 请求直接从扩展的 service worker 发送到用户配置 Base URL 的 `/chat/completions` 端点。请求可能包含待翻译文本、有限上下文、语言、模型、选定专家的系统提示词和自定义翻译要求。API Key 仅用于所选实例请求的授权头。Options 中的连接测试只向选定的内置端点或候选自定义 AI 端点发送固定探测文本；它不是网页可调用的通用网络代理。
 
 内置专家来自 `VastNext/vast-expert-prompts` 的构建时快照。扩展运行时不会连接 GitHub 获取或更新专家；专家内容仅在用户选择自定义 AI 并主动翻译时，作为系统提示词的一部分发送给该 AI 服务。
+
+划词朗读使用浏览器本机语音（Web Speech API），朗读内容不发送到任何服务器。生词本同步只在用户于设置中配置 AnkiConnect 端点并主动点击「测试连接」或「同步」时发生：扩展的 service worker 把选定条目的单词、例句、译文和出处 URL 直接发送到该端点，语层翻译不设中转服务器。远程端点必须使用 HTTPS；本机回环地址（127.0.0.1、localhost、[::1]）允许 HTTP。AnkiConnect API Key 仅随请求体的 `key` 字段发往该端点用于其自身鉴权。第三方 Anki 服务及其运营者可能记录请求和网络元数据；若用户在自己的 Anki 中开启 AnkiWeb 同步，推送的笔记会随 Anki 自身同步到 AnkiWeb，该行为由用户的 Anki 配置决定，与扩展无关。
+
+生词本导出（JSON/CSV/TSV）使用浏览器下载接口把文件写入用户配置的下载目录子文件夹（默认 `LexiLayer`，可留空表示下载根目录）。`downloads` 权限仅用于此写入；扩展不读取、不枚举用户的其他下载记录，也不监听任何下载事件。
 
 语层翻译不会将 API Key 返回给网页或 content script，也不会把 API Key 写入翻译缓存或错误消息。配置导出只有在用户选择“包含 API Key”时才会写入密钥。
 
@@ -36,6 +42,8 @@ Google 是默认引擎，请求发送到 `https://translate.googleapis.com/trans
 - AI 专家开关、自定义专家提示词和每个 AI 底座的当前专家选择：保存在 `chrome.storage.local`。专家提示词只会在用户选择自定义 AI 翻译时发送给该 AI 服务。
 - 翻译缓存：保存在扩展 IndexedDB 中，默认保留 30 天，最多 5000 条，并按最近访问时间淘汰。
 - 页面进度：按标签页与 frame 保存在 `chrome.storage.session`，仅保留于当前浏览器会话，不写入 `chrome.storage.sync` 或 `chrome.storage.local`。
+- 生词本条目（含出处 URL 与页面标题）：保存在 `chrome.storage.local` 的 `vocabularyBook`，只在本机使用；可在设置中逐条删除或清空。
+- AnkiConnect 端点、deck、笔记类型、导出目录与 API Key：保存在 `chrome.storage.local`。安全设置数据只返回是否已配置密钥，不返回密钥值；配置导出仅在用户明确选择「包含 API Key」时写入该密钥。
 - AI 成本调试统计：仅在扩展后台内存中累计请求、缓存和去重等计数，不保存待译正文、译文、页面 URL、API Key 或提示词，不上传到分析服务器；后台重启后清零。统计不是供应商账单，不支持的 Token 用量不作估算冒充实测。
 
 用户可以在 Options 中清理翻译缓存；卸载扩展会由 Chrome 清除扩展本地数据。
@@ -52,7 +60,7 @@ Google 是默认引擎，请求发送到 `https://translate.googleapis.com/trans
 
 ## 用户责任与安全建议
 
-请勿翻译密码、访问令牌、支付信息、医疗记录、身份证件或其他敏感内容。建议使用权限和额度受限的 API Key，并定期轮换。远程 API 必须使用 HTTPS；HTTP 仅允许本机回环服务。
+请勿翻译密码、访问令牌、支付信息、医疗记录、身份证件或其他敏感内容。建议使用权限和额度受限的 API Key，并定期轮换。远程 API 必须使用 HTTPS；HTTP 仅允许本机回环服务。远程 AnkiConnect 服务由用户自行搭建或选择，应通过 HTTPS 反向代理或受保护通道暴露，并配置 AnkiConnect API Key。
 
 Google 可能返回 `429` 限流错误，此时可稍后重试或切换到 Bing。Google 与 Bing 为非流式能力；自定义 AI 划词翻译可使用流式能力。自定义 AI 流式响应若在完成前断开，扩展会在同一实例上最多自动续连 10 次；续连请求仍发送到用户配置的同一 Base URL，并可能包含已输出译文以避免重复。各服务可能记录请求和网络元数据，具体以各自隐私政策为准。
 

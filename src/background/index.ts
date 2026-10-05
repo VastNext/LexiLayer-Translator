@@ -4,13 +4,17 @@ import { AiRequestCoordinator, type AiRequestCostSnapshot } from './ai-coordinat
 import { createProvider, streamProviderSelection } from './provider-registry';
 import type { Provider } from './provider';
 import {
-  DEFAULT_SETTINGS, engineReady, exportSafeSettings, importSettings, migrateSettings, normalizeSettings, validateEngine, validateSettings,
+  DEFAULT_SETTINGS, engineReady, exportSafeSettings, importSettings, migrateSettings, normalizeSettings, normalizeVocabularySettings, validateEngine, validateSettings,
   THEMES, type CustomAiEngine, type Engine, type ReadingPreferences, type Settings, type Theme,
 } from '../shared/config';
 import { mapChromeUiLanguage } from '../shared/languages';
 import type { TranslationRequest, TranslationResult, TranslationSegment } from '../shared/messages';
 import { expertById } from '../shared/experts';
+import { normalizeAnkiEndpoint } from '../shared/anki';
+import { validateVocabularyDraft } from '../shared/vocabulary';
+import { AnkiClient, AnkiClientError } from './anki-client';
 import { handleExpertCommand } from './expert-commands';
+import { VocabularyStorage } from './vocabulary-storage';
 
 type AsyncMessageListener = (message: unknown, sender: chrome.runtime.MessageSender, sendResponse: (response: unknown) => void) => boolean | void;
 
@@ -31,10 +35,11 @@ export interface BackgroundDependencies {
   translate?(provider: Provider, request: TranslationRequest, signal: AbortSignal): Promise<TranslationResult[]>;
   streamSelection?(provider: Provider, text: string, sourceLanguage: string, targetLanguage: string, userInstruction: string | undefined, context: string | undefined, signal: AbortSignal): AsyncIterable<string>;
   clearCache(): Promise<void>;
+  ankiClient?: Pick<AnkiClient, 'testConnection' | 'sync'>;
   aiMetrics?: { snapshot(): AiRequestCostSnapshot; reset(): void };
 }
 
-interface RuntimeDependencyOptions { cache?: CacheLike; createProvider?: (engine: Engine) => Provider }
+interface RuntimeDependencyOptions { cache?: CacheLike; createProvider?: (engine: Engine) => Provider; ankiClient?: Pick<AnkiClient, 'testConnection' | 'sync'> }
 type IncomingMessage = Record<string, unknown> & { type: string };
 const allowedTypes = new Set([
   'translate-batch', 'cancel-task', 'get-public-config', 'get-popup-config', 'get-options-settings', 'get-engine-api-key',
@@ -42,6 +47,8 @@ const allowedTypes = new Set([
   'save-reading-preferences', 'upsert-engine', 'delete-engine', 'set-active-engine', 'set-engine-enabled', 'reorder-engines', 'import-settings',
   'save-popup-preferences', 'save-theme', 'upsert-expert', 'delete-expert', 'set-expert-enabled',
   'clear-engine-api-key',
+  'save-vocabulary-entry', 'get-vocabulary-entries', 'delete-vocabulary-entry', 'clear-vocabulary',
+  'get-anki-api-key', 'clear-anki-api-key', 'save-vocabulary-preferences', 'test-anki-connection', 'sync-vocabulary-anki',
   'page-progress', 'get-page-progress',
 ]);
 
@@ -60,6 +67,16 @@ function isOptionsSender(sender: chrome.runtime.MessageSender, extensionId: stri
   try {
     const url = new URL(sender.url);
     return url.protocol === 'chrome-extension:' && url.hostname === extensionId && url.pathname === '/options.html';
+  } catch {
+    return false;
+  }
+}
+
+function isContentSender(sender: chrome.runtime.MessageSender, extensionId: string): boolean {
+  if (sender.id !== extensionId || sender.tab?.id === undefined || sender.frameId === undefined || !sender.documentId || !sender.url) return false;
+  try {
+    const protocol = new URL(sender.url).protocol;
+    return protocol === 'http:' || protocol === 'https:';
   } catch {
     return false;
   }
@@ -90,6 +107,11 @@ function pageTaskKey(sender: chrome.runtime.MessageSender, taskId: string): stri
 
 function sameOrigin(left: string, right: string): boolean {
   try { return new URL(left).origin === new URL(right).origin; } catch { return false; }
+}
+
+function sameAnkiEndpoint(left: string, right: string): boolean {
+  if (!left.trim() || !right.trim()) return left.trim() === right.trim();
+  try { return normalizeAnkiEndpoint(left) === normalizeAnkiEndpoint(right); } catch { return false; }
 }
 
 function requireEngine(settings: Settings, engineId: string): Engine {
@@ -174,6 +196,7 @@ export async function readSettings(api: BackgroundChrome): Promise<Settings> {
 export function sanitizeError(error: unknown, secrets: string[] = []): string {
   let message = error instanceof Error ? error.message : '';
   for (const secret of secrets.filter(Boolean)) message = message.replaceAll(secret, '[已隐藏]');
+  if (error instanceof AnkiClientError && /^AnkiConnect [\u3400-\u9fff]/u.test(message) && !/https?:\/\//i.test(message)) return message;
   message = message.replace(/Bearer\s+\S+/gi, 'Bearer [已隐藏]').replace(/([?&](?:api[_-]?key|key|token)=)[^&\s]+/gi, '$1[已隐藏]');
   if (/Google.*(?:429|请求过于频繁)/i.test(message)) return 'Google 翻译请求过于频繁，请稍后重试或切换到 Bing';
   if (/^(?:Google|Bing) 翻译/u.test(message)) return message;
@@ -189,6 +212,7 @@ export function createRuntimeDependencies(options: RuntimeDependencyOptions = {}
   const aiCoordinator = new AiRequestCoordinator({ cache });
   return {
     createProvider: providerFactory,
+    ankiClient: options.ankiClient ?? new AnkiClient(),
     aiMetrics: { snapshot: () => aiCoordinator.snapshot(), reset: () => aiCoordinator.reset() },
     async translate(provider, request, signal) {
       if (provider.cacheIdentity.engineId.startsWith('custom-')) {
@@ -227,11 +251,15 @@ export function createBackgroundController(api: BackgroundChrome, dependencies: 
   const fallbackTasks = new Map<string, AbortController>();
   const selectionPorts = new Map<number, chrome.runtime.Port>();
   const selectionRequests = new Map<number, number[]>();
+  const vocabularyStorage = new VocabularyStorage(api.storage.local);
+  const ankiClient = dependencies.ankiClient ?? new AnkiClient();
   let settingsMutationQueue = Promise.resolve();
   const settingsMutationTypes = new Set([
     'save-reading-preferences', 'upsert-engine', 'delete-engine', 'set-active-engine', 'set-engine-enabled',
     'save-popup-preferences', 'save-theme', 'upsert-expert', 'delete-expert', 'set-expert-enabled',
     'reorder-engines', 'import-settings', 'clear-engine-api-key',
+    'save-vocabulary-entry', 'delete-vocabulary-entry', 'clear-vocabulary',
+    'clear-anki-api-key', 'save-vocabulary-preferences', 'sync-vocabulary-anki',
   ]);
   const translateWithProvider = (provider: Provider, request: TranslationRequest, signal: AbortSignal) => dependencies.translate?.(provider, request, signal) ?? provider.translate(request, signal);
   const streamWithProvider = (provider: Provider, text: string, source: string, target: string, userInstruction: string | undefined, context: string | undefined, signal: AbortSignal) => dependencies.streamSelection?.(provider, text, source, target, userInstruction, context, signal) ?? streamProviderSelection(provider, text, source, target, userInstruction, context, signal);
@@ -258,6 +286,8 @@ export function createBackgroundController(api: BackgroundChrome, dependencies: 
     if (sender.id !== api.runtime.id) return { ok: false, error: '消息来源无效' };
     if (!isMessage(message) || !allowedTypes.has(message.type)) return { ok: false, error: '不支持的消息类型' };
     if (message.type === 'get-engine-api-key' && !isOptionsSender(sender, api.runtime.id)) return { ok: false, error: '消息来源无效' };
+    if (['get-vocabulary-entries', 'delete-vocabulary-entry', 'clear-vocabulary', 'get-anki-api-key', 'clear-anki-api-key', 'save-vocabulary-preferences', 'test-anki-connection', 'sync-vocabulary-anki'].includes(message.type) && !isOptionsSender(sender, api.runtime.id)) return { ok: false, error: '消息来源无效' };
+    if (message.type === 'save-vocabulary-entry' && !isContentSender(sender, api.runtime.id)) return { ok: false, error: '消息来源无效' };
     if (message.type === 'cancel-selection-fallback') {
       if (!hasOnlyKeys(message, ['type', 'requestId']) || !isSafeId(message.requestId)) return { ok: false, error: '消息格式无效' };
       const key = pageTaskKey(sender, message.requestId);
@@ -275,8 +305,27 @@ export function createBackgroundController(api: BackgroundChrome, dependencies: 
     const execute = async (): Promise<unknown> => {
       let secrets: string[] = [];
       try {
+      if (message.type === 'save-vocabulary-entry') {
+        if (!hasOnlyKeys(message, ['type', 'draft']) || validateVocabularyDraft(message.draft).length) return { ok: false, error: '消息格式无效' };
+        return { ok: true, data: await vocabularyStorage.upsert(message.draft) };
+      }
+      if (message.type === 'get-vocabulary-entries') {
+        if (!hasOnlyKeys(message, ['type'])) return { ok: false, error: '消息格式无效' };
+        return { ok: true, data: await vocabularyStorage.list() };
+      }
+      if (message.type === 'delete-vocabulary-entry') {
+        if (!hasOnlyKeys(message, ['type', 'id']) || !isSafeId(message.id)) return { ok: false, error: '消息格式无效' };
+        return { ok: true, data: { deleted: await vocabularyStorage.delete(message.id) } };
+      }
+      if (message.type === 'clear-vocabulary') {
+        if (!hasOnlyKeys(message, ['type'])) return { ok: false, error: '消息格式无效' };
+        await vocabularyStorage.clear(); return { ok: true };
+      }
       const settings = await readSettings(api);
-      secrets = settings.engines.filter((engine): engine is CustomAiEngine => engine.kind === 'custom-ai').map((engine) => engine.apiKey);
+      secrets = [
+        ...settings.engines.filter((engine): engine is CustomAiEngine => engine.kind === 'custom-ai').map((engine) => engine.apiKey),
+        settings.vocabulary.ankiApiKey,
+      ];
       if (message.type === 'get-public-config' || message.type === 'get-popup-config') return { ok: true, data: publicConfig(settings, api, dependencies) };
       if (message.type === 'get-options-settings') {
         const safe = exportSafeSettings(settings);
@@ -290,6 +339,72 @@ export function createBackgroundController(api: BackgroundChrome, dependencies: 
         const engine = settings.engines.find((item) => item.id === message.engineId);
         if (engine?.kind !== 'custom-ai') return { ok: false, error: '翻译引擎不存在' };
         return { ok: true, data: { key: engine.apiKey } };
+      }
+      if (message.type === 'get-anki-api-key') {
+        if (!hasOnlyKeys(message, ['type'])) return { ok: false, error: '消息格式无效' };
+        return { ok: true, data: { key: settings.vocabulary.ankiApiKey } };
+      }
+      if (message.type === 'clear-anki-api-key') {
+        if (!hasOnlyKeys(message, ['type'])) return { ok: false, error: '消息格式无效' };
+        await saveSettings({ ...settings, vocabulary: { ...settings.vocabulary, ankiApiKey: '' } });
+        return { ok: true };
+      }
+      if (message.type === 'save-vocabulary-preferences') {
+        if (!hasOnlyKeys(message, ['type', 'endpoint', 'deck', 'noteType', 'apiKey', 'exportFolder'])
+          || typeof message.endpoint !== 'string'
+          || typeof message.deck !== 'string'
+          || (message.noteType !== 'basic' && message.noteType !== 'cloze')
+          || (message.apiKey !== undefined && typeof message.apiKey !== 'string')
+          || (message.exportFolder !== undefined && typeof message.exportFolder !== 'string')) return { ok: false, error: '消息格式无效' };
+        let vocabulary;
+        try {
+          vocabulary = normalizeVocabularySettings({
+            ankiEndpoint: message.endpoint,
+            ankiDeck: message.deck,
+            ankiNoteType: message.noteType,
+            exportFolder: message.exportFolder ?? settings.vocabulary.exportFolder,
+            ankiApiKey: message.apiKey === undefined
+              ? (sameAnkiEndpoint(settings.vocabulary.ankiEndpoint, message.endpoint) ? settings.vocabulary.ankiApiKey : '')
+              : message.apiKey,
+          });
+        } catch {
+          return { ok: false, error: '消息格式无效' };
+        }
+        await saveSettings({ ...settings, vocabulary });
+        return { ok: true };
+      }
+      if (message.type === 'test-anki-connection') {
+        if (!hasOnlyKeys(message, ['type', 'candidate']) || !isRecord(message.candidate)
+          || !hasOnlyKeys(message.candidate, ['endpoint', 'apiKey'])
+          || typeof message.candidate.endpoint !== 'string'
+          || (message.candidate.apiKey !== undefined && typeof message.candidate.apiKey !== 'string')) return { ok: false, error: '消息格式无效' };
+        let candidate;
+        try {
+          candidate = normalizeVocabularySettings({
+            ankiEndpoint: message.candidate.endpoint,
+            ankiDeck: DEFAULT_SETTINGS.vocabulary.ankiDeck,
+            ankiNoteType: DEFAULT_SETTINGS.vocabulary.ankiNoteType,
+            ankiApiKey: message.candidate.apiKey ?? '',
+          });
+        } catch {
+          return { ok: false, error: '消息格式无效' };
+        }
+        secrets.push(candidate.ankiApiKey);
+        const data = await ankiClient.testConnection(candidate.ankiEndpoint, candidate.ankiApiKey || undefined, new AbortController().signal);
+        return { ok: true, data };
+      }
+      if (message.type === 'sync-vocabulary-anki') {
+        if (!hasOnlyKeys(message, ['type'])) return { ok: false, error: '消息格式无效' };
+        if (!settings.vocabulary.ankiEndpoint) return { ok: false, error: '请先配置 AnkiConnect 端点' };
+        const entries = await vocabularyStorage.list();
+        if (!entries.length) return { ok: false, error: '生词本为空，暂无可同步条目' };
+        const data = await ankiClient.sync(entries, {
+          endpoint: settings.vocabulary.ankiEndpoint,
+          deck: settings.vocabulary.ankiDeck,
+          noteType: settings.vocabulary.ankiNoteType,
+          hasApiKey: Boolean(settings.vocabulary.ankiApiKey),
+        }, settings.vocabulary.ankiApiKey || undefined, new AbortController().signal);
+        return { ok: true, data };
       }
       if (message.type === 'clear-cache') { await dependencies.clearCache(); return { ok: true }; }
       if (message.type === 'translate-selection-inline') {
@@ -449,7 +564,10 @@ export function createBackgroundController(api: BackgroundChrome, dependencies: 
           if (controller.signal.aborted) return { ok: false, error: '任务已取消' }; return { ok: true, data };
         } finally { controllers.delete(controller); if (!controllers.size) tasks.delete(key); }
       }
-      } catch (error) { return { ok: false, error: sanitizeError(error, secrets) }; }
+      } catch (error) {
+        if (error instanceof AnkiClientError) return { ok: false, error: sanitizeError(error, secrets), code: error.code };
+        return { ok: false, error: sanitizeError(error, secrets) };
+      }
       finally {
         if (fallbackReservation && fallbackTasks.get(fallbackReservation.key) === fallbackReservation.controller) fallbackTasks.delete(fallbackReservation.key);
       }

@@ -172,6 +172,19 @@ describe('service worker 消息编排', () => {
       .resolves.toEqual({ ok: false, error: '消息格式无效' });
   });
 
+  it.each(['get-vocabulary-entries', 'delete-vocabulary-entry', 'clear-vocabulary'])('%s 仅接受本扩展 Options sender', async (type) => {
+    const message = type === 'delete-vocabulary-entry' ? { type, id: 'entry-1' } : { type };
+    for (const sender of [
+      { id: 'extension-id', url: 'chrome-extension://extension-id/popup.html' },
+      { id: 'extension-id', url: 'chrome-extension://extension-id/options.html/extra' },
+      { id: 'extension-id', url: 'https://example.com/options.html', tab: { id: 1 } as chrome.tabs.Tab, frameId: 0, documentId: 'doc' },
+      { id: 'other-extension', url: 'chrome-extension://extension-id/options.html' },
+      { id: 'extension-id', tab: { id: 1 } as chrome.tabs.Tab, frameId: 0, documentId: 'doc' },
+    ]) {
+      await expect(send(message, sender)).resolves.toEqual({ ok: false, error: '消息来源无效' });
+    }
+  });
+
   it('Popup 和 Options 读取主题，并可通过 save-theme 持久化', async () => {
     let persisted = structuredClone(configured);
     vi.mocked(chromeApi.storage.local.get).mockImplementation(async () => ({ translatorSettings: persisted }));

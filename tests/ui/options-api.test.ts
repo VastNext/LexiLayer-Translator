@@ -128,4 +128,59 @@ describe('Options v2 API', () => {
       manualUrl: 'edge://extensions/shortcuts',
     });
   });
+
+  it('为生词本列表、删除、清空与 Anki 偏好提供固定消息', async () => {
+    const messages: unknown[] = [];
+    const responses = new Map<string, unknown>([
+      ['get-vocabulary-entries', [{ id: 'vocab-1', word: 'serene', sentence: 'The lake was serene.', sourceUrl: 'https://example.com', targetLanguage: 'zh-CN', createdAt: 1, updatedAt: 1 }]],
+      ['delete-vocabulary-entry', { deleted: true }],
+      ['get-anki-api-key', { key: 'anki-secret' }],
+      ['test-anki-connection', { version: 6 }],
+      ['sync-vocabulary-anki', { added: 2, skipped: 1, failed: 0 }],
+    ]);
+    const sendMessage = vi.fn(async (message: unknown) => {
+      messages.push(message);
+      const type = (message as { type: string }).type;
+      return type === 'get-options-settings' ? { ok: true, data: DEFAULT_SETTINGS } : { ok: true, data: responses.get(type) };
+    });
+    const api = createOptionsApi({ runtime: { sendMessage } });
+
+    await expect(api.getVocabularyEntries()).resolves.toHaveLength(1);
+    await expect(api.deleteVocabularyEntry('vocab-1')).resolves.toBe(true);
+    await api.clearVocabulary();
+    await api.saveVocabularyPreferences({ endpoint: 'http://127.0.0.1:8765', deck: 'LexiLayer 生词本', noteType: 'cloze' });
+    await api.saveVocabularyPreferences({ endpoint: 'https://anki.example.com', deck: 'LexiLayer 生词本', noteType: 'basic', apiKey: 'secret' });
+    await expect(api.getAnkiApiKey()).resolves.toBe('anki-secret');
+    await api.clearAnkiApiKey();
+    await expect(api.testAnkiConnection({ endpoint: 'http://127.0.0.1:8765', apiKey: 'secret' })).resolves.toEqual({ version: 6 });
+    await expect(api.syncVocabularyAnki()).resolves.toEqual({ added: 2, skipped: 1, failed: 0 });
+
+    expect(messages).toEqual([
+      { type: 'get-vocabulary-entries' },
+      { type: 'delete-vocabulary-entry', id: 'vocab-1' },
+      { type: 'clear-vocabulary' },
+      { type: 'save-vocabulary-preferences', endpoint: 'http://127.0.0.1:8765', deck: 'LexiLayer 生词本', noteType: 'cloze' },
+      { type: 'save-vocabulary-preferences', endpoint: 'https://anki.example.com', deck: 'LexiLayer 生词本', noteType: 'basic', apiKey: 'secret' },
+      { type: 'get-anki-api-key' },
+      { type: 'clear-anki-api-key' },
+      { type: 'test-anki-connection', candidate: { endpoint: 'http://127.0.0.1:8765', apiKey: 'secret' } },
+      { type: 'sync-vocabulary-anki' },
+    ]);
+  });
+
+  it('生词本与 Anki Key 读取在响应缺数据时回退为空值', async () => {
+    const sendMessage = vi.fn(async () => ({ ok: true }));
+    const api = createOptionsApi({ runtime: { sendMessage } });
+    await expect(api.getVocabularyEntries()).resolves.toEqual([]);
+    await expect(api.getAnkiApiKey()).resolves.toBe('');
+    await expect(api.deleteVocabularyEntry('vocab-1')).resolves.toBe(false);
+  });
+
+  it('Anki 测试连接失败时保留错误消息与失败码', async () => {
+    const sendMessage = vi.fn(async () => ({ ok: false, error: '无法连接 AnkiConnect 服务', code: 'network' }));
+    const api = createOptionsApi({ runtime: { sendMessage } });
+    await expect(api.testAnkiConnection({ endpoint: 'http://127.0.0.1:8765' }))
+      .rejects.toMatchObject({ message: '无法连接 AnkiConnect 服务', code: 'network' });
+    expect(sendMessage).toHaveBeenCalledWith({ type: 'test-anki-connection', candidate: { endpoint: 'http://127.0.0.1:8765' } });
+  });
 });

@@ -10,6 +10,7 @@ afterEach(() => {
   cleanup();
   vi.useRealTimers();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 async function expandEngine(group: HTMLElement): Promise<void> {
@@ -21,12 +22,32 @@ async function expandEngine(group: HTMLElement): Promise<void> {
 
 const loaded: OptionsSettings = {
   ...DEFAULT_SETTINGS,
+  vocabulary: { ankiEndpoint: '', ankiDeck: 'LexiLayer 生词本', ankiNoteType: 'basic', hasAnkiApiKey: false, exportFolder: 'LexiLayer' },
   engines: [
     ...DEFAULT_SETTINGS.engines.filter((engine): engine is Extract<typeof engine, { kind: 'google' | 'bing' }> => engine.kind !== 'custom-ai'),
     { id: 'custom-work', kind: 'custom-ai', name: '工作 AI', enabled: true, order: 2, baseUrl: 'https://work.example/v1', model: 'work-model', hasApiKey: true },
     { id: 'custom-home', kind: 'custom-ai', name: '个人 AI', enabled: false, order: 3, baseUrl: 'https://home.example/v1', model: 'home-model', hasApiKey: false },
   ],
 };
+
+const vocabularyEntries = [
+  {
+    id: 'vocab-1', word: 'serene', sentence: 'The lake was serene at dawn.', translation: '宁静的',
+    sourceUrl: 'https://example.com/article', pageTitle: 'Example Article', sourceLanguage: 'en', targetLanguage: 'zh-CN',
+    createdAt: Date.UTC(2026, 0, 15), updatedAt: Date.UTC(2026, 0, 15),
+  },
+  {
+    id: 'vocab-2', word: 'resilient', sentence: 'Resilient systems recover quickly.',
+    sourceUrl: 'https://example.org/notes', targetLanguage: 'zh-CN',
+    createdAt: Date.UTC(2026, 0, 16), updatedAt: Date.UTC(2026, 0, 16),
+  },
+];
+
+class MockReviewUtterance {
+  readonly text: string;
+  lang = '';
+  constructor(text: string) { this.text = text; }
+}
 
 function createApi(settings: OptionsSettings = loaded): OptionsApi {
   return {
@@ -46,6 +67,14 @@ function createApi(settings: OptionsSettings = loaded): OptionsApi {
     exportSettings: vi.fn(),
     getPageTranslationShortcut: vi.fn(async () => ({ status: 'assigned' as const, shortcut: 'Alt+A', displayShortcut: 'Alt + A' })),
     openShortcutSettings: vi.fn(async () => ({ ok: true as const, manualUrl: 'chrome://extensions/shortcuts' })),
+    getVocabularyEntries: vi.fn(async () => structuredClone(vocabularyEntries)),
+    deleteVocabularyEntry: vi.fn(async () => true),
+    clearVocabulary: vi.fn(async () => undefined),
+    saveVocabularyPreferences: vi.fn(async () => undefined),
+    getAnkiApiKey: vi.fn(async () => ''),
+    clearAnkiApiKey: vi.fn(async () => undefined),
+    testAnkiConnection: vi.fn(async () => ({ version: 6 })),
+    syncVocabularyAnki: vi.fn(async () => ({ added: 1, skipped: 0, failed: 0 })),
   };
 }
 
@@ -141,7 +170,7 @@ describe('Options v2 多引擎设置', () => {
   it('使用左侧导航并提供快捷键与触发方式栏目', async () => {
     render(<OptionsApp api={createApi()} />);
     const nav = await screen.findByRole('navigation', { name: '设置导航' });
-    for (const name of ['翻译引擎', '自定义 AI', 'AI 专家', '阅读偏好', '划词翻译', '快捷键与触发方式', '外观主题', '数据隐私']) {
+    for (const name of ['翻译引擎', '自定义 AI', 'AI 专家', '阅读偏好', '划词翻译', '生词本', '快捷键与触发方式', '外观主题', '数据隐私']) {
       expect(within(nav).getByRole('button', { name })).toBeInTheDocument();
     }
     const selectionRegion = screen.getByRole('region', { name: '划词翻译' });
@@ -547,7 +576,7 @@ describe('Options v2 多引擎设置', () => {
       id: `custom-${index}`, kind: 'custom-ai' as const, name: `AI ${index}`, enabled: true, order: index + 2,
       baseUrl: `https://api${index}.example/v1`, model: 'model', hasApiKey: true,
     }))];
-    render(<OptionsApp api={createApi({ ...DEFAULT_SETTINGS, engines })} />);
+    render(<OptionsApp api={createApi({ ...DEFAULT_SETTINGS, engines, vocabulary: { ankiEndpoint: '', ankiDeck: 'LexiLayer 生词本', ankiNoteType: 'basic', hasAnkiApiKey: false, exportFolder: 'LexiLayer' } })} />);
     expect(await screen.findByRole('button', { name: '新增自定义 AI' })).toBeDisabled();
     expect(screen.getByText(/自定义翻译要求仅对自定义 AI 生效/)).toBeInTheDocument();
   });
@@ -952,5 +981,342 @@ describe('Options v2 多引擎设置', () => {
     expect(countSelect).toHaveAttribute('aria-describedby');
     const helpId = countSelect.getAttribute('aria-describedby')!;
     expect(document.getElementById(helpId)).toHaveTextContent(/重新启用后恢复上次次数/);
+  });
+});
+
+describe('Options 生词本区块', () => {
+  it('导航提供生词本入口，区块锚点为 vocabulary-book', async () => {
+    render(<OptionsApp api={createApi()} />);
+    const nav = await screen.findByRole('navigation', { name: '设置导航' });
+    expect(within(nav).getByRole('button', { name: '生词本' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: '生词本' })).toHaveAttribute('id', 'vocabulary-book');
+  });
+
+  it('生词本为空时显示空态并禁用复习、导出与清空', async () => {
+    const api = createApi();
+    vi.mocked(api.getVocabularyEntries).mockResolvedValue([]);
+    render(<OptionsApp api={api} />);
+    const region = screen.getByRole('region', { name: '生词本' });
+    expect(await within(region).findByText(/生词本为空/)).toBeInTheDocument();
+    expect(within(region).getByText('共 0 条生词')).toBeInTheDocument();
+    expect(within(region).getByRole('button', { name: '开始复习' })).toBeDisabled();
+    expect(within(region).getByRole('button', { name: '导出 JSON' })).toBeDisabled();
+    expect(within(region).getByRole('button', { name: '导出 CSV' })).toBeDisabled();
+    expect(within(region).getByRole('button', { name: '导出 TSV' })).toBeDisabled();
+    expect(within(region).getByRole('button', { name: '清空生词本' })).toBeDisabled();
+  });
+
+  it('列表渲染单词、例句、出处链接与日期，支持搜索过滤', async () => {
+    const api = createApi();
+    render(<OptionsApp api={api} />);
+    const region = screen.getByRole('region', { name: '生词本' });
+    const serene = await screen.findByRole('article', { name: 'serene' });
+    expect(screen.getByRole('article', { name: 'resilient' })).toBeInTheDocument();
+    expect(within(region).getByText('共 2 条生词')).toBeInTheDocument();
+    expect(within(serene).getByText('The lake was serene at dawn.')).toHaveAttribute('title', 'The lake was serene at dawn.');
+    const link = within(serene).getByRole('link', { name: 'Example Article' });
+    expect(link).toHaveAttribute('href', 'https://example.com/article');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'));
+    expect(within(serene).getByText('2026-01-15')).toBeInTheDocument();
+
+    const search = screen.getByLabelText('搜索单词或例句');
+    await userEvent.type(search, 'resil');
+    expect(screen.queryByRole('article', { name: 'serene' })).not.toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'resilient' })).toBeInTheDocument();
+    await userEvent.clear(search);
+    await userEvent.type(search, 'nomatch');
+    expect(within(region).getByText('没有匹配的生词')).toBeInTheDocument();
+    await userEvent.clear(search);
+    expect(screen.getByRole('article', { name: 'serene' })).toBeInTheDocument();
+  });
+
+  it('删除与清空都需要双击确认并更新列表', async () => {
+    const api = createApi();
+    render(<OptionsApp api={api} />);
+    const region = screen.getByRole('region', { name: '生词本' });
+    const serene = await screen.findByRole('article', { name: 'serene' });
+
+    await userEvent.click(within(serene).getByRole('button', { name: '删除' }));
+    expect(within(serene).getByRole('button', { name: '确认删除生词' })).toBeInTheDocument();
+    expect(api.deleteVocabularyEntry).not.toHaveBeenCalled();
+    await userEvent.click(within(serene).getByRole('button', { name: '确认删除生词' }));
+    await waitFor(() => expect(api.deleteVocabularyEntry).toHaveBeenCalledWith('vocab-1'));
+    await waitFor(() => expect(screen.queryByRole('article', { name: 'serene' })).not.toBeInTheDocument());
+    expect(within(region).getByText('共 1 条生词')).toBeInTheDocument();
+
+    await userEvent.click(within(region).getByRole('button', { name: '清空生词本' }));
+    expect(within(region).getByRole('button', { name: '确认清空生词' })).toBeInTheDocument();
+    expect(api.clearVocabulary).not.toHaveBeenCalled();
+    await userEvent.click(within(region).getByRole('button', { name: '确认清空生词' }));
+    await waitFor(() => expect(api.clearVocabulary).toHaveBeenCalledTimes(1));
+    expect(await within(region).findByText(/生词本为空/)).toBeInTheDocument();
+    expect(within(region).getByText('共 0 条生词')).toBeInTheDocument();
+  });
+
+  it('复习模式按顺序翻卡：先见单词，展开例句译文出处，支持上一条下一条', async () => {
+    const api = createApi();
+    render(<OptionsApp api={api} />);
+    const region = screen.getByRole('region', { name: '生词本' });
+    await screen.findByRole('article', { name: 'serene' });
+    await userEvent.click(within(region).getByRole('button', { name: '开始复习' }));
+
+    const review = within(region).getByRole('group', { name: '复习模式' });
+    expect(within(review).getByText('第 1 / 2 条')).toBeInTheDocument();
+    expect(within(review).getByText('serene')).toBeInTheDocument();
+    expect(within(review).queryByText('The lake was serene at dawn.')).not.toBeInTheDocument();
+
+    await userEvent.click(within(review).getByRole('button', { name: '显示例句' }));
+    expect(within(review).getByText('The lake was serene at dawn.')).toBeInTheDocument();
+    expect(within(review).getByText('宁静的')).toBeInTheDocument();
+    expect(within(review).getByRole('link', { name: 'Example Article' })).toHaveAttribute('href', 'https://example.com/article');
+    expect(within(review).getByRole('button', { name: '朗读单词 serene' })).toBeInTheDocument();
+    expect(within(review).getByRole('button', { name: '上一条' })).toBeDisabled();
+
+    await userEvent.click(within(review).getByRole('button', { name: '下一条' }));
+    expect(within(review).getByText('第 2 / 2 条')).toBeInTheDocument();
+    expect(within(review).getByText('resilient')).toBeInTheDocument();
+    expect(within(review).getByRole('button', { name: '下一条' })).toBeDisabled();
+
+    await userEvent.click(within(review).getByRole('button', { name: '上一条' }));
+    expect(within(review).getByText('第 1 / 2 条')).toBeInTheDocument();
+
+    await userEvent.click(within(review).getByRole('button', { name: '退出复习' }));
+    expect(within(region).queryByRole('group', { name: '复习模式' })).not.toBeInTheDocument();
+    expect(within(region).getByRole('article', { name: 'serene' })).toBeInTheDocument();
+  });
+
+  it('朗读按钮通过语音合成朗读单词', async () => {
+    vi.stubGlobal('SpeechSynthesisUtterance', MockReviewUtterance);
+    const synthesis = { cancel: vi.fn(), speak: vi.fn(), getVoices: vi.fn(() => []) };
+    vi.stubGlobal('speechSynthesis', synthesis);
+    const api = createApi();
+    render(<OptionsApp api={api} />);
+    const serene = await screen.findByRole('article', { name: 'serene' });
+    await userEvent.click(within(serene).getByRole('button', { name: '朗读单词 serene' }));
+    expect(synthesis.speak).toHaveBeenCalledTimes(1);
+    expect((synthesis.speak.mock.calls[0][0] as MockReviewUtterance).text).toBe('serene');
+  });
+
+  it('导出 JSON 需要两步内联确认，取消不下载', async () => {
+    const api = createApi();
+    const downloadFile = vi.fn();
+    render(<OptionsApp api={api} downloadFile={downloadFile} />);
+    const region = screen.getByRole('region', { name: '生词本' });
+    await screen.findByRole('article', { name: 'serene' });
+
+    await userEvent.click(within(region).getByRole('button', { name: '导出 JSON' }));
+    expect(within(region).getByText(/导出内容包含例句与出处链接/)).toBeInTheDocument();
+    await userEvent.click(within(region).getByRole('button', { name: '取消导出' }));
+    expect(downloadFile).not.toHaveBeenCalled();
+
+    await userEvent.click(within(region).getByRole('button', { name: '导出 JSON' }));
+    await userEvent.click(within(region).getByRole('button', { name: '确认导出 JSON' }));
+    expect(downloadFile).toHaveBeenCalledTimes(1);
+    const [filename, content, mimeType] = downloadFile.mock.calls[0] as [string, string, string];
+    expect(filename).toBe('LexiLayer/lexilayer-vocabulary.json');
+    expect(mimeType).toBe('application/json');
+    const exported = JSON.parse(content) as Array<{ word: string; id: string }>;
+    expect(exported).toHaveLength(2);
+    expect(exported[0]).toMatchObject({ id: 'vocab-1', word: 'serene' });
+  });
+
+  it('导出 CSV 与 TSV 直接下载并包含表头与字段', async () => {
+    const api = createApi();
+    const downloadFile = vi.fn();
+    render(<OptionsApp api={api} downloadFile={downloadFile} />);
+    const region = screen.getByRole('region', { name: '生词本' });
+    await screen.findByRole('article', { name: 'serene' });
+
+    await userEvent.click(within(region).getByRole('button', { name: '导出 CSV' }));
+    expect(downloadFile).toHaveBeenCalledTimes(1);
+    expect(downloadFile.mock.calls[0][0]).toBe('LexiLayer/lexilayer-vocabulary.csv');
+    expect(downloadFile.mock.calls[0][2]).toBe('text/csv;charset=utf-8');
+    const csv = downloadFile.mock.calls[0][1] as string;
+    expect(csv).toContain('word,sentence,translation,sourceUrl');
+    expect(csv).toContain('serene,The lake was serene at dawn.,宁静的,https://example.com/article');
+    expect(csv).toContain('resilient,Resilient systems recover quickly.,,https://example.org/notes');
+
+    await userEvent.click(within(region).getByRole('button', { name: '导出 TSV' }));
+    expect(downloadFile).toHaveBeenCalledTimes(2);
+    expect(downloadFile.mock.calls[1][0]).toBe('LexiLayer/lexilayer-vocabulary.tsv');
+    expect(downloadFile.mock.calls[1][2]).toBe('text/tab-separated-values;charset=utf-8');
+    expect(downloadFile.mock.calls[1][1] as string).toContain('serene\tThe lake was serene at dawn.\t宁静的\thttps://example.com/article');
+  });
+
+  it('AnkiConnect 端点即时校验并提示错误', async () => {
+    const api = createApi();
+    render(<OptionsApp api={api} />);
+    const region = screen.getByRole('region', { name: '生词本' });
+    const anki = within(region).getByRole('region', { name: 'Anki 同步' });
+
+    await userEvent.type(screen.getByLabelText('AnkiConnect 端点'), 'abc');
+    expect(within(anki).getByText('AnkiConnect 端点无效')).toBeInTheDocument();
+    expect(within(anki).getByRole('button', { name: '保存 Anki 设置' })).toBeDisabled();
+    expect(within(anki).getByRole('button', { name: '同步到 Anki' })).toBeDisabled();
+
+    await userEvent.clear(screen.getByLabelText('AnkiConnect 端点'));
+    await userEvent.type(screen.getByLabelText('AnkiConnect 端点'), 'http://anki.example.com');
+    expect(within(anki).getByText('远程 AnkiConnect 端点必须使用 HTTPS')).toBeInTheDocument();
+
+    await userEvent.clear(screen.getByLabelText('AnkiConnect 端点'));
+    await userEvent.type(screen.getByLabelText('AnkiConnect 端点'), 'http://127.0.0.1:8765');
+    expect(within(anki).queryByText('AnkiConnect 端点无效')).not.toBeInTheDocument();
+    expect(within(anki).getByRole('button', { name: '保存 Anki 设置' })).toBeEnabled();
+  });
+
+  it('远程端点无 API Key 时显示安全警告并需勾选确认才能保存', async () => {
+    const api = createApi();
+    render(<OptionsApp api={api} />);
+    const region = screen.getByRole('region', { name: '生词本' });
+    const anki = within(region).getByRole('region', { name: 'Anki 同步' });
+    await userEvent.type(screen.getByLabelText('AnkiConnect 端点'), 'https://anki.example.com');
+
+    expect(within(anki).getByText(/任何知道该地址的人都可以写入你的 Anki/)).toBeInTheDocument();
+    const confirmCheckbox = within(anki).getByRole('checkbox', { name: '我了解风险，确认保存远程设置' });
+    expect(confirmCheckbox).not.toBeChecked();
+    const save = within(anki).getByRole('button', { name: '保存 Anki 设置' });
+    expect(save).toBeDisabled();
+
+    await userEvent.click(confirmCheckbox);
+    expect(save).toBeEnabled();
+    await userEvent.click(save);
+    await waitFor(() => expect(api.saveVocabularyPreferences).toHaveBeenCalledWith({
+      endpoint: 'https://anki.example.com', deck: 'LexiLayer 生词本', noteType: 'basic', exportFolder: 'LexiLayer',
+    }));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Anki 设置已保存'));
+  });
+
+  it('保存 Anki 偏好时 key 输入非空则随请求发送，deck 与笔记类型可修改', async () => {
+    const api = createApi();
+    render(<OptionsApp api={api} />);
+    await userEvent.type(screen.getByLabelText('AnkiConnect 端点'), 'http://127.0.0.1:8765');
+    await userEvent.clear(screen.getByLabelText('Anki 牌组'));
+    await userEvent.type(screen.getByLabelText('Anki 牌组'), '我的牌组');
+    await userEvent.selectOptions(screen.getByLabelText('笔记类型'), 'cloze');
+    await userEvent.type(screen.getByLabelText('Anki API Key'), 'new-anki-key');
+    await userEvent.click(screen.getByRole('button', { name: '保存 Anki 设置' }));
+    await waitFor(() => expect(api.saveVocabularyPreferences).toHaveBeenCalledWith({
+      endpoint: 'http://127.0.0.1:8765', deck: '我的牌组', noteType: 'cloze', exportFolder: 'LexiLayer', apiKey: 'new-anki-key',
+    }));
+  });
+
+  it('导出目录字段回显并随 Anki 设置保存，导出文件名带上子目录', async () => {
+    const api = createApi({
+      ...structuredClone(loaded),
+      vocabulary: { ankiEndpoint: 'https://anki.example', ankiDeck: 'D', ankiNoteType: 'basic', hasAnkiApiKey: false, exportFolder: 'Backups/生词' },
+    });
+    render(<OptionsApp api={api} />);
+    const folder = await screen.findByLabelText('导出目录');
+    await waitFor(() => expect(folder).toHaveValue('Backups/生词'));
+
+    await userEvent.clear(folder);
+    await userEvent.type(folder, 'Vocab');
+    await userEvent.click(screen.getByLabelText('我了解风险，确认保存远程设置'));
+    await userEvent.click(screen.getByRole('button', { name: '保存 Anki 设置' }));
+    await waitFor(() => expect(api.saveVocabularyPreferences).toHaveBeenCalledWith(expect.objectContaining({ exportFolder: 'Vocab' })));
+  });
+
+  it('Anki API Key 回显、眼睛切换与双击确认清空', async () => {
+    const api = createApi();
+    vi.mocked(api.getAnkiApiKey).mockResolvedValue('anki-secret');
+    render(<OptionsApp api={api} />);
+    const keyInput = await screen.findByLabelText('Anki API Key');
+    expect(keyInput).toHaveValue('anki-secret');
+    expect(keyInput).toHaveAttribute('type', 'password');
+    const anki = within(screen.getByRole('region', { name: '生词本' })).getByRole('region', { name: 'Anki 同步' });
+
+    await userEvent.click(within(anki).getByRole('button', { name: '显示 API Key' }));
+    expect(screen.getByLabelText('Anki API Key')).toHaveAttribute('type', 'text');
+    await userEvent.click(within(anki).getByRole('button', { name: '隐藏 API Key' }));
+    expect(screen.getByLabelText('Anki API Key')).toHaveAttribute('type', 'password');
+
+    await userEvent.click(within(anki).getByRole('button', { name: '清除 API Key' }));
+    expect(within(anki).getByRole('button', { name: '确认清除 API Key' })).toBeInTheDocument();
+    expect(api.clearAnkiApiKey).not.toHaveBeenCalled();
+    await userEvent.click(within(anki).getByRole('button', { name: '确认清除 API Key' }));
+    await waitFor(() => expect(api.clearAnkiApiKey).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByLabelText('Anki API Key')).toHaveValue(''));
+  });
+
+  it('测试连接使用当前端点与已存或新输入的 Key，失败时提示失败类型', async () => {
+    const api = createApi();
+    vi.mocked(api.getAnkiApiKey).mockResolvedValue('stored-anki-key');
+    render(<OptionsApp api={api} />);
+    const anki = within(screen.getByRole('region', { name: '生词本' })).getByRole('region', { name: 'Anki 同步' });
+    const testButton = within(anki).getByRole('button', { name: '测试连接' });
+    expect(testButton).toBeDisabled();
+    await userEvent.type(screen.getByLabelText('AnkiConnect 端点'), 'http://127.0.0.1:8765');
+
+    await userEvent.click(testButton);
+    await waitFor(() => expect(api.testAnkiConnection).toHaveBeenCalledWith({ endpoint: 'http://127.0.0.1:8765', apiKey: 'stored-anki-key' }));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('连接成功'));
+
+    await userEvent.clear(screen.getByLabelText('Anki API Key'));
+    await userEvent.type(screen.getByLabelText('Anki API Key'), 'fresh-key');
+    vi.mocked(api.testAnkiConnection).mockRejectedValueOnce(Object.assign(new Error('无法连接 AnkiConnect 服务'), { code: 'network' }));
+    await userEvent.click(testButton);
+    await waitFor(() => expect(api.testAnkiConnection).toHaveBeenLastCalledWith({ endpoint: 'http://127.0.0.1:8765', apiKey: 'fresh-key' }));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('无法连接 AnkiConnect 服务（失败类型：network）'));
+  });
+
+  it('同步前确认目标端点并展示新增、跳过与失败数量', async () => {
+    const api = createApi();
+    render(<OptionsApp api={api} />);
+    const region = screen.getByRole('region', { name: '生词本' });
+    const anki = within(region).getByRole('region', { name: 'Anki 同步' });
+    const syncButton = within(anki).getByRole('button', { name: '同步到 Anki' });
+    expect(syncButton).toBeDisabled();
+
+    await userEvent.type(screen.getByLabelText('AnkiConnect 端点'), 'http://127.0.0.1:8765');
+    await userEvent.click(syncButton);
+    expect(within(anki).getByText('将把全部 2 条生词发送到 http://127.0.0.1:8765，确认同步？')).toBeInTheDocument();
+    await userEvent.click(within(anki).getByRole('button', { name: '取消同步' }));
+    expect(api.syncVocabularyAnki).not.toHaveBeenCalled();
+
+    await userEvent.click(within(anki).getByRole('button', { name: '同步到 Anki' }));
+    await userEvent.click(within(anki).getByRole('button', { name: '确认同步' }));
+    await waitFor(() => expect(api.syncVocabularyAnki).toHaveBeenCalledTimes(1));
+    expect(await within(anki).findByText('新增 1 · 跳过 0 · 失败 0')).toBeInTheDocument();
+  });
+
+  it('异步加载后回填已保存的 AnkiConnect 端点、牌组与笔记类型', async () => {
+    const api = createApi({
+      ...structuredClone(loaded),
+      vocabulary: { ankiEndpoint: 'https://anki.example:8080', ankiDeck: '我的牌组', ankiNoteType: 'cloze', hasAnkiApiKey: true, exportFolder: 'LexiLayer' },
+    });
+    render(<OptionsApp api={api} />);
+    await screen.findByRole('group', { name: '工作 AI' });
+    await waitFor(() => expect(screen.getByLabelText('AnkiConnect 端点')).toHaveValue('https://anki.example:8080'));
+    expect(screen.getByLabelText('Anki 牌组')).toHaveValue('我的牌组');
+    expect(screen.getByLabelText('笔记类型')).toHaveValue('cloze');
+  });
+
+  it('包含 API Key 导出写入 AnkiConnect 密钥', async () => {
+    const api = createApi();
+    vi.mocked(api.getAnkiApiKey).mockResolvedValue('anki-secret');
+    render(<OptionsApp api={api} />);
+    await screen.findByRole('group', { name: '工作 AI' });
+    await userEvent.click(screen.getByRole('button', { name: '导出配置' }));
+    await userEvent.click(screen.getByRole('button', { name: '包含 API Key' }));
+    const exported = vi.mocked(api.exportSettings).mock.calls.at(-1)![0] as { vocabulary: { ankiApiKey?: string } };
+    expect(exported.vocabulary.ankiApiKey).toBe('anki-secret');
+  });
+
+  it('导入检测收紧：仅含 hasApiKey 状态位的配置不再按携带密钥导入', async () => {
+    const api = createApi();
+    render(<OptionsApp api={api} />);
+    await screen.findByRole('group', { name: '工作 AI' });
+    const imported = {
+      ...DEFAULT_SETTINGS,
+      engines: [
+        ...DEFAULT_SETTINGS.engines,
+        { id: 'custom-x', kind: 'custom-ai', name: 'X', enabled: true, order: 2, baseUrl: 'https://x.example/v1', model: 'x', hasApiKey: true },
+      ],
+    };
+    const file = new File([JSON.stringify(imported)], 'flags.json', { type: 'application/json' });
+    await userEvent.upload(screen.getByLabelText('导入配置'), file);
+    await waitFor(() => expect(api.importSettings).toHaveBeenCalledWith(imported));
+    expect(api.importSettings).not.toHaveBeenCalledWith(imported, true);
   });
 });
