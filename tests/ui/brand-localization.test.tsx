@@ -33,6 +33,7 @@ const optionsApiStub = {
   load: async (): Promise<OptionsSettings> => ({
     ...structuredClone(DEFAULT_SETTINGS),
     engines: structuredClone(DEFAULT_SETTINGS.engines.filter((engine) => engine.kind !== 'custom-ai')),
+    vocabulary: { ankiEndpoint: '', ankiDeck: 'LexiLayer 生词本', ankiNoteType: 'basic', hasAnkiApiKey: false },
   }),
   getEngineApiKey: async () => '',
   savePreferences: async () => undefined,
@@ -49,6 +50,14 @@ const optionsApiStub = {
   saveTheme: async () => undefined,
   getPageTranslationShortcut: async () => ({ status: 'unassigned' as const }),
   openShortcutSettings: async () => ({ ok: true as const, manualUrl: 'chrome://extensions/shortcuts' }),
+  getVocabularyEntries: async () => [],
+  deleteVocabularyEntry: async () => true,
+  clearVocabulary: async () => undefined,
+  saveVocabularyPreferences: async () => undefined,
+  getAnkiApiKey: async () => '',
+  clearAnkiApiKey: async () => undefined,
+  testAnkiConnection: async () => ({ version: 6 }),
+  syncVocabularyAnki: async () => ({ added: 0, skipped: 0, failed: 0 }),
 } satisfies OptionsApi;
 
 describe('品牌文案运行时本地化', () => {

@@ -4,6 +4,7 @@ import {
   DEFAULT_SETTINGS,
   MAX_CUSTOM_ENGINES,
   exportSafeSettings,
+  exportSettingsWithApiKeys,
   getPublicEngineSummaries,
   importSettings,
   migrateSettings,
@@ -104,6 +105,58 @@ describe('v2 settings', () => {
 });
 
 describe('migration and normalization', () => {
+  it('默认加入可选 vocabulary 配置，旧 v2 设置规范化时补齐默认值', () => {
+    expect(DEFAULT_SETTINGS.vocabulary).toEqual({
+      ankiEndpoint: '',
+      ankiDeck: 'LexiLayer 生词本',
+      ankiNoteType: 'basic',
+      ankiApiKey: '',
+    });
+
+    const legacyV2 = structuredClone(settings) as Omit<Settings, 'vocabulary'> & { vocabulary?: Settings['vocabulary'] };
+    delete legacyV2.vocabulary;
+
+    expect(normalizeSettings(legacyV2)).toMatchObject({
+      activeEngineId: 'custom-work',
+      vocabulary: DEFAULT_SETTINGS.vocabulary,
+    });
+  });
+
+  it('规范化合法 Anki 设置，并拒绝远程 HTTP、非法类型和过长 API Key', () => {
+    const candidate = {
+      ...settings,
+      vocabulary: {
+        ankiEndpoint: ' https://anki.example.com/team/connect/ ',
+        ankiDeck: '  Team Deck  ',
+        ankiNoteType: 'cloze' as const,
+        ankiApiKey: '  anki-secret  ',
+      },
+    };
+
+    expect(normalizeSettings(candidate).vocabulary).toEqual({
+      ankiEndpoint: 'https://anki.example.com/team/connect',
+      ankiDeck: 'Team Deck',
+      ankiNoteType: 'cloze',
+      ankiApiKey: 'anki-secret',
+    });
+    expect(validateSettings({
+      ...settings,
+      vocabulary: { ...DEFAULT_SETTINGS.vocabulary, ankiEndpoint: 'http://anki.example.com/connect' },
+    })).toContain('远程 AnkiConnect 端点必须使用 HTTPS');
+    expect(validateSettings({
+      ...settings,
+      vocabulary: { ...DEFAULT_SETTINGS.vocabulary, ankiEndpoint: 'http://127.0.0.1:8765/' },
+    })).toEqual([]);
+    expect(validateSettings({
+      ...settings,
+      vocabulary: { ...DEFAULT_SETTINGS.vocabulary, ankiNoteType: 'advanced' as never },
+    })).toContain('Anki 笔记类型无效');
+    expect(validateSettings({
+      ...settings,
+      vocabulary: { ...DEFAULT_SETTINGS.vocabulary, ankiApiKey: 'x'.repeat(513) },
+    })).toContain('Anki API Key 不得超过 512 个字符');
+  });
+
   it('迁移 v1 TranslatorConfig，保留偏好和有效 AI 配置，但默认使用 Google', () => {
     const legacy = {
       baseUrl: 'https://api.example.com/v1',
@@ -134,6 +187,7 @@ describe('migration and normalization', () => {
         { ...customEngine, id: 'custom-migrated', name: '迁移的自定义 AI', order: 2, baseUrl: legacy.baseUrl, model: legacy.model, apiKey: legacy.apiKey },
       ],
       activeEngineId: 'google',
+      vocabulary: DEFAULT_SETTINGS.vocabulary,
     });
   });
 
@@ -313,10 +367,79 @@ describe('migration and normalization', () => {
 });
 
 describe('safe export and secure import', () => {
-  it('递归删除所有 apiKey，包括未知嵌套对象', () => {
-    const exported = exportSafeSettings({ ...settings, metadata: { apiKey: 'nested-secret', nested: [{ apiKey: 'deep-secret' }] } } as Settings);
-    expect(JSON.stringify(exported)).not.toContain('apiKey');
-    expect(JSON.stringify(exported)).not.toContain('secret');
+  it('递归删除所有 apiKey，包括未知嵌套对象，并为 vocabulary 暴露密钥状态', () => {
+    const configuredVocabulary = {
+      ...settings,
+      vocabulary: { ...DEFAULT_SETTINGS.vocabulary, ankiEndpoint: 'https://anki.example.com/connect', ankiApiKey: 'anki-secret' },
+      metadata: { apiKey: 'nested-secret', nested: [{ apiKey: 'deep-secret' }] },
+    } as Settings;
+    const exported = exportSafeSettings(configuredVocabulary);
+
+    expect(exported.vocabulary).toEqual({
+      ankiEndpoint: 'https://anki.example.com/connect',
+      ankiDeck: 'LexiLayer 生词本',
+      ankiNoteType: 'basic',
+      hasAnkiApiKey: true,
+    });
+    expect(JSON.stringify(exported)).not.toContain('anki-secret');
+    expect(JSON.stringify(exported)).not.toContain('nested-secret');
+    expect(JSON.stringify(exported)).not.toContain('deep-secret');
+  });
+
+  it('只有显式含密钥导出才包含 Anki API Key', () => {
+    const configuredVocabulary = {
+      ...settings,
+      vocabulary: { ...DEFAULT_SETTINGS.vocabulary, ankiEndpoint: 'https://anki.example.com/connect', ankiApiKey: 'anki-secret' },
+    };
+
+    expect(JSON.stringify(exportSettingsWithApiKeys(configuredVocabulary, false))).not.toContain('anki-secret');
+    expect(exportSettingsWithApiKeys(configuredVocabulary, true).vocabulary).toMatchObject({ ankiApiKey: 'anki-secret' });
+  });
+
+  it('不含 Anki key 的导入仅在 Origin 相同且规范化 endpoint 相同时保留本地 key', () => {
+    const current: Settings = {
+      ...settings,
+      vocabulary: {
+        ankiEndpoint: 'https://anki.example.com/team/connect',
+        ankiDeck: 'Local Deck',
+        ankiNoteType: 'basic',
+        ankiApiKey: 'local-anki-secret',
+      },
+    };
+    const safe = exportSafeSettings(current);
+
+    const equivalent = structuredClone(safe);
+    equivalent.vocabulary.ankiEndpoint = ' https://anki.example.com/team/connect/ ';
+    expect(importSettings(equivalent, current).vocabulary.ankiApiKey).toBe('local-anki-secret');
+
+    const changedPath = structuredClone(safe);
+    changedPath.vocabulary.ankiEndpoint = 'https://anki.example.com/other';
+    expect(importSettings(changedPath, current).vocabulary.ankiApiKey).toBe('');
+
+    const changedOrigin = structuredClone(safe);
+    changedOrigin.vocabulary.ankiEndpoint = 'https://other.example.com/team/connect';
+    expect(importSettings(changedOrigin, current).vocabulary.ankiApiKey).toBe('');
+  });
+
+  it('可信含密钥导入接受 Anki key，安全导入拒绝', () => {
+    const withKey = structuredClone(settings) as Settings;
+    withKey.vocabulary = {
+      ankiEndpoint: 'https://anki.example.com/connect',
+      ankiDeck: 'Imported Deck',
+      ankiNoteType: 'cloze',
+      ankiApiKey: 'imported-anki-secret',
+    };
+
+    expect(() => importSettings(withKey, settings)).toThrow('导入配置不能包含 API Key');
+    expect(importSettings(withKey, settings, true).vocabulary).toEqual(withKey.vocabulary);
+
+    // 与引擎密钥同语义：显式空密钥且端点一致时沿用本地密钥，端点不同才清除。
+    const clearKey = structuredClone(withKey);
+    clearKey.vocabulary.ankiApiKey = '';
+    expect(importSettings(clearKey, withKey, true).vocabulary.ankiApiKey).toBe('imported-anki-secret');
+    const otherEndpoint = structuredClone(clearKey);
+    otherEndpoint.vocabulary.ankiEndpoint = 'https://other.example/connect';
+    expect(importSettings(otherEndpoint, withKey, true).vocabulary.ankiApiKey).toBe('');
   });
 
   it('同源导入继承本地密钥，endpoint origin 改变则不继承', () => {
@@ -395,5 +518,23 @@ describe('safe export and secure import', () => {
     safe.engines = safe.engines.map((engine) => ({ ...engine, enabled: engine.kind === 'custom-ai' }));
 
     expect(() => importSettings(safe, DEFAULT_SETTINGS)).toThrow('至少保留一个可用的翻译引擎');
+  });
+
+  it('Anki 密钥导入为空且端点相同时沿用本地密钥，端点不同则清除', () => {
+    const current = {
+      ...structuredClone(DEFAULT_SETTINGS),
+      vocabulary: { ankiEndpoint: 'https://anki.example', ankiDeck: 'D', ankiNoteType: 'basic' as const, ankiApiKey: 'keep-me' },
+    };
+    const importedSame = importSettings({
+      ...structuredClone(DEFAULT_SETTINGS),
+      vocabulary: { ankiEndpoint: 'https://anki.example/', ankiDeck: 'D', ankiNoteType: 'basic', ankiApiKey: '' },
+    }, current, true);
+    expect(importedSame.vocabulary.ankiApiKey).toBe('keep-me');
+
+    const importedOther = importSettings({
+      ...structuredClone(DEFAULT_SETTINGS),
+      vocabulary: { ankiEndpoint: 'https://other.example', ankiDeck: 'D', ankiNoteType: 'basic', ankiApiKey: '' },
+    }, current, true);
+    expect(importedOther.vocabulary.ankiApiKey).toBe('');
   });
 });

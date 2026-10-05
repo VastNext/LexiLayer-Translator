@@ -74,6 +74,11 @@ export function createSelectionController(dependencies: SelectionDependencies) {
   let triggerTimer: number | undefined;
   const events = dependencies.events ?? document;
   const now = dependencies.now ?? Date.now;
+  const features = () => (globalThis as typeof globalThis & { __vastSelectionFeatures?: {
+    speak(text: string): boolean;
+    stopSpeaking(): void;
+    addVocabulary?(input: { word: string; blockText?: string; translation: string; targetLanguage: string }): Promise<'created' | 'duplicate'>;
+  } }).__vastSelectionFeatures;
   const onMouseUp = (event: MouseEvent) => {
     if (!event.isTrusted) return;
     const target = event.target instanceof Element ? event.target : null;
@@ -255,6 +260,18 @@ export function createSelectionController(dependencies: SelectionDependencies) {
     });
   }
 
+  function createActions(block?: HTMLElement): SelectionViewActions {
+    return {
+      translate: start,
+      speak: () => features()?.speak(text) ?? false,
+      stopSpeak: () => features()?.stopSpeaking(),
+      copy: () => view?.getResult() ? dependencies.copy(view.getResult()) : undefined,
+      // 失败提示不是译文；错误状态下仍记录单词与例句，但译文传空。
+      addVocabulary: (translation, targetLanguage) => features()?.addVocabulary?.({ word: text, ...(block ? { blockText: block.textContent ?? '' } : {}), translation: /失败/.test(translation) ? '' : translation, targetLanguage }) ?? Promise.reject(),
+      close,
+    };
+  }
+
   function showRemembered(): void {
     const selected = remembered;
     if (!selected) return close();
@@ -263,11 +280,7 @@ export function createSelectionController(dependencies: SelectionDependencies) {
     authorizationExpiresAt = now() + 1_500;
     text = selected.text;
     context = selected.context;
-    const actions = {
-      translate: start,
-      copy: () => view?.getResult() ? dependencies.copy(view.getResult()) : undefined,
-      close,
-    };
+    const actions = createActions(selected.block);
     view = dependencies.createView?.(selected.rect, actions)
       ?? new SelectionView(document, selected.rect, actions);
     view.mount();
@@ -283,7 +296,7 @@ export function createSelectionController(dependencies: SelectionDependencies) {
     context = undefined;
     authorizationAvailable = true;
     authorizationExpiresAt = now() + 1_500;
-    const actions = { translate: start, copy: () => view?.getResult() ? dependencies.copy(view.getResult()) : undefined, close };
+    const actions = createActions();
     view = dependencies.createView?.(new DOMRect(16, 16, 0, 0), actions) ?? new SelectionView(document, new DOMRect(16, 16, 0, 0), actions);
     view.mount();
     view.open(targetLanguage);

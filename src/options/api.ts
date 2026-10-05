@@ -1,6 +1,35 @@
 import { DEFAULT_SETTINGS, type CustomAiEngine, type Engine, type OptionsSettings, type ReadingPreferences, type Theme } from '../shared/config';
 import type { Expert } from '../shared/experts';
 import { getShortcutSettingsUrl, resolvePageTranslationShortcut, type BrowserIdentity, type ShortcutState } from '../shared/shortcuts';
+import type { VocabularyEntry } from '../shared/vocabulary';
+
+export type AnkiNoteTypeInput = 'basic' | 'cloze';
+
+export interface VocabularyPreferencesInput {
+  endpoint: string;
+  deck: string;
+  noteType: AnkiNoteTypeInput;
+  apiKey?: string;
+}
+
+export interface AnkiCandidateInput {
+  endpoint: string;
+  apiKey?: string;
+}
+
+export interface AnkiSyncResult {
+  added: number;
+  skipped: number;
+  failed: number;
+}
+
+/** 后台错误响应可能携带结构化失败码（如 AnkiConnect 的 network/cors/auth）。 */
+export class OptionsRequestError extends Error {
+  constructor(message: string, readonly code?: string) {
+    super(message);
+    this.name = 'OptionsRequestError';
+  }
+}
 
 interface OptionsChromeApi {
   runtime: { sendMessage(message: unknown): Promise<unknown> };
@@ -22,8 +51,8 @@ export function browserIdentityFromNavigator(navigatorApi: NavigatorIdentitySour
 
 export function createOptionsApi(chromeApi: OptionsChromeApi, browserIdentity?: BrowserIdentity) {
   async function request<T = void>(message: unknown): Promise<T> {
-    const response = await chromeApi.runtime.sendMessage(message) as { ok?: boolean; data?: T; error?: string };
-    if (response.ok === false) throw new Error(response.error ?? '设置操作失败');
+    const response = await chromeApi.runtime.sendMessage(message) as { ok?: boolean; data?: T; error?: string; code?: string };
+    if (response.ok === false) throw new OptionsRequestError(response.error ?? '设置操作失败', response.code);
     return response.data as T;
   }
 
@@ -48,6 +77,26 @@ export function createOptionsApi(chromeApi: OptionsChromeApi, browserIdentity?: 
     deleteExpert: (expertId: string) => request({ type: 'delete-expert', expertId }),
     importSettings: (settings: unknown, allowApiKeys?: boolean) => request({ type: 'import-settings', settings, ...(allowApiKeys !== undefined ? { allowApiKeys } : {}) }),
     clearCache: () => request({ type: 'clear-cache' }),
+    async getVocabularyEntries(): Promise<VocabularyEntry[]> {
+      return await request<VocabularyEntry[]>({ type: 'get-vocabulary-entries' }) ?? [];
+    },
+    async deleteVocabularyEntry(id: string): Promise<boolean> {
+      return (await request<{ deleted: boolean }>({ type: 'delete-vocabulary-entry', id }))?.deleted ?? false;
+    },
+    clearVocabulary: () => request({ type: 'clear-vocabulary' }),
+    saveVocabularyPreferences: (preferences: VocabularyPreferencesInput) => request({
+      type: 'save-vocabulary-preferences',
+      endpoint: preferences.endpoint,
+      deck: preferences.deck,
+      noteType: preferences.noteType,
+      ...(preferences.apiKey !== undefined ? { apiKey: preferences.apiKey } : {}),
+    }),
+    async getAnkiApiKey(): Promise<string> {
+      return (await request<{ key: string }>({ type: 'get-anki-api-key' }))?.key ?? '';
+    },
+    clearAnkiApiKey: () => request({ type: 'clear-anki-api-key' }),
+    testAnkiConnection: (candidate: AnkiCandidateInput) => request({ type: 'test-anki-connection', candidate }),
+    syncVocabularyAnki: () => request<AnkiSyncResult>({ type: 'sync-vocabulary-anki' }),
     async getPageTranslationShortcut(): Promise<ShortcutState> {
       try {
         if (!chromeApi.commands) return { status: 'unavailable', reason: 'api-error' };

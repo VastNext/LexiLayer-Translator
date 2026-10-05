@@ -48,6 +48,13 @@ describe('生产构建', () => {
       ...manifest.content_scripts?.flatMap((script) => [...(script.js ?? []), ...(script.css ?? [])]) ?? [],
     ].filter((reference): reference is string => Boolean(reference));
 
+    expect(manifest.content_scripts?.[1]?.js).toEqual([
+      'content.js',
+      'content-inline.js',
+      'content-main.js',
+      'selection-features.js',
+    ]);
+    expect(references).toContain('selection-features.js');
     expect(references.length).toBeGreaterThanOrEqual(4);
     for (const reference of references) {
       expect(reference, `${reference} 不得引用源码目录`).not.toMatch(/^src\//);

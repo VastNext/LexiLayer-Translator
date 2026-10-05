@@ -17,8 +17,8 @@ describe('manifest', () => {
       { matches: ['<all_urls>'], js: ['input-translation.js'], all_frames: true },
       expect.objectContaining({
         matches: ['<all_urls>'],
-        // 单条目 js 数组顺序即注入顺序：装配层依赖前两个脚本的全局接口。
-        js: ['content.js', 'content-inline.js', 'content-main.js'],
+        // 单条目 js 数组顺序即注入顺序：划词能力基座在页面翻译装配完成后加载。
+        js: ['content.js', 'content-inline.js', 'content-main.js', 'selection-features.js'],
         // 两套样式并列声明式注入：legacy 样式与内联样式缺一不可。
         css: ['content.css', 'content-inline.css'],
       }),
@@ -43,7 +43,7 @@ describe('manifest', () => {
 
   it('声明当前包版本、本地化名称描述和全尺寸原创图标', () => {
     expect(manifest.version).toBe(packageJson.version);
-    expect(packageJson.version).toBe('0.13.3');
+    expect(packageJson.version).toBe('0.14.0');
     expect(manifest.name).toBe('__MSG_extensionName__');
     expect(manifest.description).toBe('__MSG_extensionDescription__');
     expect(manifest.default_locale).toBe('zh_CN');

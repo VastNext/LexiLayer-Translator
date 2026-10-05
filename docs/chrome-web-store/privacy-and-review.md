@@ -18,8 +18,8 @@ Website content 披露也包含用户主动要求翻译的输入框选中文字�
 
 | Dashboard 项 | 预期选择 | 代码和数据依据 | 是否传给第三方 |
 | --- | --- | --- | --- |
-| Authentication information | 是 | 自定义 AI API Key | 仅传给用户选择的对应服务 Origin，用于授权 |
-| Website content | 是 | 页面正文、选区文本、可选有限上下文 | 传给当前选择的 Google、Bing 或自定义 AI 服务 |
+| Authentication information | 是 | 自定义 AI API Key；可选 AnkiConnect API Key | 仅传给用户选择的对应服务 Origin，用于授权 |
+| Website content | 是 | 页面正文、选区文本、可选有限上下文；用户主动加入生词本的单词、例句、译文与出处 URL | 文本传给当前选择的 Google、Bing 或自定义 AI 服务；生词条目仅存本地，用户主动同步时直接发送到其配置的 AnkiConnect 端点 |
 | Web history / browsing activity | 创建项目后最终确认；当前倾向按“处理当前网页上下文”如实披露 | 当前标签页 URL 用于消息路由、站点规则匹配和当前网页功能 | 不作为独立历史记录上传，不建立浏览历史 |
 | User activity | 当前倾向否，需对照后台定义复核 | 只响应点击、快捷键、右键菜单和划词，不记录行为日志 | 否 |
 | Remote code | 否 | 所有可执行逻辑都包含在 ZIP；远端只返回翻译数据 | 不适用 |
@@ -31,9 +31,9 @@ Website content 披露也包含用户主动要求翻译的输入框选中文字�
 ### Authentication information
 
 - 是否处理：是
-- 内容：用户为自定义 AI 填写的 API Key
+- 内容：用户为自定义 AI 填写的 API Key；可选的 AnkiConnect API Key
 - 存储位置：`chrome.storage.local`
-- 传输对象：仅对应的用户配置服务 Origin
+- 传输对象：仅对应的用户配置服务 Origin（AnkiConnect 密钥仅随请求体 `key` 字段发往该端点）
 - 用途：请求授权
 - 开发者是否接收：否
 - 是否出售或用于广告：否
@@ -41,9 +41,9 @@ Website content 披露也包含用户主动要求翻译的输入框选中文字�
 ### Website content
 
 - 是否处理：是
-- 内容：用户主动要求翻译的网页文本、选区文本和可选有限邻近上下文
-- 用途：提供页面翻译和划词翻译
-- 传输对象：当前选择的 Google、Bing 或自定义 AI 服务
+- 内容：用户主动要求翻译的网页文本、选区文本和可选有限邻近上下文；用户主动加入生词本的单词、整句、译文与出处 URL
+- 用途：提供页面翻译和划词翻译；生词本仅本地存储，用户主动同步时直接发送到其配置的 AnkiConnect 端点（远程必须 HTTPS，本机回环允许 HTTP）
+- 传输对象：当前选择的 Google、Bing 或自定义 AI 服务；用户主动同步时的 AnkiConnect 端点
 - 开发者是否接收：否，当前没有语层翻译自营翻译服务器
 - 是否出售或用于广告：否
 

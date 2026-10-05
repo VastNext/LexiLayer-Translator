@@ -2,13 +2,16 @@ import { useEffect, useRef, useState } from 'react';
 import packageJson from '../../package.json' with { type: 'json' };
 import { BrandMark } from '../BrandMark';
 import {
-  DEFAULT_SETTINGS, MAX_CUSTOM_ENGINES, createGeneratedExpertId, exportSettingsWithApiKeys, stripApiKeys, validateEngine,
+  DEFAULT_SETTINGS, MAX_CUSTOM_ENGINES, createGeneratedExpertId, exportSettingsWithApiKeys, validateEngine,
   type CustomAiEngine, type OptionsEngine, type OptionsSettings, type ReadingPreferences, type SafeSettings, type Theme,
 } from '../shared/config';
 import { defaultExperts, type Expert } from '../shared/experts';
 import { languageOptions } from '../shared/languages';
 import { createTranslator, type Translator } from '../shared/i18n';
 import type { ShortcutState } from '../shared/shortcuts';
+import type { VocabularyEntry } from '../shared/vocabulary';
+import { type AnkiCandidateInput, type AnkiSyncResult, type VocabularyPreferencesInput } from './api';
+import { VocabularySection, type DownloadFile } from './VocabularySection';
 
 type CustomDraft = Omit<CustomAiEngine, 'apiKey'> & {
   apiKey: string;
@@ -37,6 +40,14 @@ export interface OptionsApi {
   deleteExpert?(expertId: string): Promise<void>;
   getPageTranslationShortcut(): Promise<ShortcutState>;
   openShortcutSettings(): Promise<{ ok: boolean; manualUrl: string }>;
+  getVocabularyEntries(): Promise<VocabularyEntry[]>;
+  deleteVocabularyEntry(id: string): Promise<boolean>;
+  clearVocabulary(): Promise<void>;
+  saveVocabularyPreferences(preferences: VocabularyPreferencesInput): Promise<void>;
+  getAnkiApiKey(): Promise<string>;
+  clearAnkiApiKey(): Promise<void>;
+  testAnkiConnection(candidate: AnkiCandidateInput): Promise<unknown>;
+  syncVocabularyAnki(): Promise<AnkiSyncResult>;
 }
 
 const themeChoices: Array<{ id: Theme; name: string; descriptionKey: string; swatch: string }> = [
@@ -64,13 +75,22 @@ function exportableSettings(settings: OptionsSettings, drafts: CustomDraft[]): P
       const { hasApiKey: _hasApiKey, ...withoutStatus } = engine;
       return { ...withoutStatus, apiKey: draft?.apiKey ?? '' };
     }),
-  } as Parameters<typeof exportSettingsWithApiKeys>[0];
+    // Options 内存中的 vocabulary 是安全视图（hasAnkiApiKey），导出层需要完整 Settings 形状；
+    // 占位 ankiApiKey 只参与 exportSafeSettings 的标志推导，不会出现在导出结果里。
+    vocabulary: { ...settings.vocabulary, ankiApiKey: '' },
+  } as unknown as Parameters<typeof exportSettingsWithApiKeys>[0];
 }
 
-export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t?: Translator }) {
+export function OptionsApp({ api, t = createTranslator(), downloadFile }: { api: OptionsApi; t?: Translator; downloadFile?: DownloadFile }) {
   const [settings, setSettings] = useState<OptionsSettings>(() => ({
     ...structuredClone(DEFAULT_SETTINGS),
     engines: structuredClone(DEFAULT_SETTINGS.engines.filter((engine): engine is Exclude<OptionsEngine, { kind: 'custom-ai' }> => engine.kind !== 'custom-ai')),
+    vocabulary: {
+      ankiEndpoint: DEFAULT_SETTINGS.vocabulary.ankiEndpoint,
+      ankiDeck: DEFAULT_SETTINGS.vocabulary.ankiDeck,
+      ankiNoteType: DEFAULT_SETTINGS.vocabulary.ankiNoteType,
+      hasAnkiApiKey: false,
+    },
   }));
   const [drafts, setDrafts] = useState<CustomDraft[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -326,8 +346,10 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
         reader.readAsText(file);
       });
       const parsed = JSON.parse(text);
-      const containsApiKeys = JSON.stringify(parsed).toLowerCase().includes('apikey');
-      if (containsApiKeys) await api.importSettings(parsed, true); else await api.importSettings(stripApiKeys(parsed));
+      // 只把「键名带引号且值非空」的 apiKey / ankiApiKey 视为携带密钥：
+      // hasApiKey/hasAnkiApiKey 状态位与空密钥字段不再误报为含密钥导入。
+      const containsApiKeys = /"(?:anki)?apikey"\s*:\s*"[^"]+"/u.test(JSON.stringify(parsed).toLowerCase());
+      if (containsApiKeys) await api.importSettings(parsed, true); else await api.importSettings(parsed);
       await reload(t('importApplied'));
     } catch (error) { setStatus(error instanceof Error ? error.message : t('importInvalid')); }
   }
@@ -412,6 +434,12 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
       source.engines = await Promise.all(source.engines.map(async (engine) => engine.kind === 'custom-ai'
         ? { ...engine, apiKey: engine.apiKey || await api.getEngineApiKey(engine.id) }
         : engine));
+      // 真实 Anki 密钥只存在后台，导出前经安全通道取回，仅在用户明确选择时写入文件。
+      source.vocabulary = { ...settings.vocabulary, ankiApiKey: await api.getAnkiApiKey() };
+    } else {
+      // 设置内存里只有不含真实 Key 的安全视图，而 exportSafeSettings 需要字符串推导
+      // hasAnkiApiKey 标志；占位值只用于推导，导出结果不会包含它。
+      source.vocabulary = { ...settings.vocabulary, ankiApiKey: settings.vocabulary.hasAnkiApiKey ? 'stored' : '' };
     }
     const exported = exportSettingsWithApiKeys(source, includeApiKeys);
     api.exportSettings(exported as SafeSettings | OptionsSettings);
@@ -427,6 +455,7 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
         <button onClick={() => navigateTo('ai-experts')}>AI 专家</button>
         <button onClick={() => navigateTo('reading-preferences')}>{t('optionsReadingPreferences')}</button>
         <button onClick={() => navigateTo('selection-preferences')}>{t('selectionPreferences')}</button>
+        <button onClick={() => navigateTo('vocabulary-book')}>{t('vocabularyBook')}</button>
         <button onClick={() => navigateTo('shortcuts-triggers')}>{t('shortcutsAndTriggers')}</button>
         <button onClick={() => navigateTo('appearance-theme')}>{t('appearanceTheme')}</button>
         <button onClick={() => navigateTo('data-privacy')}>{t('dataPrivacy')}</button>
@@ -537,6 +566,8 @@ export function OptionsApp({ api, t = createTranslator() }: { api: OptionsApi; t
       <p className="field field--wide context-help">{t('limitedContextHelp')}</p>
       <p className="field field--wide migration-hint note">{t('selectionPreferencesMigrationHint')} <button type="button" className="link-button" onClick={() => navigateTo('shortcuts-triggers')}>{t('shortcutsAndTriggers')}</button></p>
     </div></section>
+
+    <VocabularySection api={api} t={t} vocabulary={settings.vocabulary} onStatus={setStatus} downloadFile={downloadFile} />
 
     <section id="shortcuts-triggers" className="section" aria-label={t('shortcutsAndTriggers')}>
       <div className="section-header">

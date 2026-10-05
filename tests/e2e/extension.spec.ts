@@ -427,7 +427,8 @@ test('真实鼠标划词使用 closed shadow，输入框选区不触发，结果
   expect(resizeResult).toEqual({ grew: true, clamped: true });
   const resizedBounds = await host.boundingBox();
   if (!resizedBounds) throw new Error('缩放后的划词面板不可见');
-  await page.mouse.click(resizedBounds.x + resizedBounds.width - 27, resizedBounds.y + resizedBounds.height - 27);
+  // 底部动作按钮从右到左为：加入生词、复制、重试、朗读；复制按钮中心在右起第二位。
+  await page.mouse.click(resizedBounds.x + resizedBounds.width - 63, resizedBounds.y + resizedBounds.height - 27);
   await expect(host).toHaveAttribute('data-vast-toast', 'copied');
   await expect(host).not.toHaveAttribute('data-vast-toast', { timeout: 2_500 });
   await expect.poll(() => server.requests.filter((request) => request.body.stream === true).length).toBe(1);
