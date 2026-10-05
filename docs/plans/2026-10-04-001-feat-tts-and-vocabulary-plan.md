@@ -13,15 +13,15 @@ origin: docs/ROADMAP.md（朗读单词、生词本管理）
 为语层翻译新增两个相互衔接的学习辅助能力：
 
 1. **朗读单词（TTS）**：在划词悬浮面板加入朗读按钮，朗读选中的原文；生词本条目同样提供朗读。
-2. **生词本管理**：划词面板一键加入生词，记录单词所在的整句与出处；Options 新增生词本区块提供列表、搜索、删除、复习与导出；支持通过 AnkiConnect 推送到本机 Anki，以及 CSV/TSV 文件导出。
+2. **生词本管理**：划词面板一键加入生词，记录单词所在的整句与出处；Options 新增生词本区块提供列表、搜索、删除、复习与导出；支持推送到用户配置的本机或远程 AnkiConnect 兼容服务，以及 CSV/TSV 文件导出。
 
 本计划给出共享技术基座（体积预算、消息通道、存储模型）与分单元实施路径。TTS 与加词按钮共享同一个划词动作插槽与新增内容脚本，因此合并为一份计划。
 
 ## Problem Frame
 
 - 用户划词后只拿到译文，没有发音反馈；「朗读单词」补上外语学习的第一闭环。
-- 用户读到生词时需要手动复制到第三方工具记录，且丢失了「这个词出现在哪句话、哪个页面」的语境。「生词本管理」把记录、语境和复习（Anki）都留在本地。
-- 产品边界：不运营接收翻译内容的自营服务器、不做跨站追踪。两个功能都必须保持**纯本地**：TTS 用浏览器本机语音，生词数据存 `chrome.storage.local`，Anki 推送只发往用户本机回环地址。
+- 用户读到生词时需要手动复制到第三方工具记录，且丢失了「这个词出现在哪句话、哪个页面」的语境。「生词本管理」先把记录与语境保存在扩展本地，并在用户主动操作时同步到其指定的 Anki 服务。
+- 产品边界：不运营接收翻译内容的自营服务器、不做跨站追踪。TTS 使用浏览器本机语音，生词数据默认只存 `chrome.storage.local`；只有用户配置 AnkiConnect 端点并主动点击同步时，才将选定的生词字段直接发送到该端点。语层翻译不代理、转存或中转同步数据。
 
 ## Requirements Trace
 
@@ -34,7 +34,7 @@ origin: docs/ROADMAP.md（朗读单词、生词本管理）
 | ROADMAP「生词本管理」 | 支持将所记单词同步到 Anki | D6、U7 |
 | AGENTS.md | content.js < 38KiB、background.js < 32KiB | D2、D8（预算修订随实施执行） |
 | AGENTS.md | API/权限/数据流变化同步 README、PRIVACY、chrome-web-store 文档 | U8 |
-| PRIVACY.md | 远程服务必须 HTTPS，HTTP 只允许本机回环 | D6（AnkiConnect 落入回环例外） |
+| PRIVACY.md | 远程服务必须 HTTPS，HTTP 只允许本机回环 | D6（远程 AnkiConnect 强制 HTTPS；本机回环可用 HTTP） |
 
 ## Scope Boundaries
 
@@ -79,7 +79,7 @@ origin: docs/ROADMAP.md（朗读单词、生词本管理）
 
 ### External References
 
-- AnkiConnect（Anki 桌面端插件，默认端点 `http://127.0.0.1:8765`，JSON-RPC 动作：`version`、`deckNames`、`createDeck`、`modelNames`、`addNotes`，`addNotes` 支持 `options.allowDuplicate:false` 与 `duplicateScope`）。来源见文末。
+- AnkiConnect（Anki 桌面端插件，默认监听 `http://127.0.0.1:8765`，可通过 `webBindAddress` 暴露为远程服务；官方建议非 localhost 部署设置 `apiKey`，客户端在 JSON 请求的 `key` 字段携带密钥。协议版本 6，动作包括 `version`、`deckNames`、`createDeck`、`modelNames`、`addNotes`，其中 `addNotes` 支持 `options.allowDuplicate:false` 与 `duplicateScope`）。来源见文末。
 - Web Speech API：`speechSynthesis`/`SpeechSynthesisUtterance` 是页面级 API，无需任何权限；`voices` 异步加载（`voiceschanged` 事件）；Service Worker 中不可用。来源见文末。
 
 ## Key Technical Decisions
@@ -100,8 +100,9 @@ origin: docs/ROADMAP.md（朗读单词、生词本管理）
 ### D3. 后台作为生词本唯一写者
 
 - 内容脚本不直接写存储；加词走新消息 `save-vocabulary-entry`，后台校验、去重、写盘并返回结果（`created` / `duplicate`）。
-- 新增白名单消息（均按 `hasOnlyKeys` 校验）：`save-vocabulary-entry`（content）、`get-vocabulary-entries`（仅扩展页 sender）、`delete-vocabulary-entry`、`clear-vocabulary`、`test-anki-connection`、`sync-vocabulary-anki`（后五者仅 Options）。
-- 写操作复用后台串行写队列模式，避免 Options 删除与划词加词并发交错。
+- 新增白名单消息（均按 `hasOnlyKeys` 校验）：`save-vocabulary-entry`（content）；`get-vocabulary-entries`、`delete-vocabulary-entry`、`clear-vocabulary`、`save-vocabulary-preferences`、`get-anki-api-key`、`clear-anki-api-key`、`test-anki-connection`、`sync-vocabulary-anki`（仅 Options）。
+- `test-anki-connection` 只接受候选端点、候选 API Key 和固定的 `version` 探测语义；`sync-vocabulary-anki` 只读取已保存配置并执行计划内固定动作，二者都不能被滥用为任意 URL/action/header 的 fetch 代理。
+- 写操作复用后台串行写队列模式，避免 Options 删除、设置保存与划词加词并发交错。
 
 ### D4. 生词本独立存储键，不并入 `translatorSettings`
 
@@ -131,12 +132,16 @@ interface VocabularyEntry {
 - `src/shared/sentence.ts`：`extractSentence(blockText, selectedText)` —— 按 `[.!?。！？；;]`（含后引号/空格跟随）切句，规范化空白后找包含选中词的句子；找不到或选中词跨句时，兜底取块文本 trim 后的前 200 字符。
 - 选区落在 contenteditable/input 中时不记录（生词本面向阅读场景，且避免把表单内容写盘）。
 
-### D6. Anki 同步 = 本机 AnkiConnect 推送 + 文件导出兜底
+### D6. Anki 同步 = 用户配置的 AnkiConnect 兼容端点 + 文件导出兜底
 
-- 朗读/加词不涉及网络；Anki 推送由后台 Service Worker 发起（`<all_urls>` host 权限下 SW fetch 不受 CORS 限制，兼容 AnkiConnect 默认的来源白名单）。
-- 端点默认 `http://127.0.0.1:8765`，设置中可改，但校验强制**仅回环**（`127.0.0.1` / `localhost` / `[::1]`）HTTP，维持 PRIVACY.md 的既有规则；不在产品中新增任何云端依赖。
-- 流程：`version` 连通 → `deckNames` 校验，不存在则 `createDeck` → `addNotes`（`allowDuplicate:false`）→ 返回 `{added, skipped}`。deck 默认 `LexiLayer 生词本`，笔记模板二选一：Basic（正面=word，背面=sentence + translation + URL）或 Cloze（句中 `{{c1::word}}`，背面附 translation + URL）。
-- Anki 未运行/未装插件的用户用 CSV/TSV 文件导出（复用 Blob 下载 helper），供 Anki 自行导入。不生成 apkg（zip+sqlite 成本过高）。
+- 朗读与本地加词不涉及网络；只有用户在 Options 配置端点并主动执行「测试连接」或「同步」时，后台 Service Worker 才直接请求该 AnkiConnect 兼容服务。语层翻译不提供中转服务器。
+- 端点支持本机和远程地址：本机回环（`127.0.0.1` / `localhost` / `[::1]`）允许 HTTP；其余地址**必须使用 HTTPS**，维持 PRIVACY.md 的既有安全边界。允许自定义端口与路径，拒绝 URL 内嵌用户名/密码。
+- 支持 AnkiConnect 标准 API Key：密钥在请求 JSON 顶层 `key` 字段中发送（不是 Authorization header）。远程端点强烈建议配置密钥；为了兼容受 VPN、私网或反向代理访问控制保护但未启用 AnkiConnect key 的部署，密钥不作为硬性必填项，但无密钥远程配置必须在 Options 显示安全警告并经用户明确确认。
+- API Key 只保存在 `chrome.storage.local`，不返回网页或 content script、不写入错误消息；Options 安全设置只显示 `hasApiKey`。配置导出仅在用户明确选择「包含 API Key」时包含 Anki 密钥，复用现有密钥导出边界。
+- 请求格式固定由扩展生成：`{ action, version: 6, params?, key? }`，不提供任意 action、任意 header 或通用 fetch 代理。流程为 `version` 连通 → `deckNames` 校验，不存在则 `createDeck` → `addNotes`（`allowDuplicate:false`）→ 返回 `{added, skipped}`。
+- 如果用户直接暴露 AnkiConnect 而非由反向代理处理跨域，服务端 `webCorsOriginList` 需要允许扩展的 `chrome-extension://<extension-id>` Origin；使用 `*` 不推荐。连接测试遇到 Origin/CORS 拒绝时，Options 应给出针对性的配置提示。
+- deck 默认 `LexiLayer 生词本`，笔记模板二选一：Basic（正面=word，背面=sentence + translation + URL）或 Cloze（句中 `{{c1::word}}`，背面附 translation + URL）。同步前 UI 明示将发送的字段和目标 Origin；只发送用户本次选择同步的生词。
+- 服务不可用时保留 CSV/TSV 文件导出（复用 Blob 下载 helper），供 Anki 自行导入。不生成 apkg（zip+sqlite 成本过高）。
 
 ### D7. 重复加词语义 = 同词同句
 
@@ -176,17 +181,17 @@ interface VocabularyEntry {
 [background/index.ts]
    ├─ save-vocabulary-entry：校验 → 去重 → 写 vocabularyBook → created|duplicate
    ├─ get-vocabulary-entries / delete / clear（Options 读写）
-   ├─ test-anki-connection：version 探测（仅回环端点）
-   └─ sync-vocabulary-anki：deck 校验 → addNotes(allowDuplicate:false) → {added, skipped}
+   ├─ test-anki-connection：受限的 version 探测（HTTP 仅回环；远程必须 HTTPS）
+   └─ sync-vocabulary-anki：固定动作 + JSON key 认证 → addNotes → {added, skipped}
           ▼
-[chrome.storage.local.vocabularyBook]   [AnkiConnect http://127.0.0.1:8765]
+[chrome.storage.local.vocabularyBook]   [用户配置的 AnkiConnect 兼容 HTTPS 服务]
 
 [Options 生词本区块]
    列表/搜索/删除/清空 · 复习模式（词→句子+出处） · 朗读
    JSON 导出/导入（URL 出现时两步确认） · CSV/TSV · Anki 同步与设置
 ```
 
-设置扩展：`translatorSettings` 增加可选分组（`schemaVersion: 3` 迁移补默认值）：`vocabulary: { ankiEndpoint, ankiDeck, ankiNoteType: 'basic'|'cloze' }`。
+设置扩展：`translatorSettings` 增加可选分组（`schemaVersion: 3` 迁移补默认值）：`vocabulary: { ankiEndpoint, ankiDeck, ankiNoteType: 'basic'|'cloze', hasAnkiApiKey }`；真实 `ankiApiKey` 沿用自定义引擎密钥的后台边界单独保存/读取，安全 Options 数据不回传密钥值。
 
 ## Implementation Units
 
@@ -234,17 +239,17 @@ interface VocabularyEntry {
 - **Approach**：列表字段（word / sentence 摘录 / 出处链接 / 日期 / 朗读 / 删除）；搜索框匹配 word+sentence；删除用双击确认、清空同现有模式；复习模式为简单顺序卡片（词 → 展开 sentence+translation+出处+speak）；JSON 导出在包含 URL 时走两步确认（D4）；CSV/TSV 导出固定列序并转义。
 - **Tests**：`tests/ui/options.test.tsx` 扩展区块渲染、搜索、删除确认、导出导入合并（按 id 去重）、复习翻卡。
 
-### U7. Anki 同步与设置
+### U7. 远程 AnkiConnect 同步与设置
 
-- **Goal**：本机 Anki 推送。
-- **Files**：Modify `src/shared/config.ts`（`vocabulary` 设置组、schemaVersion 3 迁移、回环校验）、Create `src/background/anki-client.ts`；Modify `src/background/index.ts`（`test-anki-connection`、`sync-vocabulary-anki`）、`src/options/VocabularySection.tsx`（deck/noteType 设置、测试连接、同步按钮与结果统计）。
-- **Approach**：D6 流程；字段格式化细节在实现期定稿（Open Questions）；端点非回环时连接测试直接报错；同步按钮禁用条件=空端点或空条目。
-- **Tests**：mock fetch 覆盖连通失败、deck 创建、allowDuplicate 跳过、结果统计；config 迁移用例覆盖 v2→v3 与非法端点拒绝。
+- **Goal**：把生词安全地推送到用户配置的本机或远程 AnkiConnect 兼容服务。
+- **Files**：Modify `src/shared/config.ts`（`vocabulary` 设置组、schemaVersion 3 迁移、HTTPS/回环 URL 校验）、Create `src/background/anki-client.ts`；Modify `src/background/index.ts`（密钥边界、`test-anki-connection`、`sync-vocabulary-anki`）、`src/options/VocabularySection.tsx`（endpoint/API Key/deck/noteType 设置、显示密钥切换、测试连接、同步范围确认与结果统计）。
+- **Approach**：D6 流程；远程地址必须 HTTPS，本机回环允许 HTTP；API Key 使用 AnkiConnect JSON 顶层 `key` 字段；无密钥远程配置显示显著警告并要求明确确认；字段格式化细节在实现期定稿（Open Questions）；同步按钮禁用条件=空端点或空条目。
+- **Tests**：mock fetch 覆盖远程 HTTPS + key、HTTP 远程拒绝、回环 HTTP 允许、URL 内嵌凭据拒绝、密钥错误脱敏、Origin/CORS 拒绝提示、连通失败、deck 创建、allowDuplicate 跳过、结果统计；config 迁移用例覆盖 v2→v3 与非法端点拒绝。
 
 ### U8. 文档、版本与发布门禁
 
 - **Goal**：数据流与文档同步、可发布。
-- **Files**：Modify `README.md`、`PRIVACY.md`（生效版本 + 新增：本地生词存储含出处 URL、朗读纯本机无网络、Anki 推送仅限本机回环端点、若用户在 Anki 开启 AnkiWeb 同步则笔记会随 Anki 自身同步到其云端且扩展不参与）、`docs/chrome-web-store/README.md`（数据披露补条目：同步到本机 Anki 应用）、`docs/ROADMAP.md`（完成后移入已完成）、`package.json`/`package-lock.json`、`docs/release-notes/0.14.0.md`。
+- **Files**：Modify `README.md`、`PRIVACY.md`（生效版本 + 新增：本地生词存储含出处 URL、朗读纯本机无网络、只有主动同步才把选定条目发送到用户配置的 AnkiConnect Origin、远程地址强制 HTTPS、Anki API Key 的本地存储与导出边界）、`docs/chrome-web-store/README.md`（数据披露补条目：用户主动同步时向其指定的第三方 AnkiConnect 服务发送单词/句子/译文/出处 URL）、`docs/ROADMAP.md`（完成后移入已完成）、`package.json`/`package-lock.json`、`docs/release-notes/0.14.0.md`。
 - **Approach**：`npm version minor --no-git-tag-version` 到 0.14.0（两项均为新功能，合并发布一个 minor）；若与 U7 拆开发布，则 0.14.0=TTS、0.15.0=生词本。
 - **Gates**：`npm test`、`npm run typecheck`、`npm run build`、`npm run release:validate`、`npm run e2e`；提交前 `git status`/`git diff --check`。
 
@@ -253,8 +258,8 @@ interface VocabularyEntry {
 ## System-Wide Impact
 
 - **体积预算**：background.js 32→40 KiB、新增 selection-features.js 6 KiB；AGENTS.md 验证门禁小节同步修订。
-- **权限**：manifest permissions 不新增（speechSynthesis 无需权限；AnkiConnect 走既有 `<all_urls>` host permission）。
-- **隐私与商店文档**：PRIVACY.md 数据行为三处变化（本地生词存储、出处 URL 落盘、回环 Anki 推送）；chrome-web-store 文档的数据披露与划词说明补齐。
+- **权限**：manifest permissions 不新增（speechSynthesis 无需权限；本机或远程 AnkiConnect 请求走既有 `<all_urls>` host permission）。
+- **隐私与商店文档**：PRIVACY.md 数据行为增加本地生词存储、出处 URL 落盘、用户主动向自选远程 AnkiConnect 服务同步及 API Key 处理；chrome-web-store 文档的数据类型、用途与第三方服务披露同步补齐。
 - **本地化**：新增运行时文案走 fallbackMessages + `_locales`（zh_CN/en）。
 - **测试面**：新增 shared/background/content/ui 各层用例与 E2E 冒烟；bundle 契约测试更新。
 
@@ -262,8 +267,9 @@ interface VocabularyEntry {
 
 - **TTS 语音可用性**：headless/精简环境可能无语音包，E2E 只做冒烟（按钮存在、状态翻转、无异常），音频效果靠真机验收；`voiceschanged` 异步需单测覆盖。
 - **content-main 余量紧**：接线代码必须克制（预算测试兜底），超出即触发拆分复盘而不是放宽预算。
-- **AnkiConnect 依赖用户环境**：需桌面端 Anki 运行且装插件；文档写明连接测试入口与 CSV 兜底路径。
-- **AnkiWeb 间接流出**：AnkiConnect 是本机 Anki 桌面应用内的插件（127.0.0.1 回环 HTTP 服务），扩展只与本机端点通信，数据不出设备；但若用户在自己的 Anki 中开启 AnkiWeb 云同步，推送的笔记会随 Anki 自身同步到 AnkiWeb 远端。该路径由用户的 Anki 配置决定，扩展不参与，但 PRIVACY 与商店数据披露需如实说明（见 U8）。
+- **AnkiConnect 服务依赖**：用户提供的端点必须有可用的 AnkiConnect 兼容服务；文档写明连接测试入口与 CSV 兜底路径。
+- **远程服务数据披露**：同步会将单词、句子、译文和出处 URL 直接发送到用户配置的远程 Origin；其运营者、日志、数据保留、备份与后续 Anki/AnkiWeb 同步均不受语层翻译控制。同步前必须展示目标 Origin 与字段范围，并在 PRIVACY 与商店数据披露中说明。
+- **远程端点安全**：AnkiConnect 原生 HTTP 服务通常需要放在 TLS 反向代理、VPN 或其他受保护通道后；扩展只接受远程 HTTPS，不负责签发证书或开放 AnkiConnect 端口。API Key 使用请求体 `key` 字段，服务端访问日志仍可能记录网络元数据。
 - **storage 写入超限**：条目极多时报错提示清理，v1 不自动清理（Deferred）。
 - **background 预算上调先例**：以本计划 D8 为依据，实施提交说明中注明理由，防止后续无声膨胀。
 
