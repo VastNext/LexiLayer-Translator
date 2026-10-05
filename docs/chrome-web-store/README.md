@@ -77,6 +77,10 @@
 
 商店文案不得暗示语层翻译（LexiLayer Translator）得到 Google 或 Microsoft 的赞助、认证或背书。
 
+### 5. `downloads`
+
+该权限仅用于把生词本导出文件（JSON/CSV/TSV）写入用户配置的子文件夹（相对浏览器下载目录，默认 `LexiLayer`，`chrome.downloads.download` 只接受下载目录内的相对路径）。扩展不读取下载记录、不监听下载事件、不下载任何网络资源；商店审核说明应突出这一单一用途。
+
 ## 推荐发布顺序
 
 1. 完成权限、数据流和第三方服务条款审计。

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Translator } from '../shared/i18n';
 import { createSpeechController } from '../shared/speech';
 import { validateAnkiEndpoint } from '../shared/anki';
-import type { VocabularyEntry } from '../shared/vocabulary';
+import { vocabularyExportPath, type VocabularyEntry } from '../shared/vocabulary';
 import type { AnkiCandidateInput, AnkiNoteTypeInput, AnkiSyncResult, VocabularyPreferencesInput } from './api';
 
 export interface VocabularyApi {
@@ -22,6 +22,7 @@ export interface VocabularySettingsView {
   ankiDeck: string;
   ankiNoteType: AnkiNoteTypeInput;
   hasAnkiApiKey: boolean;
+  exportFolder: string;
 }
 
 export type DownloadFile = (filename: string, content: string, mimeType: string) => void;
@@ -38,9 +39,10 @@ interface VocabularyAnkiState {
   endpoint: string;
   deck: string;
   noteType: AnkiNoteTypeInput;
+  exportFolder: string;
 }
 
-const DEFAULT_ANKI_VIEW: VocabularySettingsView = { ankiEndpoint: '', ankiDeck: 'LexiLayer 生词本', ankiNoteType: 'basic', hasAnkiApiKey: false };
+const DEFAULT_ANKI_VIEW: VocabularySettingsView = { ankiEndpoint: '', ankiDeck: 'LexiLayer 生词本', ankiNoteType: 'basic', hasAnkiApiKey: false, exportFolder: 'LexiLayer' };
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 const SENTENCE_EXCERPT_LENGTH = 80;
 
@@ -70,6 +72,13 @@ function tsvField(value: string): string {
 
 function downloadViaBlob(filename: string, content: string, mimeType: string): void {
   const url = URL.createObjectURL(new Blob([content], { type: mimeType }));
+  // 优先 chrome.downloads：支持下载目录下的相对子文件夹，并保留下载历史条目。
+  const downloads = (globalThis as typeof globalThis & { chrome?: { downloads?: { download(options: { url: string; filename?: string; conflictAction?: 'uniquify' | 'overwrite' | 'prompt' }): void } } }).chrome?.downloads;
+  if (downloads?.download) {
+    downloads.download({ url, filename, conflictAction: 'uniquify' });
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    return;
+  }
   const anchor = document.createElement('a');
   anchor.href = url;
   anchor.download = filename;
@@ -108,7 +117,7 @@ export function VocabularySection({ api, t, vocabulary, onStatus, downloadFile }
   const [reviewOpen, setReviewOpen] = useState(false);
   const savedView = vocabulary ?? DEFAULT_ANKI_VIEW;
   const [anki, setAnki] = useState<VocabularyAnkiState>(() => ({
-    endpoint: savedView.ankiEndpoint, deck: savedView.ankiDeck, noteType: savedView.ankiNoteType,
+    endpoint: savedView.ankiEndpoint, deck: savedView.ankiDeck, noteType: savedView.ankiNoteType, exportFolder: savedView.exportFolder ?? '',
   }));
   const [savedKey, setSavedKey] = useState('');
   const [ankiKey, setAnkiKey] = useState('');
@@ -139,7 +148,7 @@ export function VocabularySection({ api, t, vocabulary, onStatus, downloadFile }
   // 配置异步加载完成后同步 Anki 表单，避免用挂载时的默认值覆盖真实配置。
   useEffect(() => {
     const view = vocabulary ?? DEFAULT_ANKI_VIEW;
-    setAnki({ endpoint: view.ankiEndpoint, deck: view.ankiDeck, noteType: view.ankiNoteType });
+    setAnki({ endpoint: view.ankiEndpoint, deck: view.ankiDeck, noteType: view.ankiNoteType, exportFolder: view.exportFolder ?? '' });
   }, [vocabulary]);
 
   const endpoint = anki.endpoint.trim();
@@ -157,6 +166,7 @@ export function VocabularySection({ api, t, vocabulary, onStatus, downloadFile }
     try { return new URL(endpoint).origin; } catch { return endpoint; }
   })();
   const candidateKey = ankiKey.trim() || savedKey;
+  const exportFolder = vocabulary?.exportFolder ?? '';
   const download = downloadFile ?? downloadViaBlob;
 
   function speak(text: string): void {
@@ -191,7 +201,7 @@ export function VocabularySection({ api, t, vocabulary, onStatus, downloadFile }
   }
 
   function exportJson(): void {
-    download('lexilayer-vocabulary.json', JSON.stringify(entries, null, 2), 'application/json');
+    download(vocabularyExportPath(exportFolder, 'lexilayer-vocabulary.json'), JSON.stringify(entries, null, 2), 'application/json');
     setJsonExportChoice(false);
   }
 
@@ -199,7 +209,7 @@ export function VocabularySection({ api, t, vocabulary, onStatus, downloadFile }
     const header = CSV_COLUMNS.join(format === 'csv' ? ',' : '\t');
     const content = [header, ...entries.map((entry) => vocabularyRow(entry, format))].join('\n') + '\n';
     download(
-      `lexilayer-vocabulary.${format}`,
+      vocabularyExportPath(exportFolder, `lexilayer-vocabulary.${format}`),
       content,
       format === 'csv' ? 'text/csv;charset=utf-8' : 'text/tab-separated-values;charset=utf-8',
     );
@@ -210,7 +220,7 @@ export function VocabularySection({ api, t, vocabulary, onStatus, downloadFile }
     const apiKey = ankiKey.trim();
     await run(async () => {
       await api.saveVocabularyPreferences({
-        endpoint, deck: anki.deck.trim(), noteType: anki.noteType, ...(apiKey ? { apiKey } : {}),
+        endpoint, deck: anki.deck.trim(), noteType: anki.noteType, exportFolder: anki.exportFolder.trim(), ...(apiKey ? { apiKey } : {}),
       });
       const stored = await api.getAnkiApiKey();
       setSavedKey(stored);
@@ -322,6 +332,10 @@ export function VocabularySection({ api, t, vocabulary, onStatus, downloadFile }
             <option value="basic">{t('ankiNoteTypeBasic')}</option>
             <option value="cloze">{t('ankiNoteTypeCloze')}</option>
           </select>
+        </label>
+        <label className="field field--wide">{t('ankiExportFolderLabel')}
+          <input aria-label={t('ankiExportFolderLabel')} value={anki.exportFolder} placeholder="LexiLayer" onChange={(event) => setAnki((current) => ({ ...current, exportFolder: event.target.value }))} />
+          <small>{t('ankiExportFolderHelp')}</small>
         </label>
         <label className="field field--wide">{t('ankiApiKeyLabel')}
           <span className="input-wrapper">

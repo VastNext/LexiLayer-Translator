@@ -80,6 +80,7 @@ function configuredVocabulary(overrides: Partial<Settings['vocabulary']> = {}): 
       ankiDeck: 'LexiLayer 生词本',
       ankiNoteType: 'basic',
       ankiApiKey: 'anki-secret',
+      exportFolder: '',
       ...overrides,
     },
   };
@@ -126,6 +127,7 @@ describe('Anki 后台消息', () => {
           ankiDeck: 'LexiLayer 生词本',
           ankiNoteType: 'basic',
           hasAnkiApiKey: true,
+          exportFolder: '',
         },
       }),
     });
@@ -148,7 +150,25 @@ describe('Anki 后台消息', () => {
       ankiDeck: 'Team Deck',
       ankiNoteType: 'cloze',
       ankiApiKey: 'remote-secret',
+      exportFolder: '',
     });
+
+    await expect(harness.controller.handle({
+      type: 'save-vocabulary-preferences',
+      endpoint: 'https://remote.example.com/connect',
+      deck: 'Deck',
+      noteType: 'basic',
+      exportFolder: ' Backups/生词 ',
+    }, optionsSender)).resolves.toEqual({ ok: true });
+    expect((harness.local.translatorSettings as Settings).vocabulary.exportFolder).toBe('Backups/生词');
+
+    await expect(harness.controller.handle({
+      type: 'save-vocabulary-preferences',
+      endpoint: 'https://remote.example.com/connect',
+      deck: 'Deck',
+      noteType: 'basic',
+      exportFolder: '../escape',
+    }, optionsSender)).resolves.toEqual({ ok: false, error: '消息格式无效' });
 
     await expect(harness.controller.handle({
       type: 'save-vocabulary-preferences',

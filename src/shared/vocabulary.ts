@@ -137,6 +137,12 @@ function fallbackUuid(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+/** 导出文件在浏览器下载目录下的相对路径；folder 为空表示直接放下载根目录。 */
+export function vocabularyExportPath(folder: string, filename: string): string {
+  const normalized = folder.trim().replace(/\/{2,}/gu, '/').replace(/^\/+|\/+$/gu, '');
+  return normalized ? `${normalized}/${filename}` : filename;
+}
+
 export function createVocabularyId(): string {
   return globalThis.crypto?.randomUUID?.() ?? fallbackUuid();
 }

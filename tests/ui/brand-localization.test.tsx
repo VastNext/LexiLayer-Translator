@@ -33,7 +33,7 @@ const optionsApiStub = {
   load: async (): Promise<OptionsSettings> => ({
     ...structuredClone(DEFAULT_SETTINGS),
     engines: structuredClone(DEFAULT_SETTINGS.engines.filter((engine) => engine.kind !== 'custom-ai')),
-    vocabulary: { ankiEndpoint: '', ankiDeck: 'LexiLayer 生词本', ankiNoteType: 'basic', hasAnkiApiKey: false },
+    vocabulary: { ankiEndpoint: '', ankiDeck: 'LexiLayer 生词本', ankiNoteType: 'basic', hasAnkiApiKey: false, exportFolder: 'LexiLayer' },
   }),
   getEngineApiKey: async () => '',
   savePreferences: async () => undefined,

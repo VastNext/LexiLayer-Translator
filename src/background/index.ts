@@ -350,17 +350,19 @@ export function createBackgroundController(api: BackgroundChrome, dependencies: 
         return { ok: true };
       }
       if (message.type === 'save-vocabulary-preferences') {
-        if (!hasOnlyKeys(message, ['type', 'endpoint', 'deck', 'noteType', 'apiKey'])
+        if (!hasOnlyKeys(message, ['type', 'endpoint', 'deck', 'noteType', 'apiKey', 'exportFolder'])
           || typeof message.endpoint !== 'string'
           || typeof message.deck !== 'string'
           || (message.noteType !== 'basic' && message.noteType !== 'cloze')
-          || (message.apiKey !== undefined && typeof message.apiKey !== 'string')) return { ok: false, error: '消息格式无效' };
+          || (message.apiKey !== undefined && typeof message.apiKey !== 'string')
+          || (message.exportFolder !== undefined && typeof message.exportFolder !== 'string')) return { ok: false, error: '消息格式无效' };
         let vocabulary;
         try {
           vocabulary = normalizeVocabularySettings({
             ankiEndpoint: message.endpoint,
             ankiDeck: message.deck,
             ankiNoteType: message.noteType,
+            exportFolder: message.exportFolder ?? settings.vocabulary.exportFolder,
             ankiApiKey: message.apiKey === undefined
               ? (sameAnkiEndpoint(settings.vocabulary.ankiEndpoint, message.endpoint) ? settings.vocabulary.ankiApiKey : '')
               : message.apiKey,

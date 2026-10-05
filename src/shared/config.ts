@@ -57,6 +57,7 @@ export interface VocabularySettings {
   ankiDeck: string;
   ankiNoteType: AnkiNoteType;
   ankiApiKey: string;
+  exportFolder: string;
 }
 
 export interface Settings {
@@ -112,6 +113,7 @@ export const DEFAULT_SETTINGS: Settings = {
     ankiDeck: 'LexiLayer 生词本',
     ankiNoteType: 'basic',
     ankiApiKey: '',
+    exportFolder: 'LexiLayer',
   },
 };
 
@@ -157,7 +159,23 @@ function validateVocabularySettings(value: unknown): string[] {
   if (value.ankiNoteType !== 'basic' && value.ankiNoteType !== 'cloze') errors.push('Anki 笔记类型无效');
   if (typeof value.ankiApiKey !== 'string') errors.push('Anki API Key 必须是字符串');
   else if (value.ankiApiKey.trim().length > 512) errors.push('Anki API Key 不得超过 512 个字符');
+  if (typeof value.exportFolder !== 'string' || !isValidExportFolder(normalizeExportFolder(value.exportFolder))) errors.push('导出目录必须是下载目录下的相对子路径');
   return errors;
+}
+
+// 导出目录是浏览器下载目录下的相对子路径；chrome.downloads 拒绝绝对路径与 ..，
+// 这里同步收紧：允许空串（下载根目录），拒绝盘符、反斜杠、.. 段、控制字符与超长值。
+function normalizeExportFolder(value: string): string {
+  return value.trim().replace(/\/{2,}/gu, '/').replace(/^\/+|\/+$/gu, '');
+}
+
+function isValidExportFolder(value: string): boolean {
+  if (!value) return true;
+  if (value.length > 200) return false;
+  if (/\\/u.test(value) || /^[a-zA-Z]:/u.test(value)) return false;
+  if (/(^|\/)\.\.(?:\/|$)/u.test(value)) return false;
+  if (/[\u0000-\u001f]/u.test(value)) return false;
+  return true;
 }
 
 export function normalizeVocabularySettings(value: unknown): VocabularySettings {
@@ -168,6 +186,7 @@ export function normalizeVocabularySettings(value: unknown): VocabularySettings 
     ankiDeck: typeof value.ankiDeck === 'string' ? value.ankiDeck.trim() : '',
     ankiNoteType: value.ankiNoteType as AnkiNoteType,
     ankiApiKey: typeof value.ankiApiKey === 'string' ? value.ankiApiKey.trim() : '',
+    exportFolder: typeof value.exportFolder === 'string' ? normalizeExportFolder(value.exportFolder) : '',
   };
   const errors = validateVocabularySettings(candidate);
   if (errors.length) throw new Error(errors[0]);
@@ -373,6 +392,7 @@ export function importSettings(value: unknown, current: Settings = DEFAULT_SETTI
     ankiEndpoint: importedEndpoint,
     ankiDeck: typeof vocabularyInput.ankiDeck === 'string' ? vocabularyInput.ankiDeck : DEFAULT_SETTINGS.vocabulary.ankiDeck,
     ankiNoteType: vocabularyInput.ankiNoteType ?? DEFAULT_SETTINGS.vocabulary.ankiNoteType,
+    exportFolder: typeof vocabularyInput.exportFolder === 'string' ? vocabularyInput.exportFolder : DEFAULT_SETTINGS.vocabulary.exportFolder,
     ankiApiKey: importedApiKey
       || (sameNormalizedAnkiEndpoint(current.vocabulary.ankiEndpoint, importedEndpoint) ? current.vocabulary.ankiApiKey : ''),
   });

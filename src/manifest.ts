@@ -12,7 +12,7 @@ export const manifest = {
     48: 'icons/icon-48.png',
     128: 'icons/icon-128.png',
   },
-  permissions: ['storage', 'contextMenus', 'scripting'],
+  permissions: ['storage', 'contextMenus', 'scripting', 'downloads'],
   host_permissions: ['<all_urls>'],
   action: {
     default_popup: 'popup.html',

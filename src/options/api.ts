@@ -10,6 +10,7 @@ export interface VocabularyPreferencesInput {
   deck: string;
   noteType: AnkiNoteTypeInput;
   apiKey?: string;
+  exportFolder?: string;
 }
 
 export interface AnkiCandidateInput {

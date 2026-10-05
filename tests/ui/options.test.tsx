@@ -22,12 +22,12 @@ async function expandEngine(group: HTMLElement): Promise<void> {
 
 const loaded: OptionsSettings = {
   ...DEFAULT_SETTINGS,
+  vocabulary: { ankiEndpoint: '', ankiDeck: 'LexiLayer 生词本', ankiNoteType: 'basic', hasAnkiApiKey: false, exportFolder: 'LexiLayer' },
   engines: [
     ...DEFAULT_SETTINGS.engines.filter((engine): engine is Extract<typeof engine, { kind: 'google' | 'bing' }> => engine.kind !== 'custom-ai'),
     { id: 'custom-work', kind: 'custom-ai', name: '工作 AI', enabled: true, order: 2, baseUrl: 'https://work.example/v1', model: 'work-model', hasApiKey: true },
     { id: 'custom-home', kind: 'custom-ai', name: '个人 AI', enabled: false, order: 3, baseUrl: 'https://home.example/v1', model: 'home-model', hasApiKey: false },
   ],
-  vocabulary: { ankiEndpoint: '', ankiDeck: 'LexiLayer 生词本', ankiNoteType: 'basic', hasAnkiApiKey: false },
 };
 
 const vocabularyEntries = [
@@ -576,7 +576,7 @@ describe('Options v2 多引擎设置', () => {
       id: `custom-${index}`, kind: 'custom-ai' as const, name: `AI ${index}`, enabled: true, order: index + 2,
       baseUrl: `https://api${index}.example/v1`, model: 'model', hasApiKey: true,
     }))];
-    render(<OptionsApp api={createApi({ ...DEFAULT_SETTINGS, engines, vocabulary: { ankiEndpoint: '', ankiDeck: 'LexiLayer 生词本', ankiNoteType: 'basic', hasAnkiApiKey: false } })} />);
+    render(<OptionsApp api={createApi({ ...DEFAULT_SETTINGS, engines, vocabulary: { ankiEndpoint: '', ankiDeck: 'LexiLayer 生词本', ankiNoteType: 'basic', hasAnkiApiKey: false, exportFolder: 'LexiLayer' } })} />);
     expect(await screen.findByRole('button', { name: '新增自定义 AI' })).toBeDisabled();
     expect(screen.getByText(/自定义翻译要求仅对自定义 AI 生效/)).toBeInTheDocument();
   });
@@ -1114,7 +1114,7 @@ describe('Options 生词本区块', () => {
     await userEvent.click(within(region).getByRole('button', { name: '确认导出 JSON' }));
     expect(downloadFile).toHaveBeenCalledTimes(1);
     const [filename, content, mimeType] = downloadFile.mock.calls[0] as [string, string, string];
-    expect(filename).toBe('lexilayer-vocabulary.json');
+    expect(filename).toBe('LexiLayer/lexilayer-vocabulary.json');
     expect(mimeType).toBe('application/json');
     const exported = JSON.parse(content) as Array<{ word: string; id: string }>;
     expect(exported).toHaveLength(2);
@@ -1130,7 +1130,7 @@ describe('Options 生词本区块', () => {
 
     await userEvent.click(within(region).getByRole('button', { name: '导出 CSV' }));
     expect(downloadFile).toHaveBeenCalledTimes(1);
-    expect(downloadFile.mock.calls[0][0]).toBe('lexilayer-vocabulary.csv');
+    expect(downloadFile.mock.calls[0][0]).toBe('LexiLayer/lexilayer-vocabulary.csv');
     expect(downloadFile.mock.calls[0][2]).toBe('text/csv;charset=utf-8');
     const csv = downloadFile.mock.calls[0][1] as string;
     expect(csv).toContain('word,sentence,translation,sourceUrl');
@@ -1139,7 +1139,7 @@ describe('Options 生词本区块', () => {
 
     await userEvent.click(within(region).getByRole('button', { name: '导出 TSV' }));
     expect(downloadFile).toHaveBeenCalledTimes(2);
-    expect(downloadFile.mock.calls[1][0]).toBe('lexilayer-vocabulary.tsv');
+    expect(downloadFile.mock.calls[1][0]).toBe('LexiLayer/lexilayer-vocabulary.tsv');
     expect(downloadFile.mock.calls[1][2]).toBe('text/tab-separated-values;charset=utf-8');
     expect(downloadFile.mock.calls[1][1] as string).toContain('serene\tThe lake was serene at dawn.\t宁静的\thttps://example.com/article');
   });
@@ -1182,7 +1182,7 @@ describe('Options 生词本区块', () => {
     expect(save).toBeEnabled();
     await userEvent.click(save);
     await waitFor(() => expect(api.saveVocabularyPreferences).toHaveBeenCalledWith({
-      endpoint: 'https://anki.example.com', deck: 'LexiLayer 生词本', noteType: 'basic',
+      endpoint: 'https://anki.example.com', deck: 'LexiLayer 生词本', noteType: 'basic', exportFolder: 'LexiLayer',
     }));
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Anki 设置已保存'));
   });
@@ -1197,8 +1197,24 @@ describe('Options 生词本区块', () => {
     await userEvent.type(screen.getByLabelText('Anki API Key'), 'new-anki-key');
     await userEvent.click(screen.getByRole('button', { name: '保存 Anki 设置' }));
     await waitFor(() => expect(api.saveVocabularyPreferences).toHaveBeenCalledWith({
-      endpoint: 'http://127.0.0.1:8765', deck: '我的牌组', noteType: 'cloze', apiKey: 'new-anki-key',
+      endpoint: 'http://127.0.0.1:8765', deck: '我的牌组', noteType: 'cloze', exportFolder: 'LexiLayer', apiKey: 'new-anki-key',
     }));
+  });
+
+  it('导出目录字段回显并随 Anki 设置保存，导出文件名带上子目录', async () => {
+    const api = createApi({
+      ...structuredClone(loaded),
+      vocabulary: { ankiEndpoint: 'https://anki.example', ankiDeck: 'D', ankiNoteType: 'basic', hasAnkiApiKey: false, exportFolder: 'Backups/生词' },
+    });
+    render(<OptionsApp api={api} />);
+    const folder = await screen.findByLabelText('导出目录');
+    await waitFor(() => expect(folder).toHaveValue('Backups/生词'));
+
+    await userEvent.clear(folder);
+    await userEvent.type(folder, 'Vocab');
+    await userEvent.click(screen.getByLabelText('我了解风险，确认保存远程设置'));
+    await userEvent.click(screen.getByRole('button', { name: '保存 Anki 设置' }));
+    await waitFor(() => expect(api.saveVocabularyPreferences).toHaveBeenCalledWith(expect.objectContaining({ exportFolder: 'Vocab' })));
   });
 
   it('Anki API Key 回显、眼睛切换与双击确认清空', async () => {
@@ -1267,7 +1283,7 @@ describe('Options 生词本区块', () => {
   it('异步加载后回填已保存的 AnkiConnect 端点、牌组与笔记类型', async () => {
     const api = createApi({
       ...structuredClone(loaded),
-      vocabulary: { ankiEndpoint: 'https://anki.example:8080', ankiDeck: '我的牌组', ankiNoteType: 'cloze', hasAnkiApiKey: true },
+      vocabulary: { ankiEndpoint: 'https://anki.example:8080', ankiDeck: '我的牌组', ankiNoteType: 'cloze', hasAnkiApiKey: true, exportFolder: 'LexiLayer' },
     });
     render(<OptionsApp api={api} />);
     await screen.findByRole('group', { name: '工作 AI' });

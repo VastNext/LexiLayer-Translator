@@ -52,6 +52,8 @@ const fallbackMessages: Record<string, string> = {
   vocabularyExportConfirm: '导出内容包含例句与出处链接，确认导出？', vocabularyExportConfirmAction: '确认导出 JSON', vocabularyExportCancel: '取消导出',
   ankiSettings: 'Anki 同步', ankiEndpointLabel: 'AnkiConnect 端点',
   ankiEndpointHelp: '留空表示未配置；本机可用 http://127.0.0.1:8765，远程必须使用 HTTPS。',
+  ankiExportFolderLabel: '导出目录',
+  ankiExportFolderHelp: '相对浏览器下载目录的子文件夹（如 LexiLayer）；留空保存到下载根目录。',
   ankiDeckLabel: 'Anki 牌组', ankiNoteTypeLabel: '笔记类型', ankiNoteTypeBasic: '基础', ankiNoteTypeCloze: '完形填空',
   ankiApiKeyLabel: 'Anki API Key', ankiApiKeyHelp: '远程 AnkiConnect 的访问密钥，仅保存在浏览器本地。',
   ankiRemoteWarning: '远程端点未配置 API Key，任何知道该地址的人都可以写入你的 Anki。建议设置 API Key。', ankiRemoteConfirm: '我了解风险，确认保存远程设置',

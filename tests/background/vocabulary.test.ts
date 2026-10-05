@@ -10,6 +10,7 @@ import {
   normalizeVocabularyDraft,
   validateVocabularyDraft,
   vocabularyDuplicateKey,
+  vocabularyExportPath,
   type VocabularyDraft,
 } from '../../src/shared/vocabulary';
 
@@ -203,6 +204,14 @@ describe('生词本本地存储', () => {
     const book = new VocabularyStorage(storage);
 
     await expect(book.list()).resolves.toEqual([]);
+  });
+
+  it.each([
+    ['LexiLayer', 'lexilayer-vocabulary.json', 'LexiLayer/lexilayer-vocabulary.json'],
+    ['', 'a.csv', 'a.csv'],
+    ['Backups/生词', 'a.tsv', 'Backups/生词/a.tsv'],
+  ])('导出路径 %# 拼接下载目录相对子路径', (folder, filename, expected) => {
+    expect(vocabularyExportPath(folder, filename)).toBe(expected);
   });
 
   it('单条损坏只剔除该条，其余有效条目保留且可继续写入', async () => {

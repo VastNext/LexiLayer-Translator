@@ -111,6 +111,7 @@ describe('migration and normalization', () => {
       ankiDeck: 'LexiLayer 生词本',
       ankiNoteType: 'basic',
       ankiApiKey: '',
+      exportFolder: 'LexiLayer',
     });
 
     const legacyV2 = structuredClone(settings) as Omit<Settings, 'vocabulary'> & { vocabulary?: Settings['vocabulary'] };
@@ -138,6 +139,7 @@ describe('migration and normalization', () => {
       ankiDeck: 'Team Deck',
       ankiNoteType: 'cloze',
       ankiApiKey: 'anki-secret',
+      exportFolder: '',
     });
     expect(validateSettings({
       ...settings,
@@ -155,6 +157,34 @@ describe('migration and normalization', () => {
       ...settings,
       vocabulary: { ...DEFAULT_SETTINGS.vocabulary, ankiApiKey: 'x'.repeat(513) },
     })).toContain('Anki API Key 不得超过 512 个字符');
+  });
+
+  it('导出目录只接受下载目录下的相对子路径，并规范化分隔符', () => {
+    expect(normalizeSettings({
+      ...settings,
+      vocabulary: { ...DEFAULT_SETTINGS.vocabulary, exportFolder: ' /LexiLayer/生词// ' },
+    }).vocabulary.exportFolder).toBe('LexiLayer/生词');
+    // 用户粘贴 /LexiLayer 时按子目录理解，宽容去掉前导斜杠。
+    expect(normalizeSettings({
+      ...settings,
+      vocabulary: { ...DEFAULT_SETTINGS.vocabulary, exportFolder: '/absolute/path' },
+    }).vocabulary.exportFolder).toBe('absolute/path');
+    expect(validateSettings({
+      ...settings,
+      vocabulary: { ...DEFAULT_SETTINGS.vocabulary, exportFolder: '' },
+    })).toEqual([]);
+    expect(validateSettings({
+      ...settings,
+      vocabulary: { ...DEFAULT_SETTINGS.vocabulary, exportFolder: 'LexiLayer/../..\/etc' },
+    })).toContain('导出目录必须是下载目录下的相对子路径');
+    expect(validateSettings({
+      ...settings,
+      vocabulary: { ...DEFAULT_SETTINGS.vocabulary, exportFolder: 'C:\\Users\\me' },
+    })).toContain('导出目录必须是下载目录下的相对子路径');
+    expect(validateSettings({
+      ...settings,
+      vocabulary: { ...DEFAULT_SETTINGS.vocabulary, exportFolder: 'x'.repeat(201) },
+    })).toContain('导出目录必须是下载目录下的相对子路径');
   });
 
   it('迁移 v1 TranslatorConfig，保留偏好和有效 AI 配置，但默认使用 Google', () => {
@@ -380,6 +410,7 @@ describe('safe export and secure import', () => {
       ankiDeck: 'LexiLayer 生词本',
       ankiNoteType: 'basic',
       hasAnkiApiKey: true,
+      exportFolder: 'LexiLayer',
     });
     expect(JSON.stringify(exported)).not.toContain('anki-secret');
     expect(JSON.stringify(exported)).not.toContain('nested-secret');
@@ -404,6 +435,7 @@ describe('safe export and secure import', () => {
         ankiDeck: 'Local Deck',
         ankiNoteType: 'basic',
         ankiApiKey: 'local-anki-secret',
+        exportFolder: 'LexiLayer',
       },
     };
     const safe = exportSafeSettings(current);
@@ -428,6 +460,7 @@ describe('safe export and secure import', () => {
       ankiDeck: 'Imported Deck',
       ankiNoteType: 'cloze',
       ankiApiKey: 'imported-anki-secret',
+      exportFolder: 'LexiLayer',
     };
 
     expect(() => importSettings(withKey, settings)).toThrow('导入配置不能包含 API Key');
@@ -523,7 +556,7 @@ describe('safe export and secure import', () => {
   it('Anki 密钥导入为空且端点相同时沿用本地密钥，端点不同则清除', () => {
     const current = {
       ...structuredClone(DEFAULT_SETTINGS),
-      vocabulary: { ankiEndpoint: 'https://anki.example', ankiDeck: 'D', ankiNoteType: 'basic' as const, ankiApiKey: 'keep-me' },
+      vocabulary: { ankiEndpoint: 'https://anki.example', ankiDeck: 'D', ankiNoteType: 'basic' as const, ankiApiKey: 'keep-me', exportFolder: 'LexiLayer' },
     };
     const importedSame = importSettings({
       ...structuredClone(DEFAULT_SETTINGS),

@@ -90,6 +90,7 @@ export function OptionsApp({ api, t = createTranslator(), downloadFile }: { api:
       ankiDeck: DEFAULT_SETTINGS.vocabulary.ankiDeck,
       ankiNoteType: DEFAULT_SETTINGS.vocabulary.ankiNoteType,
       hasAnkiApiKey: false,
+      exportFolder: DEFAULT_SETTINGS.vocabulary.exportFolder,
     },
   }));
   const [drafts, setDrafts] = useState<CustomDraft[]>([]);

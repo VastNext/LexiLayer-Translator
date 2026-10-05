@@ -200,6 +200,8 @@
   "vocabularyExportCancel": { "message": "Cancel export" },
   "ankiSettings": { "message": "Anki sync" },
   "ankiEndpointLabel": { "message": "AnkiConnect endpoint" },
+  "ankiExportFolderLabel": { "message": "Export folder" },
+  "ankiExportFolderHelp": { "message": "Subfolder relative to the browser Downloads folder (e.g. LexiLayer); leave empty to save at the Downloads root." },
   "ankiEndpointHelp": { "message": "Leave empty to disable sync. Use http://127.0.0.1:8765 locally; remote endpoints require HTTPS." },
   "ankiDeckLabel": { "message": "Anki deck" },
   "ankiNoteTypeLabel": { "message": "Note type" },

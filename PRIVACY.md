@@ -30,6 +30,8 @@ Google 是默认引擎，请求发送到 `https://translate.googleapis.com/trans
 
 划词朗读使用浏览器本机语音（Web Speech API），朗读内容不发送到任何服务器。生词本同步只在用户于设置中配置 AnkiConnect 端点并主动点击「测试连接」或「同步」时发生：扩展的 service worker 把选定条目的单词、例句、译文和出处 URL 直接发送到该端点，语层翻译不设中转服务器。远程端点必须使用 HTTPS；本机回环地址（127.0.0.1、localhost、[::1]）允许 HTTP。AnkiConnect API Key 仅随请求体的 `key` 字段发往该端点用于其自身鉴权。第三方 Anki 服务及其运营者可能记录请求和网络元数据；若用户在自己的 Anki 中开启 AnkiWeb 同步，推送的笔记会随 Anki 自身同步到 AnkiWeb，该行为由用户的 Anki 配置决定，与扩展无关。
 
+生词本导出（JSON/CSV/TSV）使用浏览器下载接口把文件写入用户配置的下载目录子文件夹（默认 `LexiLayer`，可留空表示下载根目录）。`downloads` 权限仅用于此写入；扩展不读取、不枚举用户的其他下载记录，也不监听任何下载事件。
+
 语层翻译不会将 API Key 返回给网页或 content script，也不会把 API Key 写入翻译缓存或错误消息。配置导出只有在用户选择“包含 API Key”时才会写入密钥。
 
 第三方 API 服务可能按照自己的条款记录请求和网络元数据。用户应自行评估并接受该服务的隐私政策、数据保留规则和费用规则。
@@ -41,7 +43,7 @@ Google 是默认引擎，请求发送到 `https://translate.googleapis.com/trans
 - 翻译缓存：保存在扩展 IndexedDB 中，默认保留 30 天，最多 5000 条，并按最近访问时间淘汰。
 - 页面进度：按标签页与 frame 保存在 `chrome.storage.session`，仅保留于当前浏览器会话，不写入 `chrome.storage.sync` 或 `chrome.storage.local`。
 - 生词本条目（含出处 URL 与页面标题）：保存在 `chrome.storage.local` 的 `vocabularyBook`，只在本机使用；可在设置中逐条删除或清空。
-- AnkiConnect 端点、deck、笔记类型与 API Key：保存在 `chrome.storage.local`。安全设置数据只返回是否已配置密钥，不返回密钥值；配置导出仅在用户明确选择「包含 API Key」时写入该密钥。
+- AnkiConnect 端点、deck、笔记类型、导出目录与 API Key：保存在 `chrome.storage.local`。安全设置数据只返回是否已配置密钥，不返回密钥值；配置导出仅在用户明确选择「包含 API Key」时写入该密钥。
 - AI 成本调试统计：仅在扩展后台内存中累计请求、缓存和去重等计数，不保存待译正文、译文、页面 URL、API Key 或提示词，不上传到分析服务器；后台重启后清零。统计不是供应商账单，不支持的 Token 用量不作估算冒充实测。
 
 用户可以在 Options 中清理翻译缓存；卸载扩展会由 Chrome 清除扩展本地数据。
