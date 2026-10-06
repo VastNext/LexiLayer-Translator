@@ -131,11 +131,9 @@ describe('createVideoSession', () => {
   });
 
   it('current-engine 渐进渲染：批次到达即显示已翻译句子', async () => {
-    let firePartial: ((translations: Map<string, string>) => void) | undefined;
     const harness = createHarness({
       fetchText: vi.fn(async () => sourceBody),
       translateBatch: vi.fn(async (_segments: unknown[], _source: string, _target: string, _engineId: string, _taskId: string, onPartial?: (translations: Map<string, string>) => void) => {
-        firePartial = onPartial;
         // 批次挂起期间（翻译未完成）也应显示已到译文：渐进渲染的核心断言。
         await vi.waitFor(() => {
           onPartial?.(new Map([['yt-0', '你好']]));

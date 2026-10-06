@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createBackgroundController, type BackgroundChrome, type BackgroundDependencies } from '../../src/background/index';
-import { DEFAULT_SETTINGS, type Settings } from '../../src/shared/config';
+import { DEFAULT_SETTINGS } from '../../src/shared/config';
 
 // YouTube 字幕 current-engine 路径的后台契约：内容脚本发送的 translate-batch 消息
 // 形状（taskId/engineId 由字幕模块生成）必须通过后台校验并返回译文。
