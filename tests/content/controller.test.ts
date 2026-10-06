@@ -78,17 +78,18 @@ describe('网页翻译控制器', () => {
     expect(idle.at(-1)?.siteCommand).toBeUndefined();
   });
 
-  it('会话进行中重复触发相同参数的翻译命令不重扫页面', async () => {
-    // 站内延续重发携带解析后的完整参数（含 engineId）；省略 engineId 的命令
-    // （Popup/快捷键）不会命中去重，仍立即接管。
-    const command = { type: 'translate-page', engineId: 'google', targetLanguage: 'de', scope: 'main-content' as const, mode: 'bilingual' as const };
+  it('站内延续重发在会话进行中不再重扫，用户手动触发相同参数仍立即接管', async () => {
+    const command = { type: 'translate-page', targetLanguage: 'de', scope: 'main-content' as const, mode: 'bilingual' as const };
     await dependencies.listeners[0](command);
     const callsAfterFirst = vi.mocked(dependencies.translate).mock.calls.length;
-    await dependencies.listeners[0]({ ...command });
+
+    // 后台重发的站内延续命令：会话进行中被忽略，不打断在途批次。
+    await dependencies.listeners[0]({ ...command, source: 'site-continue' });
     expect(vi.mocked(dependencies.translate).mock.calls.length).toBe(callsAfterFirst);
     expect(dependencies.renderLoading).toHaveBeenCalledTimes(1);
 
-    await dependencies.listeners[0]({ type: 'translate-page', engineId: 'google', targetLanguage: 'fr', scope: 'main-content', mode: 'bilingual' });
+    // 用户再次点击翻译（即使参数相同，如切渲染器后重翻）：立即接管重扫。
+    await dependencies.listeners[0]({ ...command });
     expect(vi.mocked(dependencies.translate).mock.calls.length).toBeGreaterThan(callsAfterFirst);
   });
 

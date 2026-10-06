@@ -112,7 +112,7 @@ describe('站内跳转自动延续', () => {
     await reportProgress(harness, { status: 'translating', completed: 0, failed: 0, total: 2, siteCommand: { engineId: 'google', targetLanguage: 'zh-Hans', scope: 'whole-page', mode: 'bilingual' } });
     harness.sent.length = 0;
     for (const listener of harness.updated) listener(1, { status: 'complete', url: 'https://example.com/page2' });
-    await vi.waitFor(() => expect(harness.sent).toEqual([{ tabId: 1, message: { type: 'translate-page', engineId: 'google', targetLanguage: 'zh-Hans', scope: 'whole-page', mode: 'bilingual' } }]));
+    await vi.waitFor(() => expect(harness.sent).toEqual([{ tabId: 1, message: { type: 'translate-page', source: 'site-continue', engineId: 'google', targetLanguage: 'zh-Hans', scope: 'whole-page', mode: 'bilingual' } }]));
   });
 
   it('域名不同或非 http(s) 时跳过且不清旗标', async () => {
@@ -142,7 +142,7 @@ describe('站内跳转自动延续', () => {
       listener(1, {});
       listener(1, { status: 'complete' });
     }
-    await vi.waitFor(() => expect(harness.sent).toEqual([{ tabId: 1, message: { type: 'translate-page', engineId: 'google', targetLanguage: 'zh-Hans', scope: 'whole-page', mode: 'bilingual' } }]));
+    await vi.waitFor(() => expect(harness.sent).toEqual([{ tabId: 1, message: { type: 'translate-page', source: 'site-continue', engineId: 'google', targetLanguage: 'zh-Hans', scope: 'whole-page', mode: 'bilingual' } }]));
   });
 
   it('内容脚本未就绪时短暂重试发送，恢复后成功', async () => {

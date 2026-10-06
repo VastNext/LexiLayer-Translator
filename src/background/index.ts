@@ -686,7 +686,7 @@ export function createBackgroundController(api: BackgroundChrome, dependencies: 
         // complete 事件可能早于内容脚本注册：拒绝（无接收端）时短暂重试，全部失败则放弃。
         for (let attempt = 0; attempt < 5; attempt += 1) {
           try {
-            await api.tabs.sendMessage(tabId, { type: 'translate-page', ...entry.params });
+            await api.tabs.sendMessage(tabId, { type: 'translate-page', source: 'site-continue', ...entry.params });
             return;
           } catch {
             if (attempt === 4) return;

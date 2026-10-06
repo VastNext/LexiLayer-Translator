@@ -12,11 +12,11 @@ import type { RendererMode } from '../shared/config';
 
 interface PageCommand {
   type: string;
+  source?: string;
   scope?: ScanScope;
   sourceLanguage?: string;
   targetLanguage?: string;
   mode?: TranslationMode;
-  source?: string;
   text?: string;
   placement?: 'before' | 'after';
   engineId?: string;
@@ -299,15 +299,14 @@ export function createContentController(dependencies: ContentControllerDependenc
     report('idle');
   }
 
-  // 站内延续重发（晚到的 complete）携带解析后完整参数；会话进行中且参数一致时
-  // 视为重复触发，不打断在途批次。判定须在 beginSession 前同步完成以保持
-  // 「新命令立即接管」时序；省略 engineId 的命令不命中（lastCommand 字段均已填充）。
-  function isDuplicateSiteCommand({ engineId, targetLanguage: t, scope: s, mode: m }: PageCommand): boolean {
-    return engineId !== undefined && engineId === lastCommand.engineId && t === lastCommand.targetLanguage && s === lastCommand.scope && m === lastCommand.mode;
+  // 站内延续重发（晚到的 complete）由后台显式标记 source；仅拦这一来源的重复命令，
+  // 用户再次点击翻译（即使参数相同，如切渲染器后重翻）仍立即接管并重扫。
+  function isSiteContinueCommand({ source }: PageCommand): boolean {
+    return source === 'site-continue';
   }
 
   async function translate(command: PageCommand): Promise<void> {
-    if (isDuplicateSiteCommand(command)) return;
+    if (isSiteContinueCommand(command) && active) return;
     const currentGeneration = await beginSession();
     if (currentGeneration === undefined) return;
     fatalGenerations.delete(currentGeneration);
