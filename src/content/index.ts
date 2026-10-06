@@ -37,6 +37,8 @@ export interface ProgressState {
   failed: number;
   total: number;
   engineId?: string;
+  // 站内跳转自动延续：翻译会话期间随进度上报命令参数，由后台维护按标签页旗标。
+  siteCommand?: Pick<PageCommand, 'engineId' | 'targetLanguage' | 'scope' | 'mode'>;
 }
 
 export interface ContentControllerDependencies {
@@ -81,7 +83,12 @@ export function createContentController(dependencies: ContentControllerDependenc
   const fatalGenerations = new Set<number>();
 
   function report(status: ProgressState['status'], completed = 0, failed = 0): void {
-    const progress = { status, completed, failed, total: paragraphs.size, ...(lastCommand.engineId ? { engineId: lastCommand.engineId } : {}) };
+    // 仅 translating 附带命令参数：后台以此设置/刷新旗标，其余状态保持原进度契约。
+    // active 时命令必已经 resolveCommand 填充；lastCommand 只会来自 translate 命令。
+    const siteCommand = status === 'translating' && active && lastCommand.engineId
+      ? { engineId: lastCommand.engineId, targetLanguage: lastCommand.targetLanguage!, scope: lastCommand.scope!, mode: lastCommand.mode! }
+      : undefined;
+    const progress = { status, completed, failed, total: paragraphs.size, ...(lastCommand.engineId ? { engineId: lastCommand.engineId } : {}), ...(siteCommand ? { siteCommand } : {}) };
     const key = `${status}:${completed}:${failed}:${progress.total}:${progress.engineId ?? ''}`;
     if (key === lastProgressKey) return;
     lastProgressKey = key;

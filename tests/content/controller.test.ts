@@ -64,6 +64,20 @@ describe('网页翻译控制器', () => {
     createContentController(dependencies).register();
   });
 
+  it('翻译会话的进度上报附带 siteCommand，还原后为 idle 且不携带', async () => {
+    await dependencies.listeners[0]({ type: 'translate-page', targetLanguage: 'de', scope: 'main-content', mode: 'bilingual' });
+    const reports = vi.mocked(dependencies.report).mock.calls.map(([progress]) => progress);
+    const withCommand = reports.filter((progress) => progress.status === 'translating' && progress.siteCommand);
+    expect(withCommand.length).toBeGreaterThan(0);
+    expect(withCommand[0].siteCommand).toEqual({ engineId: 'google', targetLanguage: 'de', scope: 'main-content', mode: 'bilingual' });
+
+    await dependencies.listeners[0]({ type: 'restore-page' });
+    const reportsAfterRestore = vi.mocked(dependencies.report).mock.calls.map(([progress]) => progress);
+    const idle = reportsAfterRestore.filter((progress) => progress.status === 'idle');
+    expect(idle.length).toBeGreaterThan(0);
+    expect(idle.at(-1)?.siteCommand).toBeUndefined();
+  });
+
   it('10 个短段在 content 侧组成 8+2 两个 API 批请求', async () => {
     document.body.innerHTML = `<main>${Array.from({ length: 10 }, (_, index) => `<p>paragraph ${index}</p>`).join('')}</main>`;
     vi.mocked(dependencies.scan).mockReturnValue([...document.querySelectorAll('p')] as HTMLElement[]);
@@ -585,7 +599,7 @@ describe('网页翻译控制器', () => {
     });
 
     await dependencies.listeners[0]({ type: 'translate-page' });
-    expect(dependencies.report).toHaveBeenLastCalledWith({ status: 'translating', completed: 0, failed: 0, total: 1, engineId: 'google' });
+    expect(dependencies.report).toHaveBeenLastCalledWith({ status: 'translating', completed: 0, failed: 0, total: 1, engineId: 'google', siteCommand: { engineId: 'google', targetLanguage: 'zh-Hant', scope: 'whole-page', mode: 'translation-only' } });
 
     await deferredWorker();
 
