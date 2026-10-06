@@ -83,12 +83,12 @@ export function createContentController(dependencies: ContentControllerDependenc
   const fatalGenerations = new Set<number>();
 
   function report(status: ProgressState['status'], completed = 0, failed = 0): void {
-    // 仅 translating 附带命令参数：后台以此设置/刷新旗标，其余状态保持原进度契约。
-    // active 时命令必已经 resolveCommand 填充；lastCommand 只会来自 translate 命令。
-    const siteCommand = status === 'translating' && active && lastCommand.engineId
-      ? { engineId: lastCommand.engineId, targetLanguage: lastCommand.targetLanguage!, scope: lastCommand.scope!, mode: lastCommand.mode! }
+    // 仅 translating 附带命令参数供后台维护站内延续旗标；active 时命令已解析填充。
+    const c = lastCommand;
+    const siteCommand = status === 'translating' && active && c.engineId
+      ? { engineId: c.engineId, targetLanguage: c.targetLanguage!, scope: c.scope!, mode: c.mode! }
       : undefined;
-    const progress = { status, completed, failed, total: paragraphs.size, ...(lastCommand.engineId ? { engineId: lastCommand.engineId } : {}), ...(siteCommand ? { siteCommand } : {}) };
+    const progress = { status, completed, failed, total: paragraphs.size, ...(c.engineId ? { engineId: c.engineId } : {}), ...(siteCommand ? { siteCommand } : {}) };
     const key = `${status}:${completed}:${failed}:${progress.total}:${progress.engineId ?? ''}`;
     if (key === lastProgressKey) return;
     lastProgressKey = key;
@@ -299,7 +299,15 @@ export function createContentController(dependencies: ContentControllerDependenc
     report('idle');
   }
 
+  // 站内延续重发（晚到的 complete）携带解析后完整参数；会话进行中且参数一致时
+  // 视为重复触发，不打断在途批次。判定须在 beginSession 前同步完成以保持
+  // 「新命令立即接管」时序；省略 engineId 的命令不命中（lastCommand 字段均已填充）。
+  function isDuplicateSiteCommand({ engineId, targetLanguage: t, scope: s, mode: m }: PageCommand): boolean {
+    return engineId !== undefined && engineId === lastCommand.engineId && t === lastCommand.targetLanguage && s === lastCommand.scope && m === lastCommand.mode;
+  }
+
   async function translate(command: PageCommand): Promise<void> {
+    if (isDuplicateSiteCommand(command)) return;
     const currentGeneration = await beginSession();
     if (currentGeneration === undefined) return;
     fatalGenerations.delete(currentGeneration);

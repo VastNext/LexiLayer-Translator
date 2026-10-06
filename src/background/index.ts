@@ -24,7 +24,7 @@ export interface BackgroundChrome {
   contextMenus: { create(properties: chrome.contextMenus.CreateProperties): void; removeAll(): Promise<void> | void; onClicked: { addListener(listener: (info: chrome.contextMenus.OnClickData, tab?: chrome.tabs.Tab) => void): void } };
   action?: Pick<typeof chrome.action, 'setBadgeText' | 'setBadgeBackgroundColor'>;
   tabs: { query(queryInfo: chrome.tabs.QueryInfo): Promise<chrome.tabs.Tab[]>; sendMessage(tabId: number, message: unknown): Promise<unknown>; onRemoved?: { addListener(listener: (tabId: number) => void): void }; onUpdated?: { addListener(listener: (tabId: number, changeInfo: { status?: string; url?: string }) => void): void } };
-  storage: { local: Pick<chrome.storage.StorageArea, 'get' | 'set'> & { setAccessLevel?(options: { accessLevel: 'TRUSTED_CONTEXTS' }): Promise<void> }; session?: { get(key: string): Promise<Record<string, unknown>>; set(items: Record<string, unknown>): Promise<void> } };
+  storage: { local: Pick<chrome.storage.StorageArea, 'get' | 'set'> & { setAccessLevel?(options: { accessLevel: 'TRUSTED_CONTEXTS' }): Promise<void> }; session?: { get(key: string): Promise<Record<string, unknown>>; set(items: Record<string, unknown>): Promise<void>; remove?(key: string): Promise<void> } };
   i18n: { getUILanguage(): string; getMessage?(key: string): string };
 }
 
@@ -116,9 +116,12 @@ function sameAnkiEndpoint(left: string, right: string): boolean {
 
 // 站内跳转自动延续：按标签页维护「当前站点翻译会话」旗标（chrome.storage.session，
 // 浏览器关闭即清空）。命令参数来自页面控制器随进度上报的 siteCommand。
-const SITE_FLAG_KEY = 'siteAutoTranslate';
+// 每个标签页一个独立键，避免并发进度上报整表读改写时互相覆盖。
+const SITE_FLAG_PREFIX = 'siteAutoTranslate:';
 
 interface SiteTranslationFlag { host: string; params: Record<string, string> }
+
+function siteFlagKey(tabId: number): string { return `${SITE_FLAG_PREFIX}${tabId}`; }
 
 function pageHost(url: string): string | undefined {
   try {
@@ -129,21 +132,24 @@ function pageHost(url: string): string | undefined {
 
 function parseSiteCommand(value: unknown): Record<string, string> | undefined {
   if (!isRecord(value) || !hasOnlyKeys(value, ['engineId', 'scope', 'mode', 'targetLanguage', 'expertId'])) return undefined;
-  const params: Record<string, string> = {};
-  for (const key of ['engineId', 'scope', 'mode', 'targetLanguage', 'expertId'] as const) {
-    const item = value[key];
-    if (item === undefined) continue;
-    if (!isSafeString(item, 64)) return undefined;
-    if ((key === 'engineId' || key === 'expertId') && !isSafeId(item)) return undefined;
-    params[key] = item;
+  if (!isSafeId(value.engineId) || !isSafeString(value.targetLanguage, 64)) return undefined;
+  if (value.scope !== 'main-content' && value.scope !== 'whole-page') return undefined;
+  if (value.mode !== 'bilingual' && value.mode !== 'translation-only') return undefined;
+  const params: Record<string, string> = { engineId: value.engineId, scope: value.scope, mode: value.mode, targetLanguage: value.targetLanguage };
+  if (value.expertId !== undefined) {
+    if (!isSafeId(value.expertId)) return undefined;
+    params.expertId = value.expertId;
   }
   return params;
 }
 
-async function readSiteFlags(api: BackgroundChrome): Promise<Record<string, SiteTranslationFlag>> {
-  if (!api.storage.session) return {};
-  const stored = await api.storage.session.get(SITE_FLAG_KEY);
-  return isRecord(stored[SITE_FLAG_KEY]) ? stored[SITE_FLAG_KEY] as Record<string, SiteTranslationFlag> : {};
+async function readSiteFlag(api: BackgroundChrome, tabId: number): Promise<SiteTranslationFlag | undefined> {
+  if (!api.storage.session) return undefined;
+  const stored = await api.storage.session.get(siteFlagKey(tabId));
+  const value = stored[siteFlagKey(tabId)];
+  return isRecord(value) && typeof value.host === 'string' && isRecord(value.params)
+    ? { host: value.host, params: value.params as Record<string, string> }
+    : undefined;
 }
 
 function requireEngine(settings: Settings, engineId: string): Engine {
@@ -557,20 +563,15 @@ export function createBackgroundController(api: BackgroundChrome, dependencies: 
         const value = await api.storage.session.get('pageProgress'); const stored = isRecord(value.pageProgress) ? value.pageProgress : {};
         await api.storage.session.set({ pageProgress: { ...stored, [key]: progress } });
         await setTranslationBadge(sender.tab.id, status !== 'idle');
-        // 站内延续旗标：translating 附带命令参数时刷新，还原（idle）时清除；仅写有变化的会话存储。
+        // 站内延续旗标：translating 附带命令参数时刷新，还原（idle）时清除；按标签页独立键。
         const siteCommand = parseSiteCommand(message.progress.siteCommand);
         const siteHost = sender.url ? pageHost(sender.url) : undefined;
-        if (status === 'idle' || (siteCommand && siteHost)) {
-          const flags = await readSiteFlags(api);
-          const tabKey = String(sender.tab.id);
-          if (status === 'idle' && flags[tabKey]) {
-            const { [tabKey]: _removed, ...rest } = flags;
-            await api.storage.session.set({ [SITE_FLAG_KEY]: rest });
-          } else if (siteCommand && siteHost) {
-            const next: SiteTranslationFlag = { host: siteHost, params: siteCommand };
-            if (JSON.stringify(flags[tabKey]) !== JSON.stringify(next)) {
-              await api.storage.session.set({ [SITE_FLAG_KEY]: { ...flags, [tabKey]: next } });
-            }
+        if (status === 'idle' && siteHost) await api.storage.session.remove?.(siteFlagKey(sender.tab.id));
+        else if (siteCommand && siteHost) {
+          const next: SiteTranslationFlag = { host: siteHost, params: siteCommand };
+          const existing = await readSiteFlag(api, sender.tab.id);
+          if (JSON.stringify(existing) !== JSON.stringify(next)) {
+            await api.storage.session.set({ [siteFlagKey(sender.tab.id)]: next });
           }
         }
         // Popup 关闭时可能没有接收端；进度已保存，广播失败不影响翻译。
@@ -669,18 +670,16 @@ export function createBackgroundController(api: BackgroundChrome, dependencies: 
     });
     api.commandsApi.onCommand.addListener((command) => { if (command === 'translate_page') sendToActiveTab({ type: 'toggle-page-translation' }); });
     // 站内跳转自动延续：同域名 complete 时重发上次翻译命令；还原（idle）已清除旗标。
-    api.tabs.onRemoved?.addListener((tabId) => { void (async () => {
-      const flags = await readSiteFlags(api);
-      if (!flags[String(tabId)]) return;
-      const { [String(tabId)]: _removed, ...rest } = flags;
-      await api.storage.session?.set({ [SITE_FLAG_KEY]: rest });
-    })().catch(() => undefined); });
+    // complete 事件不携带 url，URL 只在 loading 等事件中出现，需按标签页记住最近一次地址。
+    const navigationUrls = new Map<number, string>();
+    api.tabs.onRemoved?.addListener((tabId) => { navigationUrls.delete(tabId); void api.storage.session?.remove?.(siteFlagKey(tabId)).catch(() => undefined); });
     api.tabs.onUpdated?.addListener((tabId, changeInfo) => {
-      if (changeInfo.status !== 'complete' || !changeInfo.url) return;
-      const url = changeInfo.url;
+      if (changeInfo.url) navigationUrls.set(tabId, changeInfo.url);
+      if (changeInfo.status !== 'complete') return;
+      const url = navigationUrls.get(tabId);
+      if (!url) return;
       void (async () => {
-        const flags = await readSiteFlags(api);
-        const entry = flags[String(tabId)];
+        const entry = await readSiteFlag(api, tabId);
         if (!entry || pageHost(url) !== entry.host) return;
         const settings = await readSettings(api);
         if (!settings.readingPreferences.autoSiteTranslation) return;

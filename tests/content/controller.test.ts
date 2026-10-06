@@ -78,6 +78,20 @@ describe('网页翻译控制器', () => {
     expect(idle.at(-1)?.siteCommand).toBeUndefined();
   });
 
+  it('会话进行中重复触发相同参数的翻译命令不重扫页面', async () => {
+    // 站内延续重发携带解析后的完整参数（含 engineId）；省略 engineId 的命令
+    // （Popup/快捷键）不会命中去重，仍立即接管。
+    const command = { type: 'translate-page', engineId: 'google', targetLanguage: 'de', scope: 'main-content' as const, mode: 'bilingual' as const };
+    await dependencies.listeners[0](command);
+    const callsAfterFirst = vi.mocked(dependencies.translate).mock.calls.length;
+    await dependencies.listeners[0]({ ...command });
+    expect(vi.mocked(dependencies.translate).mock.calls.length).toBe(callsAfterFirst);
+    expect(dependencies.renderLoading).toHaveBeenCalledTimes(1);
+
+    await dependencies.listeners[0]({ type: 'translate-page', engineId: 'google', targetLanguage: 'fr', scope: 'main-content', mode: 'bilingual' });
+    expect(vi.mocked(dependencies.translate).mock.calls.length).toBeGreaterThan(callsAfterFirst);
+  });
+
   it('10 个短段在 content 侧组成 8+2 两个 API 批请求', async () => {
     document.body.innerHTML = `<main>${Array.from({ length: 10 }, (_, index) => `<p>paragraph ${index}</p>`).join('')}</main>`;
     vi.mocked(dependencies.scan).mockReturnValue([...document.querySelectorAll('p')] as HTMLElement[]);

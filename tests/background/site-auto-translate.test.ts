@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createBackgroundController, type BackgroundChrome, type BackgroundDependencies } from '../../src/background/index';
 import { DEFAULT_SETTINGS, type Settings } from '../../src/shared/config';
@@ -56,6 +56,7 @@ function createHarness(settings: Settings = structuredClone(DEFAULT_SETTINGS)): 
       session: {
         get: vi.fn(async (key: string): Promise<Record<string, unknown>> => ({ [key]: structuredClone(session[key]) })),
         set: vi.fn(async (items: Record<string, unknown>) => { Object.assign(session, structuredClone(items)); }),
+        remove: vi.fn(async (key: string) => { delete session[key]; }),
       },
     },
     i18n: { getUILanguage: () => 'zh-CN' },
@@ -73,76 +74,96 @@ async function reportProgress(harness: Harness, progress: Record<string, unknown
   await harness.controller.handle({ type: 'page-progress', progress }, contentSender(url));
 }
 
-function siteFlags(harness: Harness): Record<string, unknown> {
-  return (harness.session.siteAutoTranslate as Record<string, unknown>) ?? {};
+function siteFlag(harness: Harness, tabId = 1): unknown {
+  return harness.session[`siteAutoTranslate:${tabId}`];
 }
 
 describe('站内跳转自动延续', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
+  // 每个用例自建 harness，无需跨用例清理；不要在此使用 clearAllMocks——
+  // 它会连 harness mock 的 implementation 一起清除，导致依赖实现的用例失效。
   it('translating 进度附带 siteCommand 时写入旗标，idle 时清除', async () => {
     const harness = createHarness();
     const command = { engineId: 'google', targetLanguage: 'zh-Hans', scope: 'whole-page', mode: 'bilingual' };
     await reportProgress(harness, { status: 'translating', completed: 0, failed: 0, total: 3, siteCommand: command });
-    expect(siteFlags(harness)['1']).toEqual({ host: 'example.com', params: command });
+    expect(siteFlag(harness)).toEqual({ host: 'example.com', params: command });
 
     await reportProgress(harness, { status: 'idle', completed: 0, failed: 0, total: 0 });
-    expect(siteFlags(harness)['1']).toBeUndefined();
+    expect(siteFlag(harness)).toBeUndefined();
   });
 
   it('非 http(s) 页面与非法 siteCommand 不写旗标', async () => {
     const harness = createHarness();
-    await reportProgress(harness, { status: 'translating', completed: 0, failed: 0, total: 1, siteCommand: { engineId: 'google' } }, 'chrome-extension://extension-id/options.html');
-    expect(siteFlags(harness)['1']).toBeUndefined();
+    await reportProgress(harness, { status: 'translating', completed: 0, failed: 0, total: 1, siteCommand: { engineId: 'google', targetLanguage: 'zh-Hans', scope: 'whole-page', mode: 'bilingual' } }, 'chrome-extension://extension-id/options.html');
+    expect(siteFlag(harness)).toBeUndefined();
 
     await reportProgress(harness, { status: 'translating', completed: 0, failed: 0, total: 1, siteCommand: { engineId: 'google', evil: 'x' } });
-    expect(siteFlags(harness)['1']).toBeUndefined();
+    expect(siteFlag(harness)).toBeUndefined();
+  });
+
+  it('siteCommand 缺少 engineId 或枚举非法时不写旗标', async () => {
+    const harness = createHarness();
+    await reportProgress(harness, { status: 'translating', completed: 0, failed: 0, total: 1, siteCommand: {} });
+    await reportProgress(harness, { status: 'translating', completed: 0, failed: 0, total: 1, siteCommand: { engineId: 'google', scope: 'everything', mode: 'bilingual' } });
+    expect(siteFlag(harness)).toBeUndefined();
   });
 
   it('complete 且同域名时重发 translate-page 命令并携带参数', async () => {
     const harness = createHarness();
-    await reportProgress(harness, { status: 'translating', completed: 0, failed: 0, total: 2, siteCommand: { engineId: 'google', targetLanguage: 'zh-Hans' } });
+    await reportProgress(harness, { status: 'translating', completed: 0, failed: 0, total: 2, siteCommand: { engineId: 'google', targetLanguage: 'zh-Hans', scope: 'whole-page', mode: 'bilingual' } });
     harness.sent.length = 0;
     for (const listener of harness.updated) listener(1, { status: 'complete', url: 'https://example.com/page2' });
-    await vi.waitFor(() => expect(harness.sent).toEqual([{ tabId: 1, message: { type: 'translate-page', engineId: 'google', targetLanguage: 'zh-Hans' } }]));
+    await vi.waitFor(() => expect(harness.sent).toEqual([{ tabId: 1, message: { type: 'translate-page', engineId: 'google', targetLanguage: 'zh-Hans', scope: 'whole-page', mode: 'bilingual' } }]));
   });
 
   it('域名不同或非 http(s) 时跳过且不清旗标', async () => {
     const harness = createHarness();
-    await reportProgress(harness, { status: 'translating', completed: 0, failed: 0, total: 2, siteCommand: { engineId: 'google' } });
+    await reportProgress(harness, { status: 'translating', completed: 0, failed: 0, total: 2, siteCommand: { engineId: 'google', targetLanguage: 'zh-Hans', scope: 'whole-page', mode: 'bilingual' } });
     for (const listener of harness.updated) listener(1, { status: 'complete', url: 'https://other.example/page' });
     for (const listener of harness.updated) listener(1, { status: 'complete', url: 'chrome://newtab' });
     expect(harness.sent).toEqual([]);
-    expect(siteFlags(harness)['1']).toBeDefined();
+    expect(siteFlag(harness)).toBeDefined();
   });
 
   it('偏好关闭时不自动延续', async () => {
     const settings = structuredClone(DEFAULT_SETTINGS);
     settings.readingPreferences.autoSiteTranslation = false;
     const harness = createHarness(settings);
-    await reportProgress(harness, { status: 'translating', completed: 0, failed: 0, total: 2, siteCommand: { engineId: 'google' } });
+    await reportProgress(harness, { status: 'translating', completed: 0, failed: 0, total: 2, siteCommand: { engineId: 'google', targetLanguage: 'zh-Hans', scope: 'whole-page', mode: 'bilingual' } });
     for (const listener of harness.updated) listener(1, { status: 'complete', url: 'https://example.com/page2' });
     expect(harness.sent).toEqual([]);
   });
 
+  it('按真实事件序列触发：loading 携带 url，complete 不带 url', async () => {
+    const harness = createHarness();
+    await reportProgress(harness, { status: 'translating', completed: 0, failed: 0, total: 2, siteCommand: { engineId: 'google', targetLanguage: 'zh-Hans', scope: 'whole-page', mode: 'bilingual' } });
+    harness.sent.length = 0;
+    for (const listener of harness.updated) {
+      listener(1, { status: 'loading', url: 'https://example.com/page2' });
+      listener(1, {});
+      listener(1, { status: 'complete' });
+    }
+    await vi.waitFor(() => expect(harness.sent).toEqual([{ tabId: 1, message: { type: 'translate-page', engineId: 'google', targetLanguage: 'zh-Hans', scope: 'whole-page', mode: 'bilingual' } }]));
+  });
+
   it('内容脚本未就绪时短暂重试发送，恢复后成功', async () => {
     const harness = createHarness();
-    await reportProgress(harness, { status: 'translating', completed: 0, failed: 0, total: 2, siteCommand: { engineId: 'google' } });
+    await reportProgress(harness, { status: 'translating', completed: 0, failed: 0, total: 2, siteCommand: { engineId: 'google', targetLanguage: 'zh-Hans', scope: 'whole-page', mode: 'bilingual' } });
     harness.sent.length = 0;
     vi.mocked(harness.api.tabs.sendMessage)
       .mockRejectedValueOnce(new Error('receiving end does not exist'))
       .mockRejectedValueOnce(new Error('receiving end does not exist'));
-    for (const listener of harness.updated) listener(1, { status: 'complete', url: 'https://example.com/page2' });
+    for (const listener of harness.updated) {
+      listener(1, { status: 'loading', url: 'https://example.com/page2' });
+      listener(1, { status: 'complete' });
+    }
     await vi.waitFor(() => expect(harness.sent.length).toBe(1), { timeout: 4_000 });
   });
 
   it('标签页关闭时清理旗标', async () => {
     const harness = createHarness();
-    await reportProgress(harness, { status: 'translating', completed: 0, failed: 0, total: 2, siteCommand: { engineId: 'google' } });
-    expect(siteFlags(harness)['1']).toBeDefined();
+    await reportProgress(harness, { status: 'translating', completed: 0, failed: 0, total: 2, siteCommand: { engineId: 'google', targetLanguage: 'zh-Hans', scope: 'whole-page', mode: 'bilingual' } });
+    expect(siteFlag(harness)).toBeDefined();
     for (const listener of harness.removed) listener(1);
-    await vi.waitFor(() => expect(siteFlags(harness)['1']).toBeUndefined());
+    await vi.waitFor(() => expect(siteFlag(harness)).toBeUndefined());
   });
 });

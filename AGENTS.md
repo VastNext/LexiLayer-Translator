@@ -91,7 +91,7 @@ npm run e2e
 - `content-inline.js < 8 KiB`
 - `selection-features.js < 6 KiB`
 - `background.js < 40 KiB`
-- 页面翻译三脚本（`content.js`、`content-inline.js`、`content-main.js`）累计 `< 52 KiB`；`selection-features.js` 作为新能力入口单独约束，不计入该既有累计口径。
+- 页面翻译三脚本（`content.js`、`content-inline.js`、`content-main.js`）累计 `< 54 KiB`（0.15.0 由 52 KiB 上调，容纳站内跳转自动延续）；`selection-features.js` 作为新能力入口单独约束，不计入该既有累计口径。
 
 只有验证通过后才提交；提交前检查 `git status`、`git diff`、`git diff --check` 和近期提交，只暂存本次任务文件。验证通过后提交并推送当前分支。
 
