@@ -44,7 +44,7 @@ describe('createYouTubeCapture', () => {
 
   it('非 timedtext 请求不转发；相对地址解析为绝对地址；Request 对象取 url', async () => {
     const { posted, capture } = createCapture();
-    const hooked = capture.wrapFetch(vi.fn(async () => null));
+    const hooked = capture.wrapFetch(vi.fn(async () => null) as unknown as typeof globalThis.fetch);
     await hooked('/api/timedtext?v=rel&pot=R');
     await hooked('https://www.youtube.com/watch?v=x');
     await hooked(new Request('https://www.youtube.com/api/timedtext?v=req&pot=Q'));
@@ -58,8 +58,8 @@ describe('createYouTubeCapture', () => {
     const original = vi.fn(() => undefined);
     const hooked = capture.wrapXhrOpen(original as unknown as XMLHttpRequest['open']);
     const fakeXhr = {} as XMLHttpRequest;
-    hooked.call(fakeXhr, 'GET', 'https://www.youtube.com/api/timedtext?v=xhr&pot=H');
-    expect(original).toHaveBeenCalledWith('GET', 'https://www.youtube.com/api/timedtext?v=xhr&pot=H');
+    hooked.call(fakeXhr, 'GET', 'https://www.youtube.com/api/timedtext?v=xhr&pot=H', true);
+    expect(original).toHaveBeenCalledWith('GET', 'https://www.youtube.com/api/timedtext?v=xhr&pot=H', true);
     expect(posted).toEqual([{ source: 'lexiytds-inject', url: 'https://www.youtube.com/api/timedtext?v=xhr&pot=H' }]);
   });
 

@@ -48,7 +48,6 @@ export function createSubtitleRenderer(
   host.style.display = 'none';
   player.append(host);
 
-  let restorePosition = false;
   let dragOffset = { x: 0, y: 0 };
   let dragging = false;
 
@@ -57,7 +56,6 @@ export function createSubtitleRenderer(
     host.style.bottom = 'auto';
     host.style.top = `${Math.min(Math.max(position.y, 0), 1) * 100}%`;
     host.style.transform = 'translate(-50%, -50%)';
-    restorePosition = true;
   }
 
   function sourceLine(): HTMLElement | null {
@@ -72,7 +70,7 @@ export function createSubtitleRenderer(
     return host.querySelector('[data-lexiytds-notice]');
   }
 
-  function renderLine(kind: 'source' | 'translation', text: string | undefined): HTMLElement {
+  function renderLine(kind: 'source' | 'translation' | 'notice', text: string | undefined): HTMLElement {
     let line = kind === 'source' ? sourceLine() : translationLine();
     if (!line) {
       line = ownerDocument.createElement('div');

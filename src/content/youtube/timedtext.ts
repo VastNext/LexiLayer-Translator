@@ -54,7 +54,7 @@ export function buildReplayUrl(capturedUrl: string, options: { tlang?: string })
 }
 
 function decodeEntities(text: string): string {
-  return text.replace(/&(amp|lt|gt|quot|apos|#\d+);/gu, (match, code: string) => {
+  return text.replace(/&(amp|lt|gt|quot|apos|#\d+);/gu, (_match, code: string) => {
     if (code === 'amp') return '&';
     if (code === 'lt') return '<';
     if (code === 'gt') return '>';

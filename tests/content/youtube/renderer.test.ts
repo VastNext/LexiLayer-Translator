@@ -52,7 +52,7 @@ describe('createSubtitleRenderer', () => {
 
   it('拖动 host 后按百分比持久化位置', () => {
     player.getBoundingClientRect = vi.fn(() => ({ width: 1000, height: 500, left: 0, top: 0, right: 1000, bottom: 500, x: 0, y: 0, toJSON: () => undefined }) as DOMRect);
-    const renderer = createSubtitleRenderer(player, { setPosition });
+    const renderer = createSubtitleRenderer(player, { setPosition: setPosition as (position: { x: number; y: number }) => Promise<void> | void });
     renderer.show('Hello', '你好');
     const host = player.querySelector('[data-lexiytds-host]') as HTMLElement;
     host.getBoundingClientRect = vi.fn(() => ({ width: 200, height: 60, left: 400, top: 200, right: 600, bottom: 260, x: 400, y: 200, toJSON: () => undefined }) as DOMRect);

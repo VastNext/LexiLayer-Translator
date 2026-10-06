@@ -16,7 +16,7 @@ function createDeps(overrides: Partial<SubtitleTranslateDeps> = {}) {
       { tStartMs: 0, dDurationMs: 1000, segs: [{ utf8: '你好' }] },
       { tStartMs: 2000, dDurationMs: 1000, segs: [{ utf8: '世界' }] },
     ] })),
-    translateBatch: vi.fn(async (_segments: string[], _source: string, _target: string, onPartial?: (translations: Map<number, string>) => void) => {
+    translateBatch: vi.fn(async (_segments: unknown[], _source: string, _target: string, onPartial?: (translations: Map<string, string>) => void) => {
       onPartial?.(new Map([['yt-0', '你好'], ['yt-1', '世界']]));
     }),
     ...overrides,

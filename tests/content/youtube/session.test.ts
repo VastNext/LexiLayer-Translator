@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { createVideoSession, type VideoSessionDeps } from '../../../src/content/youtube/session';
-import type { SubtitleRenderer } from '../../../src/content/youtube/renderer';
 
 // 视频字幕会话：捕获 → 获取原文 → 翻译 → 同步渲染；SPA 重建与广告期间停画。
 
@@ -36,7 +35,7 @@ function createHarness(overrides: Partial<VideoSessionDeps> = {}): Harness {
   const video = { currentTime: 0 };
   const playerClasses = new Set<string>();
   const fetchText = vi.fn(async (url: string) => (url.includes('tlang=') ? translatedBody : sourceBody));
-  const translateBatch = vi.fn(async (_segments: string[], _source: string, _target: string, onPartial?: (translations: Map<number, string>) => void) => {
+  const translateBatch = vi.fn(async (_segments: unknown[], _source: string, _target: string, onPartial?: (translations: Map<string, string>) => void) => {
     onPartial?.(new Map([['yt-0', '你好'], ['yt-1', '世界']]));
   });
   const deps: VideoSessionDeps = {

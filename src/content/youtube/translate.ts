@@ -2,7 +2,7 @@
 // translate-batch，分批渐进回调）→ 双失败仅原文。全链路显式检测静默失败（pot 空 body）。
 
 import { buildReplayUrl, hasTranslation, parseJson3, zipCues, type SubtitleCue, type DualSubtitleCue } from './timedtext';
-import type { VideoSubtitleEngine } from '../../../shared/config';
+import type { VideoSubtitleEngine } from '../../shared/config';
 
 export interface SubtitleSegment { id: string; text: string }
 

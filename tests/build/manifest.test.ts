@@ -10,7 +10,7 @@ describe('manifest', () => {
     expect(manifest.manifest_version).toBe(3);
     expect(manifest.host_permissions).toContain('<all_urls>');
     expect(manifest.permissions).toEqual(expect.arrayContaining(['storage', 'contextMenus', 'scripting', 'downloads']));
-    const youtubeScripts = manifest.content_scripts.filter((entry: { matches?: string[] }) => entry.matches?.includes('https://www.youtube.com/*'));
+    const youtubeScripts = (manifest.content_scripts as unknown as Array<{ matches?: string[]; js?: string[]; run_at?: string; world?: string }>).filter((entry) => entry.matches?.includes('https://www.youtube.com/*'));
     expect(youtubeScripts).toHaveLength(2);
     const mainEntry = youtubeScripts.find((entry: { world?: string }) => entry.world === 'MAIN');
     expect(mainEntry?.js).toEqual(['youtube-inject.js']);

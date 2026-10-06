@@ -4,7 +4,7 @@
 
 import { buildReplayUrl, normKey, parseJson3, type DualSubtitleCue } from './timedtext';
 import { translateSubtitles, type SubtitleTranslateDeps } from './translate';
-import type { VideoSubtitleEngine } from '../../../shared/config';
+import type { VideoSubtitleEngine } from '../../shared/config';
 
 export interface SessionConfig {
   enabled: boolean;

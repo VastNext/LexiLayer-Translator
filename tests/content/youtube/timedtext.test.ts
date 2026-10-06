@@ -42,7 +42,9 @@ describe('buildReplayUrl', () => {
   it('强制 fmt=json3，可选附加 tlang，保留 pot 等其余参数', () => {
     const captured = 'https://www.youtube.com/api/timedtext?v=abc&lang=en&fmt=srv3&pot=XYZ';
     expect(buildReplayUrl(captured, {})).toBe('https://www.youtube.com/api/timedtext?v=abc&lang=en&fmt=json3&pot=XYZ');
-    const withTlang = new URL(buildReplayUrl(captured, { tlang: 'zh-Hans' }));
+    const replayUrl = buildReplayUrl(captured, { tlang: 'zh-Hans' });
+    expect(replayUrl).toBeDefined();
+    const withTlang = new URL(replayUrl!);
     expect(withTlang.searchParams.get('fmt')).toBe('json3');
     expect(withTlang.searchParams.get('tlang')).toBe('zh-Hans');
     expect(withTlang.searchParams.get('pot')).toBe('XYZ');
