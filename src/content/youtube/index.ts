@@ -68,7 +68,14 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.id && isWatchPage()) {
     },
     getVideoTime() {
       const video = document.querySelector('video.html5-main-video') ?? document.querySelector('#movie_player video');
-      return video instanceof HTMLVideoElement ? video.currentTime : undefined;
+      if (!(video instanceof HTMLVideoElement)) return undefined;
+      // 合成播放器（E2E 夹具）经 data-current-time 注入模拟时间；真实播放器不会设置该属性。
+      const simulated = video.getAttribute('data-current-time');
+      if (simulated) {
+        const value = Number(simulated);
+        if (Number.isFinite(value)) return value;
+      }
+      return video.currentTime;
     },
     isAdShowing() {
       return document.getElementById('movie_player')?.classList.contains('ad-showing') ?? false;

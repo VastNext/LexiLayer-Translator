@@ -1226,6 +1226,18 @@ describe('Options 生词本区块', () => {
     await waitFor(() => expect(api.savePreferences).toHaveBeenCalledWith(expect.objectContaining({ autoSiteTranslation: false })));
   });
 
+  it('视频字幕开关与引擎选择随阅读偏好自动保存', async () => {
+    const api = createApi();
+    render(<OptionsApp api={api} />);
+    const toggle = await screen.findByLabelText('在 YouTube 显示双语字幕');
+    expect(toggle).toBeChecked();
+    await userEvent.click(toggle);
+    await waitFor(() => expect(api.savePreferences).toHaveBeenCalledWith(expect.objectContaining({ videoSubtitleEnabled: false })));
+
+    await userEvent.selectOptions(screen.getByLabelText('字幕翻译引擎'), 'current-engine');
+    await waitFor(() => expect(api.savePreferences).toHaveBeenCalledWith(expect.objectContaining({ videoSubtitleEngine: 'current-engine' })));
+  });
+
   it('Anki API Key 回显、眼睛切换与双击确认清空', async () => {
     const api = createApi();
     vi.mocked(api.getAnkiApiKey).mockResolvedValue('anki-secret');
