@@ -13,6 +13,8 @@ const budgets = {
   'content-main.js': 38 * 1024,
   'content-inline.js': 8 * 1024,
   'selection-features.js': 6 * 1024,
+  'youtube-inject.js': 4 * 1024,
+  'youtube-subtitles.js': 16 * 1024,
   'background.js': 40 * 1024,
 } as const;
 
