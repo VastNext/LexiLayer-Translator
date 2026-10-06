@@ -48,6 +48,7 @@ describe('v2 settings', () => {
         scanScope: 'whole-page',
         selectionContext: true,
         selectionPopupEnabled: true,
+        autoSiteTranslation: true,
         inlineSelectionModifier: 'Control',
         inlineSelectionTriggerCount: 2,
       },
@@ -101,6 +102,25 @@ describe('v2 settings', () => {
       { id: 'bing', kind: 'bing', name: 'Bing', enabled: true, order: 1 },
       { id: 'custom-work', kind: 'custom-ai', name: '工作接口', enabled: true, order: 2 },
     ]);
+  });
+});
+
+describe('autoSiteTranslation 偏好', () => {
+  it('默认开启，旧配置与旧导入自动补齐', () => {
+    expect(DEFAULT_SETTINGS.readingPreferences.autoSiteTranslation).toBe(true);
+    const legacy = structuredClone(settings) as unknown as Record<string, unknown>;
+    delete (legacy.readingPreferences as Record<string, unknown>).autoSiteTranslation;
+    expect(normalizeSettings(legacy).readingPreferences.autoSiteTranslation).toBe(true);
+    const imported = structuredClone(DEFAULT_SETTINGS) as unknown as Record<string, unknown>;
+    delete (imported.readingPreferences as Record<string, unknown>).autoSiteTranslation;
+    delete (imported.vocabulary as Record<string, unknown>).ankiApiKey;
+    expect(importSettings(imported, structuredClone(DEFAULT_SETTINGS)).readingPreferences.autoSiteTranslation).toBe(true);
+  });
+
+  it('非法值被拒绝', () => {
+    const candidate = structuredClone(settings);
+    (candidate.readingPreferences as unknown as Record<string, unknown>).autoSiteTranslation = 'yes';
+    expect(validateSettings(candidate)).toContain('自动延续翻译配置无效');
   });
 });
 
@@ -209,7 +229,7 @@ describe('migration and normalization', () => {
         inputTargetLanguage: 'en',
         targetLanguage: 'zh-Hans', displayMode: 'translation', userInstruction: '保留术语',
         translationPosition: 'before', scanScope: 'whole-page', selectionContext: false,
-         selectionPopupEnabled: true, inlineSelectionModifier: 'Control', inlineSelectionTriggerCount: 1, rendererMode: 'legacy',
+         selectionPopupEnabled: true, autoSiteTranslation: true, inlineSelectionModifier: 'Control', inlineSelectionTriggerCount: 1, rendererMode: 'legacy',
       },
       engines: [
         DEFAULT_SETTINGS.engines[0],
@@ -387,7 +407,7 @@ describe('migration and normalization', () => {
       baseUrl: 'http://remote.example.com/v1', apiKey: '', model: '',
       targetLanguage: 'zh-Hant', displayMode: 'translation', userInstruction: '保留专名',
          translationPosition: 'before', scanScope: 'whole-page', selectionContext: false,
-         selectionPopupEnabled: true, inlineSelectionModifier: 'Control', inlineSelectionTriggerCount: 1,
+         selectionPopupEnabled: true, autoSiteTranslation: true, inlineSelectionModifier: 'Control', inlineSelectionTriggerCount: 1,
     })).toMatchObject({
       activeEngineId: 'google',
       readingPreferences: { targetLanguage: 'zh-Hant', displayMode: 'translation', userInstruction: '保留专名', translationPosition: 'before', scanScope: 'whole-page', selectionContext: false },

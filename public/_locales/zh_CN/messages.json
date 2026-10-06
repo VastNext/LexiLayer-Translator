@@ -201,6 +201,8 @@
   "ankiSettings": { "message": "Anki 同步" },
   "ankiEndpointLabel": { "message": "AnkiConnect 端点" },
   "ankiExportFolderLabel": { "message": "导出目录" },
+  "autoSiteTranslation": { "message": "跳转后自动延续翻译" },
+  "autoSiteTranslationHelp": { "message": "同一标签页内跳转到同域名页面时自动继续翻译，直到点击还原或关闭浏览器。" },
   "ankiExportFolderHelp": { "message": "相对浏览器下载目录的子文件夹（如 LexiLayer）；留空保存到下载根目录。" },
   "ankiEndpointHelp": { "message": "留空表示未配置；本机可用 http://127.0.0.1:8765，远程必须使用 HTTPS。" },
   "ankiDeckLabel": { "message": "Anki 牌组" },

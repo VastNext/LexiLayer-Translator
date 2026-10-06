@@ -564,6 +564,8 @@ export function OptionsApp({ api, t = createTranslator(), downloadFile }: { api:
     <section id="selection-preferences" className="section" aria-label={t('selectionPreferences')}><div className="section-header"><h2>{t('selectionPreferences')}</h2><span className="section-index">05 / SELECT</span></div><div className="grid">
       <label className="field check-field"><input aria-label={t('limitedContext')} type="checkbox" disabled={!loaded} checked={settings.readingPreferences.selectionContext} onChange={(event) => updatePreferences('selectionContext', event.target.checked)} /> {t('limitedContextLabel')}</label>
       <label className="field check-field"><input aria-label={t('selectionPopupEnabled')} type="checkbox" disabled={!loaded} checked={settings.readingPreferences.selectionPopupEnabled} onChange={(event) => updatePreferences('selectionPopupEnabled', event.target.checked)} /> {t('selectionPopupEnabled')}</label>
+      <label className="field check-field"><input aria-label={t('autoSiteTranslation')} type="checkbox" disabled={!loaded} checked={settings.readingPreferences.autoSiteTranslation} onChange={(event) => updatePreferences('autoSiteTranslation', event.target.checked)} /> {t('autoSiteTranslation')}</label>
+      <p className="field field--wide note">{t('autoSiteTranslationHelp')}</p>
       <p className="field field--wide context-help">{t('limitedContextHelp')}</p>
       <p className="field field--wide migration-hint note">{t('selectionPreferencesMigrationHint')} <button type="button" className="link-button" onClick={() => navigateTo('shortcuts-triggers')}>{t('shortcutsAndTriggers')}</button></p>
     </div></section>

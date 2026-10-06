@@ -21,6 +21,7 @@ export interface ReadingPreferences {
   scanScope: 'main-content' | 'whole-page';
   selectionContext: boolean;
   selectionPopupEnabled: boolean;
+  autoSiteTranslation: boolean;
   inlineSelectionModifier: InlineSelectionModifier;
   inlineSelectionTriggerCount: InlineSelectionTriggerCount;
   rendererMode: RendererMode;
@@ -97,6 +98,7 @@ export const DEFAULT_SETTINGS: Settings = {
     scanScope: 'whole-page',
     selectionContext: true,
     selectionPopupEnabled: true,
+    autoSiteTranslation: true,
     inlineSelectionModifier: 'Control',
     inlineSelectionTriggerCount: 2,
     rendererMode: 'inline',
@@ -140,6 +142,7 @@ function validatePreferences(value: unknown): string[] {
   if (value.scanScope !== 'main-content' && value.scanScope !== 'whole-page') errors.push('翻译范围无效');
   if (typeof value.selectionContext !== 'boolean') errors.push('有限上下文配置无效');
   if (typeof value.selectionPopupEnabled !== 'boolean') errors.push('划词悬浮按钮配置无效');
+  if (typeof value.autoSiteTranslation !== 'boolean') errors.push('自动延续翻译配置无效');
   if (!['Control', 'Alt', 'Shift', 'Meta', 'Off'].includes(String(value.inlineSelectionModifier))) errors.push('选区内联翻译快捷键无效');
   if (![1, 2, 3].includes(Number(value.inlineSelectionTriggerCount))) errors.push('选区内联翻译触发次数无效');
   if (value.rendererMode !== 'legacy' && value.rendererMode !== 'inline') errors.push('渲染器模式无效');
@@ -312,6 +315,7 @@ export function normalizeSettings(value: unknown): Settings {
   if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.inputTargetLanguage === undefined) normalizedValue.readingPreferences.inputTargetLanguage = 'en';
   if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.sourceLanguage === undefined) normalizedValue.readingPreferences.sourceLanguage = 'auto';
   if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.selectionPopupEnabled === undefined) normalizedValue.readingPreferences.selectionPopupEnabled = true;
+  if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.autoSiteTranslation === undefined) normalizedValue.readingPreferences.autoSiteTranslation = true;
   if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.inlineSelectionModifier === undefined) normalizedValue.readingPreferences.inlineSelectionModifier = 'Control';
   if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.inlineSelectionTriggerCount === undefined) normalizedValue.readingPreferences.inlineSelectionTriggerCount = 1;
   // 已存配置缺少渲染器模式或值为非法时受控回退兼容模式，避免整份设置被重置。
@@ -401,6 +405,7 @@ export function importSettings(value: unknown, current: Settings = DEFAULT_SETTI
   migrateExpertDefaults(input);
   if (isRecord(input.readingPreferences) && input.readingPreferences.inputTargetLanguage === undefined) input.readingPreferences.inputTargetLanguage = 'en';
   if (isRecord(input.readingPreferences) && input.readingPreferences.selectionPopupEnabled === undefined) input.readingPreferences.selectionPopupEnabled = true;
+  if (isRecord(input.readingPreferences) && input.readingPreferences.autoSiteTranslation === undefined) input.readingPreferences.autoSiteTranslation = true;
   if (isRecord(input.readingPreferences) && input.readingPreferences.inlineSelectionModifier === undefined) input.readingPreferences.inlineSelectionModifier = 'Control';
   if (isRecord(input.readingPreferences) && input.readingPreferences.inlineSelectionTriggerCount === undefined) input.readingPreferences.inlineSelectionTriggerCount = 1;
   // 旧导入配置缺少渲染器模式时回退兼容模式；非法值同样受控回退而不拒绝整份导入。
@@ -461,6 +466,7 @@ export function migrateSettings(value: unknown): Settings {
       scanScope: value.scanScope as 'main-content' | 'whole-page',
       selectionContext: value.selectionContext as boolean,
       selectionPopupEnabled: true,
+      autoSiteTranslation: true,
       inlineSelectionModifier: 'Control',
       inlineSelectionTriggerCount: 1,
       rendererMode: 'legacy',
