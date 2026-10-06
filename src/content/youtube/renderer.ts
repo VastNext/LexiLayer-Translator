@@ -12,6 +12,7 @@ export interface SubtitleRenderer {
 }
 
 export interface SubtitleRendererStorage {
+  getPosition?(): Promise<SubtitlePosition | undefined>;
   setPosition?(position: SubtitlePosition): Promise<void> | void;
 }
 
@@ -28,6 +29,7 @@ function ensureStyle(document: Document): void {
       background:rgba(8,8,8,.75);color:#fff;font-size:18px;line-height:1.45;text-align:center;
       max-width:90%;cursor:default;user-select:none;pointer-events:auto}
     .ytp-autohide [${HOST_ID_ATTR}]{bottom:3%}
+    .lexiytds-hide-native .ytp-caption-window-container{opacity:0 !important}
     [${HOST_ID_ATTR}] [data-lexiytds-source]{white-space:pre-wrap}
     [${HOST_ID_ATTR}] [data-lexiytds-translation]{color:#ffd75e;white-space:pre-wrap}
     [${HOST_ID_ATTR}][data-lexiytds-dragging]{cursor:grabbing}
@@ -43,6 +45,9 @@ export function createSubtitleRenderer(
   const ownerDocument = player.ownerDocument;
   ensureStyle(ownerDocument);
 
+  // 替换原生字幕显示：捕获链路依赖 CC 开启，但原生渲染需隐藏避免原文重复出现两遍。
+  player.classList.add('lexiytds-hide-native');
+
   const host = ownerDocument.createElement('div');
   host.setAttribute(HOST_ID_ATTR, '');
   host.style.display = 'none';
@@ -50,6 +55,10 @@ export function createSubtitleRenderer(
 
   let dragOffset = { x: 0, y: 0 };
   let dragging = false;
+
+  void storage.getPosition?.().then((position) => {
+    if (position) applyStoredPosition(position);
+  }).catch(() => undefined);
 
   function applyStoredPosition(position: SubtitlePosition): void {
     host.style.left = `${Math.min(Math.max(position.x, 0), 1) * 100}%`;
@@ -144,6 +153,7 @@ export function createSubtitleRenderer(
       ownerDocument.removeEventListener('pointermove', onPointerMove);
       ownerDocument.removeEventListener('pointerup', onPointerUp);
       host.remove();
+      player.classList.remove('lexiytds-hide-native');
     },
   };
 }

@@ -1,21 +1,23 @@
 // YouTube 双语字幕 ISOLATED 控制脚本：桥接 MAIN world 捕获（window.postMessage）、
 // 装配会话依赖（fetch 重放 / translate-batch / DOM 播放器访问），驱动 120ms 同步轮询。
-// 仅在 /watch 页面激活；SPA 导航（yt-navigate-finish + 轮询兜底）自动重建会话。
+// 监听器在 youtube.com 任意页面注册（SPA 从首页点进 /watch 不重新加载文档），
+// watch 页判断在回调内进行；SPA 导航（yt-navigate-finish + 轮询兜底）重建会话。
 // MAIN world 捕获由独立脚本 youtube-inject.js 负责，这里绝不重复 hook（世界不同）。
 
 import { INJECT_MESSAGE_SOURCE } from './inject';
 import { createVideoSession, type SessionConfig } from './session';
-import { createSubtitleRenderer, type SubtitleRenderer } from './renderer';
+import { createSubtitleRenderer, type SubtitlePosition, type SubtitleRenderer } from './renderer';
 
 const TARGET_ORIGIN = 'https://www.youtube.com';
 const TICK_INTERVAL_MS = 120;
 const NAVIGATION_POLL_MS = 1_000;
 const CC_RETRY_MS = 800;
 const CC_RETRY_MAX = 5;
+const POSITION_KEY = 'videoSubtitlePosition';
 
 interface PublicConfigResponse {
   ok?: boolean;
-  data?: { preferences?: { targetLanguage?: string; videoSubtitleEnabled?: boolean; videoSubtitleEngine?: 'youtube-tlang' | 'current-engine' } };
+  data?: { activeEngineId?: string; preferences?: { targetLanguage?: string; videoSubtitleEnabled?: boolean; videoSubtitleEngine?: 'youtube-tlang' | 'current-engine' } };
   error?: string;
 }
 
@@ -23,17 +25,35 @@ function isWatchPage(): boolean {
   return location.hostname === 'www.youtube.com' && location.pathname === '/watch';
 }
 
-if (typeof chrome !== 'undefined' && chrome.runtime?.id && isWatchPage()) {
-  let lastVideoId: string | undefined = new URL(location.href).searchParams.get('v') ?? undefined;
+function currentVideoId(): string | undefined {
+  return isWatchPage() ? new URL(location.href).searchParams.get('v') ?? undefined : undefined;
+}
+
+if (typeof chrome !== 'undefined' && chrome.runtime?.id && location.hostname === 'www.youtube.com') {
+  let lastVideoId: string | undefined = currentVideoId();
   let ccOpenedByExtension = false;
   let rendererInstance: SubtitleRenderer | undefined;
+  let rendererPlayer: HTMLElement | undefined;
 
-  // 播放器元素可能晚于内容脚本出现（SPA），延迟解析；找不到时渲染调用安全降级。
+  const t = (key: string, fallback: string): string => chrome.i18n.getMessage(key) || fallback;
+
+  // 播放器元素可能晚于内容脚本出现且可能被重建：每次渲染调用前校验连接状态。
   const rendererFor = (): SubtitleRenderer | undefined => {
-    if (rendererInstance) return rendererInstance;
     const player = document.getElementById('movie_player');
+    if (rendererInstance && rendererPlayer && player === rendererPlayer && rendererPlayer.isConnected) {
+      return rendererInstance;
+    }
+    rendererInstance?.destroy();
     if (!player) return undefined;
-    rendererInstance = createSubtitleRenderer(player);
+    rendererPlayer = player;
+    rendererInstance = createSubtitleRenderer(player, {
+      getPosition: async () => {
+        const stored = await chrome.storage.local.get(POSITION_KEY);
+        const position = stored[POSITION_KEY] as SubtitlePosition | undefined;
+        return position && Number.isFinite(position.x) && Number.isFinite(position.y) ? position : undefined;
+      },
+      setPosition: (position) => { void chrome.storage.local.set({ [POSITION_KEY]: position }); },
+    });
     return rendererInstance;
   };
   const renderer: SubtitleRenderer = {
@@ -46,20 +66,21 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.id && isWatchPage()) {
   const session = createVideoSession({
     async getConfig(): Promise<SessionConfig> {
       const response = await chrome.runtime.sendMessage({ type: 'get-public-config' }) as PublicConfigResponse | undefined;
-      const preferences = response?.data?.preferences;
+      const data = response?.data;
       return {
-        enabled: preferences?.videoSubtitleEnabled ?? true,
-        engine: preferences?.videoSubtitleEngine ?? 'youtube-tlang',
-        targetLanguage: preferences?.targetLanguage ?? 'en',
+        enabled: data?.preferences?.videoSubtitleEnabled ?? true,
+        engine: data?.preferences?.videoSubtitleEngine ?? 'youtube-tlang',
+        engineId: data?.activeEngineId ?? 'google',
+        targetLanguage: data?.preferences?.targetLanguage ?? 'en',
       };
     },
     async fetchText(url: string) {
       const response = await fetch(url, { credentials: 'include' });
       return response.text();
     },
-    async translateBatch(segments, sourceLanguage, targetLanguage, onPartial) {
+    async translateBatch(segments, sourceLanguage, targetLanguage, engineId, taskId, onPartial) {
       const response = await chrome.runtime.sendMessage({
-        type: 'translate-batch', sourceLanguage, targetLanguage, segments,
+        type: 'translate-batch', sourceLanguage, targetLanguage, segments, engineId, taskId,
       }) as { ok?: boolean; data?: Array<{ id: string; text: string }>; error?: string } | undefined;
       if (!response?.ok || !response.data) throw new Error(response?.error ?? '字幕翻译请求失败');
       const translations = new Map<string, string>();
@@ -97,9 +118,14 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.id && isWatchPage()) {
       return false;
     },
     renderer,
+    notices: {
+      readFailed: t('ytdsNoticeReadFailed', '未能读取字幕（该视频可能无字幕或被限制）'),
+      noSubtitles: t('ytdsNoticeNoSubtitles', '该视频没有可用字幕'),
+      translateUnavailable: t('ytdsNoticeTranslateUnavailable', '字幕翻译暂不可用，已保留原文'),
+    },
   });
 
-  // MAIN world 捕获 → 会话。
+  // MAIN world 捕获 → 会话（session 内部按 normKey 幂等，页面脚本误发消息无副作用）。
   window.addEventListener('message', (event) => {
     if (event.source !== window || event.origin !== TARGET_ORIGIN) return;
     const data = event.data as { source?: string; url?: string } | null;
@@ -115,14 +141,14 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.id && isWatchPage()) {
   }
 
   document.addEventListener('yt-navigate-finish', () => {
-    lastVideoId = new URL(location.href).searchParams.get('v') ?? undefined;
+    lastVideoId = currentVideoId();
     session.reset();
     void handleNavigation();
   });
 
   window.setInterval(() => session.tick(), TICK_INTERVAL_MS);
   window.setInterval(() => {
-    const videoId = isWatchPage() ? new URL(location.href).searchParams.get('v') ?? undefined : undefined;
+    const videoId = currentVideoId();
     if (videoId !== lastVideoId) {
       lastVideoId = videoId;
       session.reset();
@@ -130,18 +156,26 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.id && isWatchPage()) {
     }
   }, NAVIGATION_POLL_MS);
 
-  // 功能开关关闭：停止会话并恢复原生字幕（若为扩展开启）。
+  // 启动时已在 watch 页（整页加载）：请求开启原生字幕以触发捕获。
+  void handleNavigation();
+
+  // 功能开关/引擎变化：关闭 → 停止会话并恢复原生字幕；开启或引擎切换 → 重建会话。
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local' && area !== 'sync') return;
     const settingsChange = changes.translatorSettings;
     if (!settingsChange) return;
-    const preferences = (settingsChange.newValue as { readingPreferences?: { videoSubtitleEnabled?: boolean } } | undefined)?.readingPreferences;
-    if (preferences?.videoSubtitleEnabled === false) {
+    const preferences = (settingsChange.newValue as { readingPreferences?: { videoSubtitleEnabled?: boolean; videoSubtitleEngine?: string } } | undefined)?.readingPreferences;
+    if (!preferences) return;
+    if (preferences.videoSubtitleEnabled === false) {
       session.disable();
       if (ccOpenedByExtension) {
         document.querySelector('.ytp-subtitles-button')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
         ccOpenedByExtension = false;
       }
+      return;
     }
+    session.enable();
+    session.reset();
+    void handleNavigation();
   });
 }

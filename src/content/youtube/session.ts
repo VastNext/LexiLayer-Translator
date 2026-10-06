@@ -9,6 +9,7 @@ import type { VideoSubtitleEngine } from '../../shared/config';
 export interface SessionConfig {
   enabled: boolean;
   engine: VideoSubtitleEngine;
+  engineId: string;
   targetLanguage: string;
 }
 
@@ -20,6 +21,8 @@ export interface SessionRenderer {
 
 export interface VideoSessionDeps extends SubtitleTranslateDeps {
   getConfig(): Promise<SessionConfig>;
+  // 状态提示文案由装配层经 i18n 解析（内容脚本无共享 i18n 通道）。
+  notices: { readFailed: string; noSubtitles: string; translateUnavailable: string };
   getVideoTime(): number | undefined;
   isAdShowing(): boolean;
   ensureCaptionsEnabled(): Promise<boolean>;
@@ -62,7 +65,7 @@ export function createVideoSession(deps: VideoSessionDeps) {
     const sourceUrl = buildReplayUrl(url, {});
     if (!sourceUrl) {
       status = 'unavailable-source';
-      deps.renderer.showNotice('未能读取字幕');
+      deps.renderer.showNotice(deps.notices.readFailed);
       return;
     }
     let sourceCues;
@@ -71,19 +74,21 @@ export function createVideoSession(deps: VideoSessionDeps) {
       sourceCues = parseJson3(body);
     } catch {
       status = 'unavailable-source';
-      deps.renderer.showNotice('未能读取字幕（该视频可能无字幕或被限制）');
+      deps.renderer.showNotice(deps.notices.readFailed);
       return;
     }
     if (generation !== sessionId || disabled) return;
     if (!sourceCues.length) {
       status = 'unavailable-source';
-      deps.renderer.showNotice('该视频没有可用字幕');
+      deps.renderer.showNotice(deps.notices.noSubtitles);
       return;
     }
     const sourceLanguage = new URL(url).searchParams.get('lang') ?? 'auto';
+    // 渐进渲染基座：先以原文填充 cues，翻译批次到达时逐句补译文。
+    cues = sourceCues.map((cue) => ({ ...cue }));
     const result = await translateSubtitles(deps, {
-      engine: config.engine, capturedUrl: url, sourceLanguage,
-      targetLanguage: config.targetLanguage, cues: sourceCues,
+      engine: config.engine, engineId: config.engineId, taskIdPrefix: `yts-${generation}`,
+      capturedUrl: url, sourceLanguage, targetLanguage: config.targetLanguage, cues: sourceCues,
       onPartial: (partial) => {
         if (generation !== sessionId || disabled) return;
         partial.forEach((text, index) => {
@@ -95,7 +100,7 @@ export function createVideoSession(deps: VideoSessionDeps) {
     if (generation !== sessionId || disabled) return;
     cues = result.cues;
     status = result.status;
-    if (result.status === 'untranslated') deps.renderer.showNotice('字幕翻译暂不可用，已保留原文');
+    if (result.status === 'untranslated') deps.renderer.showNotice(deps.notices.translateUnavailable);
     rerenderCurrent();
   }
 
@@ -114,9 +119,12 @@ export function createVideoSession(deps: VideoSessionDeps) {
       const mid = (low + high) >> 1;
       if (cues[mid].start <= time) { index = mid; low = mid + 1; } else { high = mid - 1; }
     }
-    if (index < 0) return;
-    const cue = cues[index];
-    if (time > cue.end) return;
+    const active = index >= 0 && time <= cues[index].end ? cues[index] : undefined;
+    if (!active) {
+      if (lastRenderKey) { deps.renderer.clear(); lastRenderKey = ''; }
+      return;
+    }
+    const cue = active;
     const key = `${cue.start}:${cue.text}:${cue.translation ?? ''}`;
     if (key === lastRenderKey) return;
     lastRenderKey = key;
@@ -129,8 +137,9 @@ export function createVideoSession(deps: VideoSessionDeps) {
       const key = normKey(url);
       if (!key) return;
       if (key === normKeyValue) {
-        // pot 轮换：仅更新捕获地址，字幕数据仍有效，不重建会话。
+        // pot 轮换：仅更新捕获地址；源不可用（瞬时失败）时允许重建会话重试。
         capturedUrl = url;
+        if (status === 'unavailable-source') await startSession(url, key);
         return;
       }
       try {
@@ -138,7 +147,7 @@ export function createVideoSession(deps: VideoSessionDeps) {
       } catch {
         if (sessionId > 0 && !disabled) {
           status = 'unavailable-source';
-          deps.renderer.showNotice('未能读取字幕');
+          deps.renderer.showNotice(deps.notices.readFailed);
         }
       }
     },
@@ -173,6 +182,10 @@ export function createVideoSession(deps: VideoSessionDeps) {
     disable(): void {
       disabled = true;
       this.reset();
+    },
+
+    enable(): void {
+      disabled = false;
     },
 
     getState(): SessionState {

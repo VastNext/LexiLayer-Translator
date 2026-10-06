@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  buildReplayUrl, hasTranslation, parseJson3, zipCues, type SubtitleCue,
+  buildReplayUrl, hasTranslation, normKey, parseJson3, zipCues, type SubtitleCue,
 } from '../../../src/content/youtube/timedtext';
 
 // JSON3 解析与轨道对齐：pot 门禁下重放响应的解析是字幕功能的地基。
@@ -49,6 +49,13 @@ describe('buildReplayUrl', () => {
     expect(withTlang.searchParams.get('tlang')).toBe('zh-Hans');
     expect(withTlang.searchParams.get('pot')).toBe('XYZ');
     expect(buildReplayUrl('not-a-url', {})).toBeUndefined();
+  });
+});
+
+describe('重放地址安全', () => {
+  it('非 youtube.com origin 的捕获地址被拒绝', () => {
+    expect(buildReplayUrl('https://evil.com/api/timedtext?v=a&pot=P', {})).toBeUndefined();
+    expect(normKey('https://evil.com/api/timedtext?v=a&pot=P')).toBeUndefined();
   });
 });
 

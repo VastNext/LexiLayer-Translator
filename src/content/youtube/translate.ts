@@ -8,12 +8,14 @@ export interface SubtitleSegment { id: string; text: string }
 
 export interface SubtitleTranslateDeps {
   fetchText(url: string): Promise<string>;
-  // 由装配层实现：调用后台 translate-batch，结果按 segment id 回传（渐进或一次性）。
-  translateBatch(segments: SubtitleSegment[], sourceLanguage: string, targetLanguage: string, onPartial: (translations: Map<string, string>) => void): Promise<void>;
+  // 由装配层实现：调用后台 translate-batch（taskId 用于页面级任务隔离），结果按 segment id 回传。
+  translateBatch(segments: SubtitleSegment[], sourceLanguage: string, targetLanguage: string, engineId: string, taskId: string, onPartial: (translations: Map<string, string>) => void): Promise<void>;
 }
 
 export interface SubtitleTranslateOptions {
   engine: VideoSubtitleEngine;
+  engineId: string;
+  taskIdPrefix: string;
   capturedUrl: string;
   sourceLanguage: string;
   targetLanguage: string;
@@ -36,6 +38,7 @@ async function translateWithEngine(
   options: SubtitleTranslateOptions,
 ): Promise<Map<number, string>> {
   const translations = new Map<number, string>();
+  let batchSequence = 0;
   let batch: SubtitleSegment[] = [];
   let indexes: number[] = [];
   let characters = 0;
@@ -47,8 +50,9 @@ async function translateWithEngine(
     batch = [];
     indexes = [];
     characters = 0;
+    batchSequence += 1;
     try {
-      await deps.translateBatch(currentSegments, options.sourceLanguage, options.targetLanguage, (partial) => {
+      await deps.translateBatch(currentSegments, options.sourceLanguage, options.targetLanguage, options.engineId, `${options.taskIdPrefix}-${batchSequence}`, (partial) => {
         const mapped = new Map<number, string>();
         partial.forEach((text, id) => {
           const position = currentSegments.findIndex((segment) => segment.id === id);

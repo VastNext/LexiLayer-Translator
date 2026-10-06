@@ -99,14 +99,7 @@ export function installYouTubeCapture(win: Window = globalThis as unknown as Win
   try {
     XMLHttpRequest.prototype.open = capture.wrapXhrOpen(XMLHttpRequest.prototype.open);
   } catch { /* 其他扩展可能已锁死原型；PerformanceObserver 兜底 */ }
-  try {
-    const observer = new PerformanceObserver((list) => {
-      for (const entry of list.getEntries()) {
-        try { capture.captureUrl(entry.name); } catch { /* 忽略 */ }
-      }
-    });
-    observer.observe({ type: 'resource', buffered: true });
-  } catch { /* PerformanceObserver 不可用时依赖 fetch/XHR hook */ }
+
 }
 
 // MAIN world IIFE 自启动：仅在 youtube.com 上安装（测试导入时 location 非 youtube，不触发）。

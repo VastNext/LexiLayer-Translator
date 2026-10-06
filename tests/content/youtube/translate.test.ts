@@ -16,7 +16,7 @@ function createDeps(overrides: Partial<SubtitleTranslateDeps> = {}) {
       { tStartMs: 0, dDurationMs: 1000, segs: [{ utf8: '你好' }] },
       { tStartMs: 2000, dDurationMs: 1000, segs: [{ utf8: '世界' }] },
     ] })),
-    translateBatch: vi.fn(async (_segments: unknown[], _source: string, _target: string, onPartial?: (translations: Map<string, string>) => void) => {
+    translateBatch: vi.fn(async (_segments: unknown[], _source: string, _target: string, _engineId: string, _taskId: string, onPartial?: (translations: Map<string, string>) => void) => {
       onPartial?.(new Map([['yt-0', '你好'], ['yt-1', '世界']]));
     }),
     ...overrides,
@@ -27,7 +27,7 @@ describe('translateSubtitles', () => {
   it('youtube-tlang 引擎：重放 tlang 轨并按序配对', async () => {
     const deps = createDeps();
     const result = await translateSubtitles(deps, {
-      engine: 'youtube-tlang', capturedUrl: 'https://www.youtube.com/api/timedtext?v=a&lang=en&pot=P',
+      engine: 'youtube-tlang', engineId: 'google', taskIdPrefix: 'yts-1', capturedUrl: 'https://www.youtube.com/api/timedtext?v=a&lang=en&pot=P',
       sourceLanguage: 'en', targetLanguage: 'zh-Hans', cues,
     });
     expect(deps.fetchText).toHaveBeenCalledWith(expect.stringContaining('tlang=zh-Hans'));
@@ -44,7 +44,7 @@ describe('translateSubtitles', () => {
       ] })),
     });
     const result = await translateSubtitles(deps, {
-      engine: 'youtube-tlang', capturedUrl: 'https://www.youtube.com/api/timedtext?v=a&lang=en&pot=P',
+      engine: 'youtube-tlang', engineId: 'google', taskIdPrefix: 'yts-1', capturedUrl: 'https://www.youtube.com/api/timedtext?v=a&lang=en&pot=P',
       sourceLanguage: 'en', targetLanguage: 'zh-Hans', cues,
     });
     expect(deps.translateBatch).toHaveBeenCalled();
@@ -56,7 +56,7 @@ describe('translateSubtitles', () => {
     const deps = createDeps();
     const partials: Array<Map<number, string>> = [];
     const result = await translateSubtitles(deps, {
-      engine: 'current-engine', capturedUrl: 'https://www.youtube.com/api/timedtext?v=a&lang=en&pot=P',
+      engine: 'current-engine', engineId: 'google', taskIdPrefix: 'yts-1', capturedUrl: 'https://www.youtube.com/api/timedtext?v=a&lang=en&pot=P',
       sourceLanguage: 'en', targetLanguage: 'zh-Hans', cues,
       onPartial: (partial) => partials.push(partial),
     });
@@ -71,7 +71,7 @@ describe('translateSubtitles', () => {
       translateBatch: vi.fn(async () => { throw new Error('engine down'); }),
     });
     const result = await translateSubtitles(deps, {
-      engine: 'youtube-tlang', capturedUrl: 'https://www.youtube.com/api/timedtext?v=a&lang=en&pot=P',
+      engine: 'youtube-tlang', engineId: 'google', taskIdPrefix: 'yts-1', capturedUrl: 'https://www.youtube.com/api/timedtext?v=a&lang=en&pot=P',
       sourceLanguage: 'en', targetLanguage: 'zh-Hans', cues,
     });
     expect(result.status).toBe('untranslated');
@@ -83,7 +83,7 @@ describe('translateSubtitles', () => {
       translateBatch: vi.fn(async () => { throw new Error('down'); }),
     });
     const result = await translateSubtitles(deps, {
-      engine: 'current-engine', capturedUrl: 'https://www.youtube.com/api/timedtext?v=a&lang=en&pot=P',
+      engine: 'current-engine', engineId: 'google', taskIdPrefix: 'yts-1', capturedUrl: 'https://www.youtube.com/api/timedtext?v=a&lang=en&pot=P',
       sourceLanguage: 'en', targetLanguage: 'zh-Hans', cues,
     });
     expect(deps.fetchText).not.toHaveBeenCalled();

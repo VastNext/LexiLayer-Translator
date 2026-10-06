@@ -27,7 +27,7 @@ export function isTimedtextUrl(url: string): boolean {
 export function normKey(url: string): string | undefined {
   try {
     const parsed = new URL(url, 'https://www.youtube.com');
-    if (parsed.pathname !== TIMEDTEXT_PATH) return undefined;
+    if (parsed.pathname !== TIMEDTEXT_PATH || parsed.origin !== 'https://www.youtube.com') return undefined;
     const keep = new URLSearchParams();
     const drop = new Set(['pot', 'potc', 'fmt', 'tlang', 'expire']);
     for (const [key, value] of parsed.searchParams.entries()) {
@@ -44,7 +44,7 @@ export function normKey(url: string): string | undefined {
 export function buildReplayUrl(capturedUrl: string, options: { tlang?: string }): string | undefined {
   try {
     const parsed = new URL(capturedUrl, 'https://www.youtube.com');
-    if (parsed.pathname !== TIMEDTEXT_PATH) return undefined;
+    if (parsed.pathname !== TIMEDTEXT_PATH || parsed.origin !== 'https://www.youtube.com') return undefined;
     parsed.searchParams.set('fmt', 'json3');
     if (options.tlang) parsed.searchParams.set('tlang', options.tlang);
     return parsed.href;
@@ -54,13 +54,13 @@ export function buildReplayUrl(capturedUrl: string, options: { tlang?: string })
 }
 
 function decodeEntities(text: string): string {
-  return text.replace(/&(amp|lt|gt|quot|apos|#\d+);/gu, (_match, code: string) => {
+  return text.replace(/&(amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);/gu, (_match, code: string) => {
     if (code === 'amp') return '&';
     if (code === 'lt') return '<';
     if (code === 'gt') return '>';
     if (code === 'quot') return '"';
     if (code === 'apos') return "'";
-    return String.fromCodePoint(Number(code.slice(1)));
+    return String.fromCodePoint(code.startsWith('#x') ? parseInt(code.slice(2), 16) : Number(code.slice(1)));
   });
 }
 

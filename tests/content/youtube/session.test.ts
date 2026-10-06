@@ -35,17 +35,18 @@ function createHarness(overrides: Partial<VideoSessionDeps> = {}): Harness {
   const video = { currentTime: 0 };
   const playerClasses = new Set<string>();
   const fetchText = vi.fn(async (url: string) => (url.includes('tlang=') ? translatedBody : sourceBody));
-  const translateBatch = vi.fn(async (_segments: unknown[], _source: string, _target: string, onPartial?: (translations: Map<string, string>) => void) => {
+  const translateBatch = vi.fn(async (_segments: unknown[], _source: string, _target: string, _engineId: string, _taskId: string, onPartial?: (translations: Map<string, string>) => void) => {
     onPartial?.(new Map([['yt-0', '你好'], ['yt-1', '世界']]));
   });
   const deps: VideoSessionDeps = {
-    getConfig: vi.fn(async () => ({ enabled: true, engine: 'youtube-tlang' as const, targetLanguage: 'zh-Hans' })),
+    getConfig: vi.fn(async () => ({ enabled: true, engine: 'youtube-tlang' as const, engineId: 'google', targetLanguage: 'zh-Hans' })),
     fetchText,
     translateBatch,
     getVideoTime: () => video.currentTime,
     isAdShowing: () => playerClasses.has('ad-showing'),
     ensureCaptionsEnabled: vi.fn(async () => true),
     renderer: renderer as unknown as VideoSessionDeps['renderer'],
+    notices: { readFailed: '未能读取字幕', noSubtitles: '该视频没有可用字幕', translateUnavailable: '字幕翻译暂不可用' },
     ...overrides,
   };
   const session = createVideoSession(deps);
@@ -71,7 +72,7 @@ describe('createVideoSession', () => {
   });
 
   it('功能关闭时不建立会话', async () => {
-    const harness = createHarness({ getConfig: vi.fn(async () => ({ enabled: false, engine: 'youtube-tlang' as const, targetLanguage: 'zh-Hans' })) });
+    const harness = createHarness({ getConfig: vi.fn(async () => ({ enabled: false, engine: 'youtube-tlang' as const, engineId: 'google', targetLanguage: 'zh-Hans' })) });
     await harness.session.onCapturedUrl(CAPTURED);
     expect(harness.session.getState().status).toBe('idle');
     expect(harness.fetchText).not.toHaveBeenCalled();
@@ -127,6 +128,45 @@ describe('createVideoSession', () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(harness.session.getState().sessionId).not.toBe(generation);
     expect(harness.session.getState().cueCount).toBe(0);
+  });
+
+  it('current-engine 渐进渲染：批次到达即显示已翻译句子', async () => {
+    let firePartial: ((translations: Map<string, string>) => void) | undefined;
+    const harness = createHarness({
+      fetchText: vi.fn(async () => sourceBody),
+      translateBatch: vi.fn(async (_segments: unknown[], _source: string, _target: string, _engineId: string, _taskId: string, onPartial?: (translations: Map<string, string>) => void) => {
+        firePartial = onPartial;
+        // 批次挂起期间（翻译未完成）也应显示已到译文：渐进渲染的核心断言。
+        await vi.waitFor(() => {
+          onPartial?.(new Map([['yt-0', '你好']]));
+          expect(harness.renderer.show).toHaveBeenLastCalledWith('Hello', '你好');
+        });
+        expect(harness.session.getState().status).toBe('loading');
+      }),
+      getConfig: vi.fn(async () => ({ enabled: true, engine: 'current-engine' as const, engineId: 'google', targetLanguage: 'zh-Hans' })),
+    });
+    harness.video.currentTime = 0.5;
+    void harness.session.onCapturedUrl(CAPTURED);
+    await vi.waitFor(() => expect(harness.session.getState().status).toBe('translated'));
+  });
+
+  it('enable() 重新启用后再次捕获可建立会话', async () => {
+    const harness = createHarness();
+    harness.session.disable();
+    await harness.session.onCapturedUrl(CAPTURED);
+    expect(harness.session.getState().status).toBe('idle');
+    harness.session.enable();
+    await harness.session.onCapturedUrl(CAPTURED);
+    expect(harness.session.getState().status).toBe('translated');
+  });
+
+  it('字幕间隙清屏（非启动期 clear）', async () => {
+    const harness = createHarness();
+    await harness.session.onCapturedUrl(CAPTURED);
+    const clearsBefore = vi.mocked(harness.renderer.clear).mock.calls.length;
+    harness.video.currentTime = 1.5;
+    harness.session.tick();
+    expect(vi.mocked(harness.renderer.clear).mock.calls.length).toBeGreaterThan(clearsBefore);
   });
 
   it('prepareForVideo 请求开启原生字幕（触发播放器发出捕获请求）', async () => {
