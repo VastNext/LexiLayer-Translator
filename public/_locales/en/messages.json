@@ -201,6 +201,8 @@
   "ankiSettings": { "message": "Anki sync" },
   "ankiEndpointLabel": { "message": "AnkiConnect endpoint" },
   "ankiExportFolderLabel": { "message": "Export folder" },
+  "autoSiteTranslation": { "message": "Auto-continue on same-site navigation" },
+  "autoSiteTranslationHelp": { "message": "Automatically continue translating when navigating within the same domain in this tab, until you restore or close the browser." },
   "ankiExportFolderHelp": { "message": "Subfolder relative to the browser Downloads folder (e.g. LexiLayer); leave empty to save at the Downloads root." },
   "ankiEndpointHelp": { "message": "Leave empty to disable sync. Use http://127.0.0.1:8765 locally; remote endpoints require HTTPS." },
   "ankiDeckLabel": { "message": "Anki deck" },

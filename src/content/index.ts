@@ -12,11 +12,11 @@ import type { RendererMode } from '../shared/config';
 
 interface PageCommand {
   type: string;
+  source?: string;
   scope?: ScanScope;
   sourceLanguage?: string;
   targetLanguage?: string;
   mode?: TranslationMode;
-  source?: string;
   text?: string;
   placement?: 'before' | 'after';
   engineId?: string;
@@ -37,6 +37,8 @@ export interface ProgressState {
   failed: number;
   total: number;
   engineId?: string;
+  // 站内跳转自动延续：翻译会话期间随进度上报命令参数，由后台维护按标签页旗标。
+  siteCommand?: Pick<PageCommand, 'engineId' | 'targetLanguage' | 'scope' | 'mode'>;
 }
 
 export interface ContentControllerDependencies {
@@ -81,7 +83,12 @@ export function createContentController(dependencies: ContentControllerDependenc
   const fatalGenerations = new Set<number>();
 
   function report(status: ProgressState['status'], completed = 0, failed = 0): void {
-    const progress = { status, completed, failed, total: paragraphs.size, ...(lastCommand.engineId ? { engineId: lastCommand.engineId } : {}) };
+    // 仅 translating 附带命令参数供后台维护站内延续旗标；active 时命令已解析填充。
+    const c = lastCommand;
+    const siteCommand = status === 'translating' && active && c.engineId
+      ? { engineId: c.engineId, targetLanguage: c.targetLanguage!, scope: c.scope!, mode: c.mode! }
+      : undefined;
+    const progress = { status, completed, failed, total: paragraphs.size, ...(c.engineId ? { engineId: c.engineId } : {}), ...(siteCommand ? { siteCommand } : {}) };
     const key = `${status}:${completed}:${failed}:${progress.total}:${progress.engineId ?? ''}`;
     if (key === lastProgressKey) return;
     lastProgressKey = key;
@@ -292,7 +299,14 @@ export function createContentController(dependencies: ContentControllerDependenc
     report('idle');
   }
 
+  // 站内延续重发（晚到的 complete）由后台显式标记 source；仅拦这一来源的重复命令，
+  // 用户再次点击翻译（即使参数相同，如切渲染器后重翻）仍立即接管并重扫。
+  function isSiteContinueCommand({ source }: PageCommand): boolean {
+    return source === 'site-continue';
+  }
+
   async function translate(command: PageCommand): Promise<void> {
+    if (isSiteContinueCommand(command) && active) return;
     const currentGeneration = await beginSession();
     if (currentGeneration === undefined) return;
     fatalGenerations.delete(currentGeneration);

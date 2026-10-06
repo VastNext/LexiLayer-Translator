@@ -19,6 +19,8 @@ export interface MockServer {
   accordionFixtureUrl: string;
   adminFixtureUrl: string;
   largeFixtureUrl: string;
+  siteAFixtureUrl: string;
+  siteBFixtureUrl: string;
   requests: RecordedRequest[];
   hits: string[];
   maxConcurrency: () => number;
@@ -138,6 +140,14 @@ function largeFixtureHtml(count = 1000): string {
   </article></main></body></html>`;
 }
 
+// 站内跳转自动延续夹具：A↔B 同域名两页互链，验证跳转后自动翻译与还原后停止。
+function sitePageHtml(title: string, paragraphId: string, paragraphText: string, linkId: string, linkHref: string, linkText: string): string {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${title}</title></head><body><main><article>
+    <p id="${paragraphId}">${paragraphText}</p>
+    <p><a id="${linkId}" href="${linkHref}">${linkText}</a></p>
+  </article></main></body></html>`;
+}
+
 function segmentsFrom(body: Record<string, unknown>): Array<{ id: string; text: string }> {
   const messages = body.messages as Array<{ role?: string; content?: string }> | undefined;
   const user = messages?.find((message) => message.role === 'user')?.content ?? '';
@@ -171,6 +181,8 @@ function translateToChinese(text: string): string {
     'Event bound paragraph.': '事件段落译文。',
     'Europe': '欧洲。',
     'Paris': '巴黎。',
+    'Site page one for auto continue.': '站点第一页。',
+    'Site page two after navigation.': '站点第二页。',
     'London': '伦敦。',
   };
   const visible = /^Visible paragraph (\d+)$/.exec(text);
@@ -226,6 +238,16 @@ export async function startMockServer(): Promise<MockServer> {
     }
     if (request.method === 'GET' && url.pathname === '/fixture-large') {
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); response.end(largeFixtureHtml()); return;
+    }
+    if (request.method === 'GET' && url.pathname === '/fixture-site-a') {
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      response.end(sitePageHtml('Site A', 'site-a-1', 'Site page one for auto continue.', 'site-link-b', '/fixture-site-b', 'Go to page two.'));
+      return;
+    }
+    if (request.method === 'GET' && url.pathname === '/fixture-site-b') {
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      response.end(sitePageHtml('Site B', 'site-b-1', 'Site page two after navigation.', 'site-link-a', '/fixture-site-a', 'Back to page one.'));
+      return;
     }
     if (request.method === 'GET' && url.pathname === '/favicon.ico') {
       response.writeHead(204).end();
@@ -293,6 +315,8 @@ export async function startMockServer(): Promise<MockServer> {
     accordionFixtureUrl: `${origin}/fixture-accordion`,
     adminFixtureUrl: `${origin}/fixture-admin`,
     largeFixtureUrl: `${origin}/fixture-large`,
+    siteAFixtureUrl: `${origin}/fixture-site-a`,
+    siteBFixtureUrl: `${origin}/fixture-site-b`,
     requests,
     hits,
     maxConcurrency: () => maxConcurrency,

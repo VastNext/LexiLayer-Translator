@@ -20,9 +20,10 @@ const budgets = {
 // 同一个隔离世界，浏览器实际下载并执行的页面翻译 JS 总量是三者之和；新能力入口
 // selection-features.js 使用独立预算，不计入该既有 52 KiB 口径（CSS 亦不计入）。
 // 0.10.7 经用户确认将项目内部累计预算由 48KiB 调整为 52KiB，容纳挂载归属与
-// 任务生命周期修复；各入口上限不变。本预算不是 Chrome Web Store 的限制。
+// 任务生命周期修复；0.15.0 调整为 54KiB，容纳站内跳转自动延续的 siteCommand
+// 上报与重复触发守卫（净增约 200B，压缩空间已穷尽）。本预算不是 Chrome Web Store 的限制。
 const contentScripts = ['content.js', 'content-inline.js', 'content-main.js'] as const;
-const contentTotalBudget = 52 * 1024;
+const contentTotalBudget = 54 * 1024;
 
 describe('扩展入口体积预算', () => {
   it('每个注入脚本保持各自的原始体积预算', async () => {
@@ -34,7 +35,7 @@ describe('扩展入口体积预算', () => {
     }
   });
 
-  it('content 相关脚本真实累计不超过 52KiB，避免拆分掩盖总量膨胀', async () => {
+  it('content 相关脚本真实累计不超过 54KiB，避免拆分掩盖总量膨胀', async () => {
     const root = resolve(import.meta.dirname, '../..');
     await build({ root, configFile: resolve(root, 'vite.config.ts'), logLevel: 'silent' });
     const sizes = contentScripts.map((file) => statSync(resolve(root, 'dist', file)).size);

@@ -23,8 +23,8 @@ export interface BackgroundChrome {
   commandsApi: { onCommand: { addListener(listener: (command: string) => void): void } };
   contextMenus: { create(properties: chrome.contextMenus.CreateProperties): void; removeAll(): Promise<void> | void; onClicked: { addListener(listener: (info: chrome.contextMenus.OnClickData, tab?: chrome.tabs.Tab) => void): void } };
   action?: Pick<typeof chrome.action, 'setBadgeText' | 'setBadgeBackgroundColor'>;
-  tabs: { query(queryInfo: chrome.tabs.QueryInfo): Promise<chrome.tabs.Tab[]>; sendMessage(tabId: number, message: unknown): Promise<unknown> };
-  storage: { local: Pick<chrome.storage.StorageArea, 'get' | 'set'> & { setAccessLevel?(options: { accessLevel: 'TRUSTED_CONTEXTS' }): Promise<void> }; session?: { get(key: string): Promise<Record<string, unknown>>; set(items: Record<string, unknown>): Promise<void> } };
+  tabs: { query(queryInfo: chrome.tabs.QueryInfo): Promise<chrome.tabs.Tab[]>; sendMessage(tabId: number, message: unknown): Promise<unknown>; onRemoved?: { addListener(listener: (tabId: number) => void): void }; onUpdated?: { addListener(listener: (tabId: number, changeInfo: { status?: string; url?: string }) => void): void } };
+  storage: { local: Pick<chrome.storage.StorageArea, 'get' | 'set'> & { setAccessLevel?(options: { accessLevel: 'TRUSTED_CONTEXTS' }): Promise<void> }; session?: { get(key: string): Promise<Record<string, unknown>>; set(items: Record<string, unknown>): Promise<void>; remove?(key: string): Promise<void> } };
   i18n: { getUILanguage(): string; getMessage?(key: string): string };
 }
 
@@ -112,6 +112,44 @@ function sameOrigin(left: string, right: string): boolean {
 function sameAnkiEndpoint(left: string, right: string): boolean {
   if (!left.trim() || !right.trim()) return left.trim() === right.trim();
   try { return normalizeAnkiEndpoint(left) === normalizeAnkiEndpoint(right); } catch { return false; }
+}
+
+// 站内跳转自动延续：按标签页维护「当前站点翻译会话」旗标（chrome.storage.session，
+// 浏览器关闭即清空）。命令参数来自页面控制器随进度上报的 siteCommand。
+// 每个标签页一个独立键，避免并发进度上报整表读改写时互相覆盖。
+const SITE_FLAG_PREFIX = 'siteAutoTranslate:';
+
+interface SiteTranslationFlag { host: string; params: Record<string, string> }
+
+function siteFlagKey(tabId: number): string { return `${SITE_FLAG_PREFIX}${tabId}`; }
+
+function pageHost(url: string): string | undefined {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.hostname : undefined;
+  } catch { return undefined; }
+}
+
+function parseSiteCommand(value: unknown): Record<string, string> | undefined {
+  if (!isRecord(value) || !hasOnlyKeys(value, ['engineId', 'scope', 'mode', 'targetLanguage', 'expertId'])) return undefined;
+  if (!isSafeId(value.engineId) || !isSafeString(value.targetLanguage, 64)) return undefined;
+  if (value.scope !== 'main-content' && value.scope !== 'whole-page') return undefined;
+  if (value.mode !== 'bilingual' && value.mode !== 'translation-only') return undefined;
+  const params: Record<string, string> = { engineId: value.engineId, scope: value.scope, mode: value.mode, targetLanguage: value.targetLanguage };
+  if (value.expertId !== undefined) {
+    if (!isSafeId(value.expertId)) return undefined;
+    params.expertId = value.expertId;
+  }
+  return params;
+}
+
+async function readSiteFlag(api: BackgroundChrome, tabId: number): Promise<SiteTranslationFlag | undefined> {
+  if (!api.storage.session) return undefined;
+  const stored = await api.storage.session.get(siteFlagKey(tabId));
+  const value = stored[siteFlagKey(tabId)];
+  return isRecord(value) && typeof value.host === 'string' && isRecord(value.params)
+    ? { host: value.host, params: value.params as Record<string, string> }
+    : undefined;
 }
 
 function requireEngine(settings: Settings, engineId: string): Engine {
@@ -525,6 +563,17 @@ export function createBackgroundController(api: BackgroundChrome, dependencies: 
         const value = await api.storage.session.get('pageProgress'); const stored = isRecord(value.pageProgress) ? value.pageProgress : {};
         await api.storage.session.set({ pageProgress: { ...stored, [key]: progress } });
         await setTranslationBadge(sender.tab.id, status !== 'idle');
+        // 站内延续旗标：translating 附带命令参数时刷新，还原（idle）时清除；按标签页独立键。
+        const siteCommand = parseSiteCommand(message.progress.siteCommand);
+        const siteHost = sender.url ? pageHost(sender.url) : undefined;
+        if (status === 'idle' && siteHost) await api.storage.session.remove?.(siteFlagKey(sender.tab.id));
+        else if (siteCommand && siteHost) {
+          const next: SiteTranslationFlag = { host: siteHost, params: siteCommand };
+          const existing = await readSiteFlag(api, sender.tab.id);
+          if (JSON.stringify(existing) !== JSON.stringify(next)) {
+            await api.storage.session.set({ [siteFlagKey(sender.tab.id)]: next });
+          }
+        }
         // Popup 关闭时可能没有接收端；进度已保存，广播失败不影响翻译。
         void api.runtime.sendMessage({ type: 'page-progress', tabId: sender.tab.id, frameId: sender.frameId, progress }).catch(() => undefined); return { ok: true };
       }
@@ -620,6 +669,32 @@ export function createBackgroundController(api: BackgroundChrome, dependencies: 
       port.onDisconnect.addListener(() => { for (const controller of controllers.values()) controller.abort(); if (selectionPorts.get(tabId) === port) selectionPorts.delete(tabId); });
     });
     api.commandsApi.onCommand.addListener((command) => { if (command === 'translate_page') sendToActiveTab({ type: 'toggle-page-translation' }); });
+    // 站内跳转自动延续：同域名 complete 时重发上次翻译命令；还原（idle）已清除旗标。
+    // complete 事件不携带 url，URL 只在 loading 等事件中出现，需按标签页记住最近一次地址。
+    const navigationUrls = new Map<number, string>();
+    api.tabs.onRemoved?.addListener((tabId) => { navigationUrls.delete(tabId); void api.storage.session?.remove?.(siteFlagKey(tabId)).catch(() => undefined); });
+    api.tabs.onUpdated?.addListener((tabId, changeInfo) => {
+      if (changeInfo.url) navigationUrls.set(tabId, changeInfo.url);
+      if (changeInfo.status !== 'complete') return;
+      const url = navigationUrls.get(tabId);
+      if (!url) return;
+      void (async () => {
+        const entry = await readSiteFlag(api, tabId);
+        if (!entry || pageHost(url) !== entry.host) return;
+        const settings = await readSettings(api);
+        if (!settings.readingPreferences.autoSiteTranslation) return;
+        // complete 事件可能早于内容脚本注册：拒绝（无接收端）时短暂重试，全部失败则放弃。
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          try {
+            await api.tabs.sendMessage(tabId, { type: 'translate-page', source: 'site-continue', ...entry.params });
+            return;
+          } catch {
+            if (attempt === 4) return;
+            await new Promise((resolve) => setTimeout(resolve, 600));
+          }
+        }
+      })().catch(() => undefined);
+    });
     api.contextMenus.onClicked.addListener((info, tab) => {
       if (tab?.id === undefined) return;
       const messages: Record<string, unknown> = { 'vast-translate-page': { type: 'translate-page' }, 'vast-restore-page': { type: 'restore-page' }, 'vast-translate-selection': { type: 'translate-selection', source: 'context-menu', text: info.selectionText ?? '' } };
