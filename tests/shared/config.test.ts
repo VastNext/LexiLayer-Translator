@@ -49,6 +49,8 @@ describe('v2 settings', () => {
         selectionContext: true,
         selectionPopupEnabled: true,
         autoSiteTranslation: true,
+        videoSubtitleEnabled: true,
+        videoSubtitleEngine: 'youtube-tlang',
         inlineSelectionModifier: 'Control',
         inlineSelectionTriggerCount: 2,
       },
@@ -102,6 +104,28 @@ describe('v2 settings', () => {
       { id: 'bing', kind: 'bing', name: 'Bing', enabled: true, order: 1 },
       { id: 'custom-work', kind: 'custom-ai', name: '工作接口', enabled: true, order: 2 },
     ]);
+  });
+});
+
+describe('视频字幕偏好', () => {
+  it('默认开启且引擎为 YouTube 自带机翻，旧配置自动补齐', () => {
+    expect(DEFAULT_SETTINGS.readingPreferences.videoSubtitleEnabled).toBe(true);
+    expect(DEFAULT_SETTINGS.readingPreferences.videoSubtitleEngine).toBe('youtube-tlang');
+    const legacy = structuredClone(DEFAULT_SETTINGS) as unknown as Record<string, unknown>;
+    delete (legacy.readingPreferences as Record<string, unknown>).videoSubtitleEnabled;
+    delete (legacy.readingPreferences as Record<string, unknown>).videoSubtitleEngine;
+    const normalized = normalizeSettings(legacy).readingPreferences;
+    expect(normalized.videoSubtitleEnabled).toBe(true);
+    expect(normalized.videoSubtitleEngine).toBe('youtube-tlang');
+  });
+
+  it('非法值被拒绝', () => {
+    const candidate = structuredClone(DEFAULT_SETTINGS);
+    (candidate.readingPreferences as unknown as Record<string, unknown>).videoSubtitleEnabled = 'yes';
+    expect(validateSettings(candidate)).toContain('视频字幕开关配置无效');
+    const badEngine = structuredClone(DEFAULT_SETTINGS);
+    (badEngine.readingPreferences as unknown as Record<string, unknown>).videoSubtitleEngine = 'deepl';
+    expect(validateSettings(badEngine)).toContain('视频字幕翻译引擎无效');
   });
 });
 
@@ -229,7 +253,7 @@ describe('migration and normalization', () => {
         inputTargetLanguage: 'en',
         targetLanguage: 'zh-Hans', displayMode: 'translation', userInstruction: '保留术语',
         translationPosition: 'before', scanScope: 'whole-page', selectionContext: false,
-         selectionPopupEnabled: true, autoSiteTranslation: true, inlineSelectionModifier: 'Control', inlineSelectionTriggerCount: 1, rendererMode: 'legacy',
+         selectionPopupEnabled: true, autoSiteTranslation: true, videoSubtitleEnabled: true, videoSubtitleEngine: 'youtube-tlang', inlineSelectionModifier: 'Control', inlineSelectionTriggerCount: 1, rendererMode: 'legacy',
       },
       engines: [
         DEFAULT_SETTINGS.engines[0],
@@ -407,7 +431,7 @@ describe('migration and normalization', () => {
       baseUrl: 'http://remote.example.com/v1', apiKey: '', model: '',
       targetLanguage: 'zh-Hant', displayMode: 'translation', userInstruction: '保留专名',
          translationPosition: 'before', scanScope: 'whole-page', selectionContext: false,
-         selectionPopupEnabled: true, autoSiteTranslation: true, inlineSelectionModifier: 'Control', inlineSelectionTriggerCount: 1,
+         selectionPopupEnabled: true, autoSiteTranslation: true, videoSubtitleEnabled: true, videoSubtitleEngine: 'youtube-tlang', inlineSelectionModifier: 'Control', inlineSelectionTriggerCount: 1,
     })).toMatchObject({
       activeEngineId: 'google',
       readingPreferences: { targetLanguage: 'zh-Hant', displayMode: 'translation', userInstruction: '保留专名', translationPosition: 'before', scanScope: 'whole-page', selectionContext: false },

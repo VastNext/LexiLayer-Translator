@@ -106,6 +106,33 @@ function buildClassicContentScript(): Plugin {
           outDir: resolve(import.meta.dirname, 'dist'),
         },
       });
+      // YouTube 双语字幕：MAIN world 捕获脚本与 ISOLATED 控制脚本分别构建。
+      await build({
+        configFile: false,
+        build: {
+          emptyOutDir: false,
+          lib: {
+            entry: resolve(import.meta.dirname, 'src/content/youtube/inject.ts'),
+            formats: ['iife'],
+            name: 'LexiLayerYouTubeInject',
+            fileName: () => 'youtube-inject.js',
+          },
+          outDir: resolve(import.meta.dirname, 'dist'),
+        },
+      });
+      await build({
+        configFile: false,
+        build: {
+          emptyOutDir: false,
+          lib: {
+            entry: resolve(import.meta.dirname, 'src/content/youtube/index.ts'),
+            formats: ['iife'],
+            name: 'LexiLayerYouTubeSubtitles',
+            fileName: () => 'youtube-subtitles.js',
+          },
+          outDir: resolve(import.meta.dirname, 'dist'),
+        },
+      });
     },
   };
 }

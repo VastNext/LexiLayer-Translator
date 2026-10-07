@@ -7,6 +7,7 @@ export type DisplayMode = 'bilingual' | 'translation';
 export type RendererMode = 'legacy' | 'inline';
 export type InlineSelectionModifier = 'Control' | 'Alt' | 'Shift' | 'Meta' | 'Off';
 export type InlineSelectionTriggerCount = 1 | 2 | 3;
+export type VideoSubtitleEngine = 'youtube-tlang' | 'current-engine';
 export type Theme = 'pearl-reader' | 'command-translator' | 'sage-global' | 'editorial-lingua' | 'precision-blue';
 
 export const THEMES: Theme[] = ['pearl-reader', 'command-translator', 'sage-global', 'editorial-lingua', 'precision-blue'];
@@ -25,6 +26,8 @@ export interface ReadingPreferences {
   inlineSelectionModifier: InlineSelectionModifier;
   inlineSelectionTriggerCount: InlineSelectionTriggerCount;
   rendererMode: RendererMode;
+  videoSubtitleEnabled: boolean;
+  videoSubtitleEngine: VideoSubtitleEngine;
 }
 
 interface EngineBase {
@@ -102,6 +105,8 @@ export const DEFAULT_SETTINGS: Settings = {
     inlineSelectionModifier: 'Control',
     inlineSelectionTriggerCount: 2,
     rendererMode: 'inline',
+    videoSubtitleEnabled: true,
+    videoSubtitleEngine: 'youtube-tlang',
   },
   engines: [
     { id: 'google', kind: 'google', name: 'Google', enabled: true, order: 0 },
@@ -146,6 +151,8 @@ function validatePreferences(value: unknown): string[] {
   if (!['Control', 'Alt', 'Shift', 'Meta', 'Off'].includes(String(value.inlineSelectionModifier))) errors.push('选区内联翻译快捷键无效');
   if (![1, 2, 3].includes(Number(value.inlineSelectionTriggerCount))) errors.push('选区内联翻译触发次数无效');
   if (value.rendererMode !== 'legacy' && value.rendererMode !== 'inline') errors.push('渲染器模式无效');
+  if (typeof value.videoSubtitleEnabled !== 'boolean') errors.push('视频字幕开关配置无效');
+  if (value.videoSubtitleEngine !== 'youtube-tlang' && value.videoSubtitleEngine !== 'current-engine') errors.push('视频字幕翻译引擎无效');
   return errors;
 }
 
@@ -320,6 +327,8 @@ export function normalizeSettings(value: unknown): Settings {
   if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.inlineSelectionTriggerCount === undefined) normalizedValue.readingPreferences.inlineSelectionTriggerCount = 1;
   // 已存配置缺少渲染器模式或值为非法时受控回退兼容模式，避免整份设置被重置。
   if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.rendererMode === undefined) normalizedValue.readingPreferences.rendererMode = 'legacy';
+  if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.videoSubtitleEnabled === undefined) normalizedValue.readingPreferences.videoSubtitleEnabled = true;
+  if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.videoSubtitleEngine === undefined) normalizedValue.readingPreferences.videoSubtitleEngine = 'youtube-tlang';
   if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.rendererMode !== 'legacy' && normalizedValue.readingPreferences.rendererMode !== 'inline') normalizedValue.readingPreferences.rendererMode = 'legacy';
   const errors = validateSettings(normalizedValue).filter((error) => error !== '至少保留一个可用的翻译引擎' && error !== '当前翻译引擎必须可用');
   if (errors.length) return cloneDefaults();
@@ -410,6 +419,8 @@ export function importSettings(value: unknown, current: Settings = DEFAULT_SETTI
   if (isRecord(input.readingPreferences) && input.readingPreferences.inlineSelectionTriggerCount === undefined) input.readingPreferences.inlineSelectionTriggerCount = 1;
   // 旧导入配置缺少渲染器模式时回退兼容模式；非法值同样受控回退而不拒绝整份导入。
   if (isRecord(input.readingPreferences) && input.readingPreferences.rendererMode === undefined) input.readingPreferences.rendererMode = 'legacy';
+  if (isRecord(input.readingPreferences) && input.readingPreferences.videoSubtitleEnabled === undefined) input.readingPreferences.videoSubtitleEnabled = true;
+  if (isRecord(input.readingPreferences) && input.readingPreferences.videoSubtitleEngine === undefined) input.readingPreferences.videoSubtitleEngine = 'youtube-tlang';
   if (isRecord(input.readingPreferences) && input.readingPreferences.rendererMode !== 'legacy' && input.readingPreferences.rendererMode !== 'inline') input.readingPreferences.rendererMode = 'legacy';
   const inputIds = input.engines.map((engine) => engine.id);
   if (new Set(inputIds).size !== inputIds.length) throw new Error('翻译引擎 ID 不能重复');
@@ -467,6 +478,8 @@ export function migrateSettings(value: unknown): Settings {
       selectionContext: value.selectionContext as boolean,
       selectionPopupEnabled: true,
       autoSiteTranslation: true,
+      videoSubtitleEnabled: true,
+      videoSubtitleEngine: 'youtube-tlang',
       inlineSelectionModifier: 'Control',
       inlineSelectionTriggerCount: 1,
       rendererMode: 'legacy',

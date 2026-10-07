@@ -10,10 +10,20 @@ describe('manifest', () => {
     expect(manifest.manifest_version).toBe(3);
     expect(manifest.host_permissions).toContain('<all_urls>');
     expect(manifest.permissions).toEqual(expect.arrayContaining(['storage', 'contextMenus', 'scripting', 'downloads']));
+    const youtubeScripts = (manifest.content_scripts as unknown as Array<{ matches?: string[]; js?: string[]; run_at?: string; world?: string }>).filter((entry) => entry.matches?.includes('https://www.youtube.com/*'));
+    expect(youtubeScripts).toHaveLength(2);
+    const mainEntry = youtubeScripts.find((entry: { world?: string }) => entry.world === 'MAIN');
+    expect(mainEntry?.js).toEqual(['youtube-inject.js']);
+    expect(mainEntry?.run_at).toBe('document_start');
+    const isolatedEntry = youtubeScripts.find((entry: { world?: string }) => entry.world !== 'MAIN');
+    expect(isolatedEntry?.js).toEqual(['youtube-subtitles.js']);
+    expect(isolatedEntry?.matches).toEqual(['https://www.youtube.com/*']);
     expect(manifest.action?.default_popup).toBe('popup.html');
     expect(manifest.options_page).toBe('options.html');
     expect(manifest.background?.service_worker).toBe('background.js');
     expect(manifest.content_scripts).toEqual([
+      { matches: ['https://www.youtube.com/*'], js: ['youtube-inject.js'], run_at: 'document_start', world: 'MAIN' },
+      { matches: ['https://www.youtube.com/*'], js: ['youtube-subtitles.js'], run_at: 'document_start' },
       { matches: ['<all_urls>'], js: ['input-translation.js'], all_frames: true },
       expect.objectContaining({
         matches: ['<all_urls>'],
@@ -43,7 +53,7 @@ describe('manifest', () => {
 
   it('声明当前包版本、本地化名称描述和全尺寸原创图标', () => {
     expect(manifest.version).toBe(packageJson.version);
-    expect(packageJson.version).toBe('0.15.0');
+    expect(packageJson.version).toBe('0.16.0');
     expect(manifest.name).toBe('__MSG_extensionName__');
     expect(manifest.description).toBe('__MSG_extensionDescription__');
     expect(manifest.default_locale).toBe('zh_CN');
