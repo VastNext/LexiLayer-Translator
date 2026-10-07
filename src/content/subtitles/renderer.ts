@@ -44,7 +44,8 @@ function ensureStyle(document: Document): void {
     [${HOST_ID_ATTR}] [data-lexiytds-word]:hover{text-decoration:underline}
     [${HOST_ID_ATTR}] [data-lexiytds-notice]{font-size:13px;color:#bbb}
   `;
-  document.head.append(style);
+  // document_start 时 head 可能尚未就绪，追加到 documentElement 兜底。
+  (document.head ?? document.documentElement).append(style);
 }
 
 export function createSubtitleRenderer(

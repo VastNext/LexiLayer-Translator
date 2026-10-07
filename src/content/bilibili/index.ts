@@ -157,7 +157,14 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.id && location.hostname.end
 
     function getVideoTime(): number | undefined {
       const video = document.querySelector('#bilibili-player video');
-      return video instanceof HTMLVideoElement ? video.currentTime : undefined;
+      if (!(video instanceof HTMLVideoElement)) return undefined;
+      // 合成播放器（E2E 夹具）经 data-current-time 注入模拟时间；真实播放器不会设置该属性。
+      const simulated = video.getAttribute('data-current-time');
+      if (simulated) {
+        const value = Number(simulated);
+        if (Number.isFinite(value)) return value;
+      }
+      return video.currentTime;
     }
 
     function renderAt(time: number): void {

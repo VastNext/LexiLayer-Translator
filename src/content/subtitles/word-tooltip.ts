@@ -37,7 +37,7 @@ function ensureStyle(document: Document): void {
       color:#fff;font-size:13px;cursor:pointer}
     [${TIP_ATTR}] button:disabled{opacity:.6;cursor:default}
   `;
-  document.head.append(style);
+  (document.head ?? document.documentElement).append(style);
 }
 
 export function createWordTooltip(document: Document, deps: WordTooltipDeps): WordTooltip {
@@ -54,7 +54,12 @@ export function createWordTooltip(document: Document, deps: WordTooltipDeps): Wo
     dismissHandlers = [];
   }
 
+  let openedAt = 0;
+
   function onOutsideClick(event: MouseEvent): void {
+    // 打开瞬间的同一连击事件（mousedown/mouseup 后的合成 click 在 bubble 阶段
+    // 迟到）不得立即关闭悬浮层：打开后 300ms 内的 outside click 忽略。
+    if (Date.now() - openedAt < 300) return;
     if (tip && event.target instanceof Node && !tip.contains(event.target)) close();
   }
 
@@ -96,6 +101,7 @@ export function createWordTooltip(document: Document, deps: WordTooltipDeps): Wo
       document.addEventListener('keydown', onEscape);
       window.addEventListener('scroll', onScrollOrResize, { passive: true });
       window.addEventListener('resize', onScrollOrResize);
+      openedAt = Date.now();
       dismissHandlers = [
         () => document.removeEventListener('click', onOutsideClick, { capture: true }),
         () => document.removeEventListener('keydown', onEscape),
