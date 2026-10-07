@@ -10,7 +10,6 @@ import { saveWordToVocabulary } from '../subtitles/vocabulary';
 
 const TARGET_ORIGIN = 'https://www.bilibili.com';
 const TICK_INTERVAL_MS = 120;
-const IDENTITY_POLL_MS = 1_000;
 
 interface PublicConfigResponse {
   ok?: boolean;
