@@ -1229,7 +1229,7 @@ describe('Options 生词本区块', () => {
   it('视频字幕开关与引擎选择随阅读偏好自动保存', async () => {
     const api = createApi();
     render(<OptionsApp api={api} />);
-    const toggle = await screen.findByLabelText('在 YouTube 显示双语字幕');
+    const toggle = await screen.findByLabelText('在 YouTube 和 Bilibili 显示双语字幕');
     expect(toggle).toBeChecked();
     await userEvent.click(toggle);
     await waitFor(() => expect(api.savePreferences).toHaveBeenCalledWith(expect.objectContaining({ videoSubtitleEnabled: false })));

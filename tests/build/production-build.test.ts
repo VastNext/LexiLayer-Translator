@@ -48,7 +48,7 @@ describe('生产构建', () => {
       ...manifest.content_scripts?.flatMap((script) => [...(script.js ?? []), ...(script.css ?? [])]) ?? [],
     ].filter((reference): reference is string => Boolean(reference));
 
-    expect(manifest.content_scripts?.[3]?.js).toEqual([
+    expect(manifest.content_scripts?.[5]?.js).toEqual([
       'content.js',
       'content-inline.js',
       'content-main.js',

@@ -34,7 +34,24 @@ const playerHtml = `<!doctype html><html><head><meta charset="utf-8"><title>YT S
 </script>
 </body></html>`;
 
-test('YouTube 双语字幕：捕获-重放-渲染闭环与进度切换', async ({ context }) => {
+async function configureEngine(openExtensionPage: (path: 'popup.html' | 'options.html') => Promise<import('@playwright/test').Page>, server: { baseUrl: string }): Promise<void> {
+  const options = await openExtensionPage('options.html');
+  await options.getByRole('button', { name: '新增自定义 AI' }).click();
+  const card = options.getByRole('group').last();
+  await expect(card.getByLabel('Base URL')).toBeEnabled();
+  await card.getByLabel('名称').fill('E2E AI');
+  await card.getByLabel('Base URL').fill(server.baseUrl);
+  await card.getByLabel('API Key', { exact: true }).fill('e2e-key');
+  await card.getByLabel('模型').fill('e2e-model');
+  await card.getByRole('button', { name: '保存实例' }).click();
+  await expect(options.getByRole('status')).toHaveText('实例已保存');
+  await card.getByRole('button', { name: '设为默认' }).click();
+  await expect(options.getByRole('status')).toHaveText('默认引擎已更新');
+  await options.close();
+}
+
+test('YouTube 双语字幕：捕获-重放-渲染闭环与进度切换', async ({ context, server, openExtensionPage }) => {
+  await configureEngine(openExtensionPage, server);
   await context.route('https://www.youtube.com/api/timedtext*', async (route) => {
     const url = new URL(route.request().url());
     await route.fulfill({
@@ -61,4 +78,25 @@ test('YouTube 双语字幕：捕获-重放-渲染闭环与进度切换', async (
   });
   await expect(host.locator('[data-lexiytds-source]')).toHaveText('World');
   await expect(host.locator('[data-lexiytds-translation]')).toHaveText('世界');
+
+  // Phase 3：点词 → 释义悬浮层 → 加入生词本（后台生词本管线端到端写入）。
+  await page.evaluate(() => {
+    const video = document.querySelector('video');
+    if (video) video.currentTime = 0.5;
+  });
+  await expect(host.locator('[data-lexiytds-source]')).toHaveText('Hello');
+  await page.locator('[data-lexiytds-word]', { hasText: 'Hello' }).first().click();
+  const tip = page.locator('[data-lexiytds-wordtip]');
+  await expect(tip.locator('[data-lexiytds-wordtip-word]')).toHaveText('Hello');
+  // 释义渐进到达：等待非占位/失败文案。
+  await expect(tip.locator('[data-lexiytds-wordtip-meaning]')).toHaveText(/^(?!…$|查词失败$).+$/u, { timeout: 20_000 });
+
+  const [worker] = context.serviceWorkers();
+  const saveButton = tip.locator('button');
+  await expect(saveButton).toBeEnabled({ timeout: 15_000 });
+  await saveButton.click();
+  await expect(saveButton).toHaveText(/已加入生词本|已在生词本/, { timeout: 15_000 });
+  const book = await worker.evaluate(() => chrome.storage.local.get('vocabularyBook'));
+  const entries = (book as { vocabularyBook?: { entries?: Array<{ word: string }> } }).vocabularyBook?.entries ?? [];
+  expect(entries.some((entry) => entry.word === 'Hello')).toBe(true);
 });

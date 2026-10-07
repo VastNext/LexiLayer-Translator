@@ -1,8 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createSubtitleRenderer } from '../../../src/content/youtube/renderer';
+import { createSubtitleRenderer, splitWordTokens } from '../../../src/content/subtitles/renderer';
 
 // 播放器内双语 overlay：页面级 host + 双行渲染 + 拖动位置持久化。
+
+describe('splitWordTokens', () => {
+  it('按空白分词且保留空白 token', () => {
+    expect(splitWordTokens('Hello beautiful world')).toEqual([
+      { word: 'Hello', isWord: true },
+      { word: ' ', isWord: false },
+      { word: 'beautiful', isWord: true },
+      { word: ' ', isWord: false },
+      { word: 'world', isWord: true },
+    ]);
+  });
+});
 
 describe('createSubtitleRenderer', () => {
   let player: HTMLElement;
@@ -41,6 +53,29 @@ describe('createSubtitleRenderer', () => {
     expect(host.querySelectorAll('[data-lexiytds-source]')).toHaveLength(0);
     renderer.showNotice('字幕翻译不可用');
     expect(host.textContent).toContain('字幕翻译不可用');
+  });
+
+  it('点词模式：原文行按词分片，点击回调携带词/整句/矩形', () => {
+    const onWordClick = vi.fn();
+    const renderer = createSubtitleRenderer(player, { onWordClick });
+    renderer.show('Hello world', '你好');
+    const words = player.querySelectorAll('[data-lexiytds-word]');
+    expect(words).toHaveLength(2);
+    expect(words[0].getAttribute('data-lexiytds-word')).toBe('Hello');
+    Object.defineProperty(words[0], 'getBoundingClientRect', { value: () => ({ left: 5, top: 5, right: 40, bottom: 20, width: 35, height: 15, x: 5, y: 5, toJSON: () => undefined }) as DOMRect });
+    (words[0] as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true }));
+    expect(onWordClick).toHaveBeenCalledTimes(1);
+    const [clickedWord, clickedSentence, clickedRect] = vi.mocked(onWordClick).mock.calls[0];
+    expect(clickedWord).toBe('Hello');
+    expect(clickedSentence).toBe('Hello world');
+    expect(clickedRect.left).toBe(5);
+  });
+
+  it('未配置 onWordClick 时不分片', () => {
+    const renderer = createSubtitleRenderer(player);
+    renderer.show('Hello world', '你好');
+    expect(player.querySelectorAll('[data-lexiytds-word]')).toHaveLength(0);
+    expect(player.querySelector('[data-lexiytds-source]')?.textContent).toBe('Hello world');
   });
 
   it('destroy 移除宿主节点', () => {

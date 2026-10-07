@@ -5,7 +5,13 @@
   A browser translator that turns configurable AI prompts into domain-aware translation.
 </p>
 
-当前版本：`0.16.0`。
+当前版本：`0.17.0`。
+
+## 0.17.0 更新
+
+- 📺 **Bilibili 双语字幕**：在 bilibili.com 视频页读取站内字幕（含 AI 字幕，需登录 B 站）并翻译为双语显示；未登录或无字幕时明确提示。
+- 🔤 **字幕点词查词**：点击字幕中的单词即弹出释义（跟随当前翻译引擎），释义就绪后可一键操作。
+- 📓 **点词加入生词本**：悬浮层一键把「单词 + 字幕整句 + 释义 + 出处」存入生词本，与既有 Anki 同步无缝衔接（YouTube 与 Bilibili 均可用）。
 
 ## 0.16.0 更新
 
@@ -205,7 +211,7 @@ VAST_E2E_PROXY=http://127.0.0.1:7890 npm run e2e:network
 
 ## 🗺️ 当前状态与路线
 
-当前版本：`0.16.0` · MVP
+当前版本：`0.17.0` · MVP
 
 - ✅ Google / Bing 网页与划词翻译
 - ✅ 多个 OpenAI 兼容 AI 实例
@@ -220,6 +226,7 @@ VAST_E2E_PROXY=http://127.0.0.1:7890 npm run e2e:network
 - ✅ 划词朗读、生词本与 AnkiConnect 同步
 - ✅ 站内跳转自动延续翻译（同域名，可关闭）
 - ✅ YouTube 双语字幕（机翻或跟随当前引擎）
+- ✅ Bilibili 双语字幕与字幕点词生词本联动
 
 当前不包含账号同步、云端配置、PDF 翻译、字幕翻译和术语库管理。
 

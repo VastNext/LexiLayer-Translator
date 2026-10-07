@@ -33,6 +33,8 @@ export const manifest = {
     // ISOLATED 控制脚本负责重放、翻译与渲染。仅 watch 页面相关，站点级独立模块。
     { matches: ['https://www.youtube.com/*'], js: ['youtube-inject.js'], run_at: 'document_start', world: 'MAIN' },
     { matches: ['https://www.youtube.com/*'], js: ['youtube-subtitles.js'], run_at: 'document_start' },
+    { matches: ['https://www.bilibili.com/*'], js: ['bilibili-inject.js'], run_at: 'document_start', world: 'MAIN' },
+    { matches: ['https://www.bilibili.com/*'], js: ['bilibili-subtitles.js'], run_at: 'document_start' },
     {
       matches: ['<all_urls>'],
       js: ['input-translation.js'],

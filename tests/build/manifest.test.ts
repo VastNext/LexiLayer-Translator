@@ -24,6 +24,8 @@ describe('manifest', () => {
     expect(manifest.content_scripts).toEqual([
       { matches: ['https://www.youtube.com/*'], js: ['youtube-inject.js'], run_at: 'document_start', world: 'MAIN' },
       { matches: ['https://www.youtube.com/*'], js: ['youtube-subtitles.js'], run_at: 'document_start' },
+      { matches: ['https://www.bilibili.com/*'], js: ['bilibili-inject.js'], run_at: 'document_start', world: 'MAIN' },
+      { matches: ['https://www.bilibili.com/*'], js: ['bilibili-subtitles.js'], run_at: 'document_start' },
       { matches: ['<all_urls>'], js: ['input-translation.js'], all_frames: true },
       expect.objectContaining({
         matches: ['<all_urls>'],
@@ -53,7 +55,7 @@ describe('manifest', () => {
 
   it('声明当前包版本、本地化名称描述和全尺寸原创图标', () => {
     expect(manifest.version).toBe(packageJson.version);
-    expect(packageJson.version).toBe('0.16.0');
+    expect(packageJson.version).toBe('0.17.0');
     expect(manifest.name).toBe('__MSG_extensionName__');
     expect(manifest.description).toBe('__MSG_extensionDescription__');
     expect(manifest.default_locale).toBe('zh_CN');
