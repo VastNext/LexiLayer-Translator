@@ -237,11 +237,15 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.id && location.hostname.end
     const settingsChange = changes.translatorSettings;
     if (!settingsChange) return;
     const preferences = (settingsChange.newValue as { readingPreferences?: { videoSubtitleEnabled?: boolean } } | undefined)?.readingPreferences;
-    if (preferences?.videoSubtitleEnabled === false) {
+    if (!preferences) return;
+    if (preferences.videoSubtitleEnabled === false) {
       session.disable();
       return;
     }
+    // 开启（或任何设置写入后的确认）：reset 清 cidKey，使当前视频能重新建立会话，
+    // 避免「页面加载时功能未开 → 后开启」被同 cid 短路而死锁。
     session.enable();
+    session.reset();
     const identity = readIdentityFromWindow();
     if (identity) void session.onIdentity(identity);
   });

@@ -50,7 +50,12 @@ export async function fetchBiliSubtitleTracks(deps: BiliSubtitleFetchDeps, aid: 
 }
 
 // 拉取字幕内容并转换为标准 cue（from/to 秒，content 文本）。
-export async function fetchBiliSubtitleCues(deps: BiliSubtitleFetchDeps, url: string): Promise<SubtitleCue[]> {
+export async function fetchBiliSubtitleCues(deps: BiliSubtitleFetchDeps, rawUrl: string): Promise<SubtitleCue[]> {
+  // 纵深防御：字幕内容仅接受站内 CDN 主机，拒绝 API 返回的任意地址。
+  let host = '';
+  try { host = new URL(rawUrl).hostname; } catch { throw new Error('字幕内容地址无效'); }
+  if (!/(?:^|\.)hdslb\.com$/u.test(host) && !/(?:^|\.)bilibili\.com$/u.test(host)) throw new Error('字幕内容地址无效');
+  const url = rawUrl;
   const body = await deps.fetchText(url);
   let parsed: { body?: Array<{ from?: number; to?: number; content?: string }> };
   try {

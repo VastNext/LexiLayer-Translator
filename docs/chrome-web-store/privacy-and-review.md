@@ -41,9 +41,9 @@ Website content 披露也包含用户主动要求翻译的输入框选中文字�
 ### Website content
 
 - 是否处理：是
-- 内容：用户主动要求翻译的网页文本、选区文本和可选有限邻近上下文；用户主动加入生词本的单词、整句、译文与出处 URL；YouTube 视频页功能开启时捕获的字幕文本
+- 内容：用户主动要求翻译的网页文本、选区文本和可选有限邻近上下文；用户主动加入生词本的单词、整句、译文与出处 URL；视频页（YouTube/Bilibili）功能开启时读取的字幕文本；字幕点词的单词与所在整句
 - 用途：提供页面翻译和划词翻译；生词本仅本地存储，用户主动同步时直接发送到其配置的 AnkiConnect 端点（远程必须 HTTPS，本机回环允许 HTTP）
-- 传输对象：当前选择的 Google、Bing 或自定义 AI 服务；用户主动同步时的 AnkiConnect 端点；YouTube 字幕选「YouTube 自带机翻」时发往 YouTube 自身
+- 传输对象：当前选择的 Google、Bing 或自定义 AI 服务；用户主动同步时的 AnkiConnect 端点；YouTube 字幕选「YouTube 自带机翻」时发往 YouTube 自身；Bilibili 字幕轨道读取的凭据仅发往 bilibili.com
 - 开发者是否接收：否，当前没有语层翻译自营翻译服务器
 - 是否出售或用于广告：否
 

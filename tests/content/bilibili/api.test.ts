@@ -49,7 +49,8 @@ describe('fetchBiliSubtitleCues', () => {
     ]);
   });
 
-  it('坏 JSON 显式报错', async () => {
-    await expect(fetchBiliSubtitleCues({ fetchText: vi.fn(async () => 'nope') }, 'https://x/')).rejects.toThrow('字幕内容响应无效');
+  it('坏 JSON 与非站内 CDN 地址显式报错', async () => {
+    await expect(fetchBiliSubtitleCues({ fetchText: vi.fn(async () => 'nope') }, 'https://aisubtitle.hdslb.com/x.json')).rejects.toThrow('字幕内容响应无效');
+    await expect(fetchBiliSubtitleCues({ fetchText: vi.fn(async () => '{}') }, 'https://evil.example/sub.json')).rejects.toThrow('字幕内容地址无效');
   });
 });

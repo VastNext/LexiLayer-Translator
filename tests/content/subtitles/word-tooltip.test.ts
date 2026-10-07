@@ -38,6 +38,26 @@ describe('createWordTooltip', () => {
     await vi.waitFor(() => expect(saveButton.textContent).toBe('已在生词本'));
   });
 
+  it('收词失败后按钮恢复可点，重试成功显示已加入', async () => {
+    let attempts = 0;
+    const deps = createDeps({
+      saveToVocabulary: vi.fn(async () => {
+        attempts += 1;
+        if (attempts === 1) throw new Error('transient');
+        return 'created' as const;
+      }),
+    });
+    createWordTooltip(document, deps).open('word', 'sentence.', new DOMRect(0, 0, 10, 10));
+    const saveButton = document.querySelector('[data-lexiytds-wordtip] button') as HTMLButtonElement;
+    await vi.waitFor(() => expect(saveButton).toBeEnabled());
+    saveButton.click();
+    await vi.waitFor(() => expect(saveButton.textContent).toBe('加入失败'));
+    expect(saveButton.disabled).toBe(false);
+    saveButton.click();
+    await vi.waitFor(() => expect(saveButton.textContent).toBe('已加入生词本'));
+    expect(saveButton.disabled).toBe(true);
+  });
+
   it('查词失败显示失败提示，收词按钮不出现异常', async () => {
     const deps = createDeps({ translateWord: vi.fn(async () => { throw new Error('down'); }) });
     createWordTooltip(document, deps).open('word', 'sentence.', new DOMRect(0, 0, 10, 10));

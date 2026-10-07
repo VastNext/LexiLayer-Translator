@@ -127,6 +127,8 @@ export function createWordTooltip(document: Document, deps: WordTooltipDeps): Wo
             if (current !== sequence || !saveButton.isConnected) return;
             saveButton.textContent = status === 'created' ? '已加入生词本'
               : status === 'duplicate' ? '已在生词本' : '加入失败';
+            // 失败可重试；成功/重复保持终态。
+            if (!status) saveButton.disabled = false;
           })();
         });
       })();
