@@ -6,7 +6,9 @@
 
 import { INJECT_MESSAGE_SOURCE } from './inject';
 import { createVideoSession, type SessionConfig } from './session';
-import { createSubtitleRenderer, type SubtitlePosition, type SubtitleRenderer } from './renderer';
+import { createSubtitleRenderer, type SubtitlePosition, type SubtitleRenderer } from '../subtitles/renderer';
+import { createWordTooltip } from '../subtitles/word-tooltip';
+import { saveWordToVocabulary } from '../subtitles/vocabulary';
 
 const TARGET_ORIGIN = 'https://www.youtube.com';
 const TICK_INTERVAL_MS = 120;
@@ -47,6 +49,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.id && location.hostname ===
     if (!player) return undefined;
     rendererPlayer = player;
     rendererInstance = createSubtitleRenderer(player, {
+      onWordClick: (word, sentence, rect) => wordTooltip.open(word, sentence, rect),
       getPosition: async () => {
         const stored = await chrome.storage.local.get(POSITION_KEY);
         const position = stored[POSITION_KEY] as SubtitlePosition | undefined;
@@ -123,6 +126,29 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.id && location.hostname ===
       noSubtitles: t('ytdsNoticeNoSubtitles', '该视频没有可用字幕'),
       translateUnavailable: t('ytdsNoticeTranslateUnavailable', '字幕翻译暂不可用，已保留原文'),
     },
+  });
+
+  // 字幕点词（Phase 3）：释义经当前引擎查词，收词走生词本管线。
+  const wordTooltip = createWordTooltip(document, {
+    getTargetLanguage: async () => {
+      const response = await chrome.runtime.sendMessage({ type: 'get-public-config' }) as PublicConfigResponse | undefined;
+      return response?.data?.preferences?.targetLanguage ?? 'en';
+    },
+    translateWord: async (word, _sentence, targetLanguage) => {
+      const configResponse = await chrome.runtime.sendMessage({ type: 'get-public-config' }) as PublicConfigResponse | undefined;
+      const engineId = configResponse?.data?.activeEngineId ?? 'google';
+      const response = await chrome.runtime.sendMessage({
+        type: 'translate-batch', sourceLanguage: 'auto', targetLanguage,
+        segments: [{ id: 'ytw-0', text: word }], engineId, taskId: 'ytw-word',
+      }) as { ok?: boolean; data?: Array<{ id: string; text: string }>; error?: string } | undefined;
+      if (!response?.ok || !response.data?.[0]) throw new Error(response?.error ?? '查词失败');
+      return response.data[0].text;
+    },
+    saveToVocabulary: (entry) => saveWordToVocabulary(
+      (message) => chrome.runtime.sendMessage(message),
+      entry,
+      { sourceUrl: location.href, pageTitle: document.title },
+    ),
   });
 
   // MAIN world 捕获 → 会话（session 内部按 normKey 幂等，页面脚本误发消息无副作用）。

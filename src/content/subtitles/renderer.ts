@@ -14,6 +14,13 @@ export interface SubtitleRenderer {
 export interface SubtitleRendererStorage {
   getPosition?(): Promise<SubtitlePosition | undefined>;
   setPosition?(position: SubtitlePosition): Promise<void> | void;
+  // 字幕点词（Phase 3）：设置后原文行按词分片渲染，点击词触发回调（rect 为词的视口位置）。
+  onWordClick?(word: string, sentence: string, rect: DOMRect): void;
+}
+
+// 原文行按空白分词；拉丁词可点击查词，整行无空白（CJK）时退化为整句一个可点击单元。
+export function splitWordTokens(text: string): Array<{ word: string; isWord: boolean }> {
+  return text.split(/(\s+)/u).filter((token) => token.length > 0).map((token) => ({ word: token, isWord: /\S/u.test(token) }));
 }
 
 const STYLE_ID = 'lexiytds-style';
@@ -33,6 +40,8 @@ function ensureStyle(document: Document): void {
     [${HOST_ID_ATTR}] [data-lexiytds-source]{white-space:pre-wrap}
     [${HOST_ID_ATTR}] [data-lexiytds-translation]{color:#ffd75e;white-space:pre-wrap}
     [${HOST_ID_ATTR}][data-lexiytds-dragging]{cursor:grabbing}
+    [${HOST_ID_ATTR}] [data-lexiytds-word]{cursor:pointer}
+    [${HOST_ID_ATTR}] [data-lexiytds-word]:hover{text-decoration:underline}
     [${HOST_ID_ATTR}] [data-lexiytds-notice]{font-size:13px;color:#bbb}
   `;
   document.head.append(style);
@@ -42,6 +51,7 @@ export function createSubtitleRenderer(
   player: HTMLElement,
   storage: SubtitleRendererStorage = {},
 ): SubtitleRenderer {
+  const { onWordClick } = storage;
   const ownerDocument = player.ownerDocument;
   ensureStyle(ownerDocument);
 
@@ -86,6 +96,17 @@ export function createSubtitleRenderer(
       line.setAttribute(`data-lexiytds-${kind}`, '');
       host.append(line);
     }
+    if (kind === 'source' && onWordClick && text !== undefined) {
+      // 点词模式：按词分片渲染，保留空白文本节点；点击词回调给装配层查词/收生词。
+      line.replaceChildren(...splitWordTokens(text).map((token) => {
+        if (!token.isWord) return ownerDocument.createTextNode(token.word);
+        const span = ownerDocument.createElement('span');
+        span.setAttribute('data-lexiytds-word', token.word);
+        span.textContent = token.word;
+        return span;
+      }));
+      return line;
+    }
     line.textContent = text ?? '';
     return line;
   }
@@ -122,6 +143,14 @@ export function createSubtitleRenderer(
   host.addEventListener('pointerdown', onPointerDown);
   ownerDocument.addEventListener('pointermove', onPointerMove);
   ownerDocument.addEventListener('pointerup', onPointerUp);
+  host.addEventListener('click', (event) => {
+    if (!onWordClick) return;
+    const target = event.target instanceof Element ? event.target.closest('[data-lexiytds-word]') : null;
+    if (!(target instanceof HTMLElement)) return;
+    event.stopPropagation();
+    const sentence = sourceLine()?.textContent ?? '';
+    onWordClick(target.getAttribute('data-lexiytds-word') ?? '', sentence, target.getBoundingClientRect());
+  });
 
   return {
     show(source: string, translation: string | undefined): void {

@@ -133,6 +133,33 @@ function buildClassicContentScript(): Plugin {
           outDir: resolve(import.meta.dirname, 'dist'),
         },
       });
+      // Bilibili 双语字幕：MAIN world 视频标识轮询 + ISOLATED 控制脚本。
+      await build({
+        configFile: false,
+        build: {
+          emptyOutDir: false,
+          lib: {
+            entry: resolve(import.meta.dirname, 'src/content/bilibili/inject.ts'),
+            formats: ['iife'],
+            name: 'LexiLayerBilibiliInject',
+            fileName: () => 'bilibili-inject.js',
+          },
+          outDir: resolve(import.meta.dirname, 'dist'),
+        },
+      });
+      await build({
+        configFile: false,
+        build: {
+          emptyOutDir: false,
+          lib: {
+            entry: resolve(import.meta.dirname, 'src/content/bilibili/index.ts'),
+            formats: ['iife'],
+            name: 'LexiLayerBilibiliSubtitles',
+            fileName: () => 'bilibili-subtitles.js',
+          },
+          outDir: resolve(import.meta.dirname, 'dist'),
+        },
+      });
     },
   };
 }
