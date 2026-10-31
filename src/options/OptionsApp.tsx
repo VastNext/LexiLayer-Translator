@@ -108,6 +108,8 @@ export function OptionsApp({ api, t = createTranslator(), downloadFile }: { api:
   const confirmExpertDelete = undefined;
   const importInput = useRef<HTMLInputElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const [activeSection, setActiveSection] = useState('builtin-engines');
+  const navigationTarget = useRef<string | undefined>(undefined);
   const reloadGeneration = useRef(0);
 
   const [shortcutState, setShortcutState] = useState<ShortcutState | undefined>();
@@ -222,6 +224,63 @@ export function OptionsApp({ api, t = createTranslator(), downloadFile }: { api:
   }
 
   useEffect(() => { void reload(); }, [api]);
+
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content) return;
+    const sections = [...content.querySelectorAll<HTMLElement>(':scope > section[id]')];
+    let frame: number | undefined;
+    const syncSection = () => {
+      frame = undefined;
+      const top = content.getBoundingClientRect().top + 24;
+      let current = sections[0];
+      for (const section of sections) {
+        if (section.getBoundingClientRect().top <= top + 1) current = section;
+      }
+      if (content.scrollTop > 0 && content.scrollTop + content.clientHeight >= content.scrollHeight - 1) {
+        // 末尾多个短栏目可能共用同一个滚动终点，保留用户明确点击的可见栏目。
+        const requested = sections.find((section) => section.id === navigationTarget.current);
+        current = requested && requested.getBoundingClientRect().top >= content.getBoundingClientRect().top
+          && requested.getBoundingClientRect().top < content.getBoundingClientRect().bottom
+          ? requested : sections[sections.length - 1];
+      }
+      if (current) setActiveSection(current.id);
+    };
+    const scheduleSync = () => {
+      if (frame === undefined) frame = requestAnimationFrame(syncSection);
+    };
+    const clearNavigationTarget = () => { navigationTarget.current = undefined; };
+    content.addEventListener('wheel', clearNavigationTarget, { passive: true });
+    content.addEventListener('touchstart', clearNavigationTarget, { passive: true });
+    content.addEventListener('keydown', clearNavigationTarget);
+    content.addEventListener('pointerdown', clearNavigationTarget);
+    content.addEventListener('scroll', scheduleSync, { passive: true });
+    window.addEventListener('resize', scheduleSync);
+    // 表单展开、异步加载与字体换行也可能改变当前栏目位置。
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(scheduleSync);
+    observer?.observe(content);
+    sections.forEach((section) => observer?.observe(section));
+    return () => {
+      if (frame !== undefined) cancelAnimationFrame(frame);
+      content.removeEventListener('scroll', scheduleSync);
+      content.removeEventListener('wheel', clearNavigationTarget);
+      content.removeEventListener('touchstart', clearNavigationTarget);
+      content.removeEventListener('keydown', clearNavigationTarget);
+      content.removeEventListener('pointerdown', clearNavigationTarget);
+      window.removeEventListener('resize', scheduleSync);
+      observer?.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    const button = document.querySelector<HTMLElement>('.options-nav [aria-current="location"]');
+    const nav = button?.parentElement;
+    if (!button || !nav) return;
+    if (button.offsetLeft < nav.scrollLeft) nav.scrollLeft = button.offsetLeft;
+    else if (button.offsetLeft + button.offsetWidth > nav.scrollLeft + nav.clientWidth) {
+      nav.scrollLeft = button.offsetLeft + button.offsetWidth - nav.clientWidth;
+    }
+  }, [activeSection]);
 
   // 阅读偏好与划词翻译的防抖自动保存：加载前禁止编辑与保存；连续修改合并为一次写入，
   // 失败时状态条提示并通过「重试保存」入口手动重新提交，成功后状态恢复。
@@ -382,7 +441,10 @@ export function OptionsApp({ api, t = createTranslator(), downloadFile }: { api:
     const content = contentRef.current;
     const target = document.getElementById(id);
     if (!content || !target) return;
-    content.scrollTo({ top: target.offsetTop - content.offsetTop, behavior: 'smooth' });
+    navigationTarget.current = id;
+    setActiveSection(id);
+    const top = target.getBoundingClientRect().top - content.getBoundingClientRect().top + content.scrollTop - 24;
+    content.scrollTo({ top: Math.max(0, top), behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   }
 
   async function saveExpert(expert: Expert): Promise<void> {
@@ -447,19 +509,36 @@ export function OptionsApp({ api, t = createTranslator(), downloadFile }: { api:
     setExportChoice(false);
   }
 
+  const expertSection = <section id="ai-experts" className="section" aria-label="AI 专家"><div className="section-header"><div><h2>AI 专家</h2><p className="section-copy">选择适合当前内容的翻译方式，也可以创建自己的专家。</p></div><span className="section-index">03 / EXPERTS</span></div>
+      <div className="expert-settings-list">{builtinExperts.map((expert) => <article className="expert-setting" aria-label={expert.name} key={expert.id}><div className="expert-setting-head"><div><h3>{expert.name}</h3><span className="badge">PROMPTS</span><p>{expert.description}</p></div><label className="toggle"><input type="checkbox" aria-label={`${expert.name} 启用`} checked={expert.enabled} onChange={(event) => void act(() => api.setExpertEnabled?.(expert.id, event.target.checked) ?? Promise.resolve(), '专家状态已更新', true)} /> 启用</label></div></article>)}</div>
+      {customExperts.length > 0 && <div className="expert-custom-group"><div className="expert-custom-heading"><div><h3>用户自定义专家</h3><p>你创建的专家，点击编辑后修改详细提示词。</p></div><span className="section-index">CUSTOM</span></div><div className="expert-settings-list">{customExperts.map((expert) => {
+        const editing = editingExpertId === expert.id;
+        const isNew = newExpertIds.has(expert.id);
+        return <article className={`expert-setting expert-setting--custom ${editing ? 'expert-setting--editing' : ''}`} aria-label={expert.name || '新建专家'} key={expert.id}>
+          {!editing && <label className="toggle expert-compact-toggle"><input type="checkbox" aria-label={`${expert.name} 启用`} checked={expert.enabled} onChange={(event) => void act(() => api.setExpertEnabled?.(expert.id, event.target.checked) ?? Promise.resolve(), '专家状态已更新', true)} /> 启用</label>}
+          {!editing ? <div className="expert-setting-head"><div><h3>{expert.name}</h3><span className="badge">CUSTOM</span><p>{expert.description}</p></div><div className="expert-card-actions"><span className={`expert-status ${expert.enabled ? 'expert-status--on' : ''}`}>{expert.enabled ? '已启用' : '未启用'}</span><button type="button" className="icon-button" aria-label={`编辑 ${expert.name}`} title="编辑" onClick={() => setEditingExpertId(expert.id)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16-.7 4.7L8 20l11.5-11.5a2.1 2.1 0 0 0-3-3L5 17Z" /><path d="m14.5 6.5 3 3" /></svg></button>{confirmExpertDelete === expert.id ? <button type="button" className="icon-button icon-button--danger" aria-label={`确认删除 ${expert.name}`} title="确认删除" onClick={() => void deleteExpert(expert.id)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M9 7V4h6v3m-9 0 1 13h10l1-13" /></svg></button> : <button type="button" className="icon-button icon-button--danger" aria-label={`删除 ${expert.name}`} title="删除" onClick={() => setConfirmExpertDelete(expert.id)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M9 7V4h6v3m-9 0 1 13h10l1-13" /></svg></button>}</div></div> : <><div className="expert-setting-head"><div><h3>{expert.name || '新建专家'}</h3><span className="badge">{isNew ? 'NEW' : 'CUSTOM'}</span></div><label className="toggle"><input type="checkbox" aria-label={`${expert.name || '新建专家'} 启用`} checked={expert.enabled} onChange={(event) => setSettings((current) => ({ ...current, experts: (current.experts ?? []).map((item) => item.id === expert.id ? { ...item, enabled: event.target.checked } : item) }))} /> 启用</label></div><div className="grid"><label className="field">名称<input placeholder="例如：我的翻译专家" value={expert.name} onChange={(event) => setSettings((current) => ({ ...current, experts: (current.experts ?? []).map((item) => item.id === expert.id ? { ...item, name: event.target.value } : item) }))} /></label><label className="field field--wide">说明<input placeholder="例如：自定义翻译能力" value={expert.description} onChange={(event) => setSettings((current) => ({ ...current, experts: (current.experts ?? []).map((item) => item.id === expert.id ? { ...item, description: event.target.value } : item) }))} /></label><label className="field field--wide">系统提示词<textarea placeholder="Translate accurately into {{to}}. Preserve meaning and formatting." value={expert.prompt} onChange={(event) => setSettings((current) => ({ ...current, experts: (current.experts ?? []).map((item) => item.id === expert.id ? { ...item, prompt: event.target.value } : item) }))} /></label></div><div className="actions expert-edit-actions"><button className="primary options-action" onClick={() => void saveExpert(expert)}>保存专家</button><button className="secondary options-action" onClick={() => cancelExpertEdit(expert.id)}>{isNew ? '取消' : '取消编辑'}</button>{!isNew && (confirmExpertDelete === expert.id ? <button className="danger options-action" onClick={() => void deleteExpert(expert.id)}>确认删除</button> : <button type="button" className="icon-button icon-button--danger" aria-label={`删除 ${expert.name}`} title="删除" onClick={() => setConfirmExpertDelete(expert.id)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M9 7V4h6v3m-9 0 1 13h10l1-13" /></svg></button>)}</div></>}
+        </article>;
+      })}</div></div>}
+      <button className="secondary options-action add-engine" onClick={createExpert}>＋ 自定义专家</button>
+    </section>;
+
+  const navigation = [
+    ['builtin-engines', t('builtinEngines')],
+    ['custom-engines', t('customAiEngines')],
+    ['ai-experts', 'AI 专家'],
+    ['reading-preferences', t('optionsReadingPreferences')],
+    ['selection-preferences', t('selectionPreferences')],
+    ['vocabulary-book', t('vocabularyBook')],
+    ['shortcuts-triggers', t('shortcutsAndTriggers')],
+    ['appearance-theme', t('appearanceTheme')],
+    ['data-privacy', t('dataPrivacy')],
+  ];
+
   return <main className="shell options" data-theme={settings.theme}>
     <aside className="options-nav">
       <div className="options-brand"><span className="brand-icon"><BrandMark label={t('extensionName')} /></span><strong>{t('extensionName')}</strong></div>
       <nav aria-label={t('settingsNavigation')}>
-        <button onClick={() => navigateTo('builtin-engines')}>{t('translationEngine')}</button>
-        <button onClick={() => navigateTo('custom-engines')}>{t('customAiEngines')}</button>
-        <button onClick={() => navigateTo('ai-experts')}>AI 专家</button>
-        <button onClick={() => navigateTo('reading-preferences')}>{t('optionsReadingPreferences')}</button>
-        <button onClick={() => navigateTo('selection-preferences')}>{t('selectionPreferences')}</button>
-        <button onClick={() => navigateTo('vocabulary-book')}>{t('vocabularyBook')}</button>
-        <button onClick={() => navigateTo('shortcuts-triggers')}>{t('shortcutsAndTriggers')}</button>
-        <button onClick={() => navigateTo('appearance-theme')}>{t('appearanceTheme')}</button>
-        <button onClick={() => navigateTo('data-privacy')}>{t('dataPrivacy')}</button>
+        {navigation.map(([id, label], index) => <button key={id} type="button" aria-controls={id} aria-current={activeSection === id ? 'location' : undefined} onClick={() => navigateTo(id)}><span className="nav-index" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span><span>{label}</span></button>)}
       </nav>
       <small>v{packageJson.version}</small>
     </aside>
@@ -478,19 +557,6 @@ export function OptionsApp({ api, t = createTranslator(), downloadFile }: { api:
           <button className="secondary options-action" disabled={!engine.enabled} onClick={() => void testConnection(engine.id)}>{t('actionTestConnection')}</button>
         </div>
       </article>)}</div>
-    </section>
-
-    <section id="ai-experts" className="section" aria-label="AI 专家"><div className="section-header"><div><h2>AI 专家</h2><p className="section-copy">选择适合当前内容的翻译方式，也可以创建自己的专家。</p></div><span className="section-index">03 / EXPERTS</span></div>
-      <div className="expert-settings-list">{builtinExperts.map((expert) => <article className="expert-setting" aria-label={expert.name} key={expert.id}><div className="expert-setting-head"><div><h3>{expert.name}</h3><span className="badge">PROMPTS</span><p>{expert.description}</p></div><label className="toggle"><input type="checkbox" aria-label={`${expert.name} 启用`} checked={expert.enabled} onChange={(event) => void act(() => api.setExpertEnabled?.(expert.id, event.target.checked) ?? Promise.resolve(), '专家状态已更新', true)} /> 启用</label></div></article>)}</div>
-      {customExperts.length > 0 && <div className="expert-custom-group"><div className="expert-custom-heading"><div><h3>用户自定义专家</h3><p>你创建的专家，点击编辑后修改详细提示词。</p></div><span className="section-index">CUSTOM</span></div><div className="expert-settings-list">{customExperts.map((expert) => {
-        const editing = editingExpertId === expert.id;
-        const isNew = newExpertIds.has(expert.id);
-        return <article className={`expert-setting expert-setting--custom ${editing ? 'expert-setting--editing' : ''}`} aria-label={expert.name || '新建专家'} key={expert.id}>
-          {!editing && <label className="toggle expert-compact-toggle"><input type="checkbox" aria-label={`${expert.name} 启用`} checked={expert.enabled} onChange={(event) => void act(() => api.setExpertEnabled?.(expert.id, event.target.checked) ?? Promise.resolve(), '专家状态已更新', true)} /> 启用</label>}
-          {!editing ? <div className="expert-setting-head"><div><h3>{expert.name}</h3><span className="badge">CUSTOM</span><p>{expert.description}</p></div><div className="expert-card-actions"><span className={`expert-status ${expert.enabled ? 'expert-status--on' : ''}`}>{expert.enabled ? '已启用' : '未启用'}</span><button type="button" className="icon-button" aria-label={`编辑 ${expert.name}`} title="编辑" onClick={() => setEditingExpertId(expert.id)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16-.7 4.7L8 20l11.5-11.5a2.1 2.1 0 0 0-3-3L5 17Z" /><path d="m14.5 6.5 3 3" /></svg></button>{confirmExpertDelete === expert.id ? <button type="button" className="icon-button icon-button--danger" aria-label={`确认删除 ${expert.name}`} title="确认删除" onClick={() => void deleteExpert(expert.id)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M9 7V4h6v3m-9 0 1 13h10l1-13" /></svg></button> : <button type="button" className="icon-button icon-button--danger" aria-label={`删除 ${expert.name}`} title="删除" onClick={() => setConfirmExpertDelete(expert.id)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M9 7V4h6v3m-9 0 1 13h10l1-13" /></svg></button>}</div></div> : <><div className="expert-setting-head"><div><h3>{expert.name || '新建专家'}</h3><span className="badge">{isNew ? 'NEW' : 'CUSTOM'}</span></div><label className="toggle"><input type="checkbox" aria-label={`${expert.name || '新建专家'} 启用`} checked={expert.enabled} onChange={(event) => setSettings((current) => ({ ...current, experts: (current.experts ?? []).map((item) => item.id === expert.id ? { ...item, enabled: event.target.checked } : item) }))} /> 启用</label></div><div className="grid"><label className="field">名称<input placeholder="例如：我的翻译专家" value={expert.name} onChange={(event) => setSettings((current) => ({ ...current, experts: (current.experts ?? []).map((item) => item.id === expert.id ? { ...item, name: event.target.value } : item) }))} /></label><label className="field field--wide">说明<input placeholder="例如：自定义翻译能力" value={expert.description} onChange={(event) => setSettings((current) => ({ ...current, experts: (current.experts ?? []).map((item) => item.id === expert.id ? { ...item, description: event.target.value } : item) }))} /></label><label className="field field--wide">系统提示词<textarea placeholder="Translate accurately into {{to}}. Preserve meaning and formatting." value={expert.prompt} onChange={(event) => setSettings((current) => ({ ...current, experts: (current.experts ?? []).map((item) => item.id === expert.id ? { ...item, prompt: event.target.value } : item) }))} /></label></div><div className="actions expert-edit-actions"><button className="primary options-action" onClick={() => void saveExpert(expert)}>保存专家</button><button className="secondary options-action" onClick={() => cancelExpertEdit(expert.id)}>{isNew ? '取消' : '取消编辑'}</button>{!isNew && (confirmExpertDelete === expert.id ? <button className="danger options-action" onClick={() => void deleteExpert(expert.id)}>确认删除</button> : <button type="button" className="icon-button icon-button--danger" aria-label={`删除 ${expert.name}`} title="删除" onClick={() => setConfirmExpertDelete(expert.id)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M9 7V4h6v3m-9 0 1 13h10l1-13" /></svg></button>)}</div></>}
-        </article>;
-      })}</div></div>}
-      <button className="secondary options-action add-engine" onClick={createExpert}>＋ 自定义专家</button>
     </section>
 
     <section id="custom-engines" className="section" aria-labelledby="custom-engines-title">
@@ -551,7 +617,9 @@ export function OptionsApp({ api, t = createTranslator(), downloadFile }: { api:
       }}>{t('addCustomAi')}</button>
     </section>
 
-    <section id="reading-preferences" className="section" aria-labelledby="reading-title"><div className="section-header"><h2 id="reading-title">{t('optionsReadingPreferences')}</h2><span className="section-index">03 / READ</span></div><div className="grid">
+    {expertSection}
+
+    <section id="reading-preferences" className="section" aria-labelledby="reading-title"><div className="section-header"><h2 id="reading-title">{t('optionsReadingPreferences')}</h2><span className="section-index">04 / READ</span></div><div className="grid">
       <label className="field">{t('targetLanguage')}<select aria-label={t('targetLanguage')} disabled={!loaded} value={settings.readingPreferences.targetLanguage} onChange={(event) => updatePreferences('targetLanguage', event.target.value)}>{languageOptions.map((language) => <option key={language.value} value={language.value}>{language.label}</option>)}</select></label>
       <label className="field">{t('inputTargetLanguage')}<select aria-label={t('inputTargetLanguage')} disabled={!loaded} value={settings.readingPreferences.inputTargetLanguage ?? 'en'} onChange={(event) => updatePreferences('inputTargetLanguage', event.target.value)}>{languageOptions.filter((language) => language.value !== 'auto').map((language) => <option key={language.value} value={language.value}>{language.label}</option>)}</select><small>{t('inputTranslationHelp')}</small></label>
       <label className="field">{t('defaultMode')}<select aria-label={t('defaultMode')} disabled={!loaded} value={settings.readingPreferences.displayMode} onChange={(event) => updatePreferences('displayMode', event.target.value as ReadingPreferences['displayMode'])}><option value="bilingual">{t('bilingual')}</option><option value="translation">{t('translationOnly')}</option></select></label>
@@ -580,7 +648,7 @@ export function OptionsApp({ api, t = createTranslator(), downloadFile }: { api:
           <h2>{t('shortcutsAndTriggers')}</h2>
           <p className="section-copy">{t('shortcutsAndTriggersDescription')}</p>
         </div>
-        <span className="section-index">06 / KEYS</span>
+        <span className="section-index">07 / KEYS</span>
       </div>
 
       <div className="shortcut-card">
@@ -735,13 +803,13 @@ export function OptionsApp({ api, t = createTranslator(), downloadFile }: { api:
       </div>
     </section>
 
-    <section id="appearance-theme" className="section theme-section" aria-label={t('appearanceTheme')}><div className="section-header"><div><h2>{t('appearanceTheme')}</h2><p className="section-copy">{t('themeDescription')}</p></div><span className="section-index">07 / THEME</span></div>
+    <section id="appearance-theme" className="section theme-section" aria-label={t('appearanceTheme')}><div className="section-header"><div><h2>{t('appearanceTheme')}</h2><p className="section-copy">{t('themeDescription')}</p></div><span className="section-index">08 / THEME</span></div>
       <div className="theme-grid">{themeChoices.map((theme) => <button key={theme.id} className={`theme-choice ${settings.theme === theme.id ? 'selected' : ''}`} aria-pressed={settings.theme === theme.id} aria-label={`${theme.name}：${t(theme.descriptionKey)}`} onClick={() => void chooseTheme(theme.id)}>
         <span className={`theme-swatch ${theme.swatch}`} aria-hidden="true" /><span><strong>{theme.name}</strong><small>{t(theme.descriptionKey)}</small></span><i aria-hidden="true">{settings.theme === theme.id ? '✓' : ''}</i>
       </button>)}</div>
     </section>
 
-    <section id="data-privacy" className="section" aria-labelledby="data-title"><div className="section-header"><div><h2 id="data-title">{t('dataPrivacy')}</h2><p className="section-copy">{t('privacyWarning')}</p></div><span className="section-index">08 / LOCAL</span></div>
+    <section id="data-privacy" className="section" aria-labelledby="data-title"><div className="section-header"><div><h2 id="data-title">{t('dataPrivacy')}</h2><p className="section-copy">{t('privacyWarning')}</p></div><span className="section-index">09 / LOCAL</span></div>
       <input ref={importInput} hidden aria-label={t('actionImport')} type="file" accept="application/json" onChange={(event) => void importFile(event.target.files?.[0])} />
        <div className="actions"><button className="secondary options-action" onClick={() => importInput.current?.click()}>{t('actionImport')}</button>{!exportChoice ? <button className="secondary options-action" onClick={() => setExportChoice(true)}>{t('actionExport')}</button> : <span className="export-choice"><span className="help">是否包含 API Key？</span><button className="primary options-action" onClick={() => void exportFile(true)}>包含 API Key</button><button className="secondary options-action" onClick={() => void exportFile(false)}>不含 API Key</button><button className="secondary options-action" onClick={() => setExportChoice(false)}>取消导出</button></span>}
       {!confirmCache ? <button className="danger options-action" onClick={() => setConfirmCache(true)}>{t('actionClearCache')}</button> : <><span className="help">{t('confirmClear')}</span><button className="danger options-action" onClick={() => void act(async () => { await api.clearCache(); setConfirmCache(false); }, t('cacheCleared'))}>{t('actionConfirmClear')}</button></>}</div>

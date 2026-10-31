@@ -6,6 +6,13 @@ import enMessages from '../../public/_locales/en/messages.json';
 import zhMessages from '../../public/_locales/zh_CN/messages.json';
 
 describe('界面视觉契约', () => {
+  it('设置页不使用视觉重排，窄屏导航容纳全部栏目', () => {
+    const css = readFileSync(resolve(import.meta.dirname, '../../src/ui.css'), 'utf8');
+    expect(css).not.toMatch(/(?<![-\w])order\s*:/);
+    expect(css).toContain('[aria-current="location"]');
+    expect(css).toMatch(/\.options-nav nav\s*\{[^}]*grid-auto-flow:\s*column[^}]*grid-auto-columns:\s*max-content/s);
+    expect(css).not.toContain('repeat(8,');
+  });
   it('多引擎控件具备中英本地化标签', () => {
     expect(zhMessages.translationEngine.message).toBe('翻译引擎');
     expect(enMessages.translationEngine.message).toBe('Translation engine');

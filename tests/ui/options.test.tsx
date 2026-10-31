@@ -2,6 +2,7 @@ import { act, cleanup, render, screen, waitFor, within } from '@testing-library/
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import packageJson from '../../package.json' with { type: 'json' };
+import uiCss from '../../src/ui.css?raw';
 
 import { OptionsApp, type OptionsApi } from '../../src/options/OptionsApp';
 import { DEFAULT_SETTINGS, type OptionsSettings } from '../../src/shared/config';
@@ -78,6 +79,69 @@ function createApi(settings: OptionsSettings = loaded): OptionsApi {
   };
 }
 
+describe('设置页顺序与导航', () => {
+  const sectionIds = ['builtin-engines', 'custom-engines', 'ai-experts', 'reading-preferences', 'selection-preferences', 'vocabulary-book', 'shortcuts-triggers', 'appearance-theme', 'data-privacy'];
+
+  it('导航、正文 DOM 和编号均按 01 至 09 排列，不依靠 CSS order 重排', async () => {
+    const { container } = render(<OptionsApp api={createApi()} />);
+    await screen.findByRole('group', { name: '工作 AI' });
+    const sections = Array.from(container.querySelectorAll('.options-content > section'));
+    expect(sections.map((section) => section.id)).toEqual(sectionIds);
+    const navigation = screen.getByRole('navigation', { name: '设置导航' });
+    const buttons = within(navigation).getAllByRole('button');
+    expect(buttons.map((button) => button.getAttribute('aria-controls'))).toEqual(sectionIds);
+    sections.forEach((section, index) => {
+      const number = String(index + 1).padStart(2, '0');
+      expect(section.querySelector('.section-header .section-index')).toHaveTextContent(new RegExp(`^${number} /`));
+      expect(buttons[index].querySelector('.nav-index')).toHaveTextContent(number);
+    });
+    expect(uiCss).not.toMatch(/\border\s*:/);
+  });
+
+  it('点击导航滚动到对应区块，遵循减少动态效果偏好并标记唯一当前项', async () => {
+    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true })));
+    const { container } = render(<OptionsApp api={createApi()} />);
+    await screen.findByRole('group', { name: '工作 AI' });
+    const content = container.querySelector('.options-content') as HTMLElement;
+    const vocabulary = document.getElementById('vocabulary-book')!;
+    content.scrollTo = vi.fn();
+    vi.spyOn(content, 'getBoundingClientRect').mockReturnValue({ top: 100 } as DOMRect);
+    vi.spyOn(vocabulary, 'getBoundingClientRect').mockReturnValue({ top: 700 } as DOMRect);
+    const navigation = screen.getByRole('navigation', { name: '设置导航' });
+    expect(within(navigation).getAllByRole('button')[0]).toHaveAttribute('aria-current', 'location');
+    await userEvent.click(within(navigation).getByRole('button', { name: '生词本' }));
+    expect(content.scrollTo).toHaveBeenCalledWith({ top: 576, behavior: 'auto' });
+    expect(navigation.querySelectorAll('[aria-current="location"]')).toHaveLength(1);
+    expect(within(navigation).getByRole('button', { name: '生词本' })).toHaveAttribute('aria-current', 'location');
+  });
+
+  it('手动滚动同步导航，卸载时移除监听并取消待执行帧', async () => {
+    let frame: FrameRequestCallback | undefined;
+    vi.stubGlobal('requestAnimationFrame', vi.fn((callback) => { frame = callback; return 42; }));
+    const cancelFrame = vi.fn();
+    vi.stubGlobal('cancelAnimationFrame', cancelFrame);
+    const { container, unmount } = render(<OptionsApp api={createApi()} />);
+    await screen.findByRole('group', { name: '工作 AI' });
+    const content = container.querySelector('.options-content') as HTMLElement;
+    const removeScroll = vi.spyOn(content, 'removeEventListener');
+    const removeResize = vi.spyOn(window, 'removeEventListener');
+    vi.spyOn(content, 'getBoundingClientRect').mockReturnValue({ top: 0 } as DOMRect);
+    sectionIds.forEach((id, index) => {
+      vi.spyOn(document.getElementById(id)!, 'getBoundingClientRect').mockReturnValue({ top: (index - 5) * 300 } as DOMRect);
+    });
+    act(() => { content.dispatchEvent(new Event('scroll')); content.dispatchEvent(new Event('scroll')); });
+    expect(requestAnimationFrame).toHaveBeenCalledTimes(1);
+    act(() => frame!(0));
+    const navigation = screen.getByRole('navigation', { name: '设置导航' });
+    expect(within(navigation).getByRole('button', { name: '生词本' })).toHaveAttribute('aria-current', 'location');
+    act(() => content.dispatchEvent(new Event('scroll')));
+    unmount();
+    expect(removeScroll).toHaveBeenCalledWith('scroll', expect.any(Function));
+    expect(removeResize).toHaveBeenCalledWith('resize', expect.any(Function));
+    expect(cancelFrame).toHaveBeenCalledWith(42);
+  });
+});
+
 function createStatefulApi(settings: OptionsSettings = loaded): OptionsApi {
   let current = structuredClone(settings);
   const api = createApi(current);
@@ -111,6 +175,54 @@ function createStatefulApi(settings: OptionsSettings = loaded): OptionsApi {
 }
 
 describe('Options v2 多引擎设置', () => {
+  it('设置正文、导航与编号保持一致顺序', async () => {
+    const { container } = render(<OptionsApp api={createApi()} />);
+    await waitFor(() => expect(screen.getByLabelText('目标语言')).toBeEnabled());
+    const ids = ['builtin-engines', 'custom-engines', 'ai-experts', 'reading-preferences', 'selection-preferences', 'vocabulary-book', 'shortcuts-triggers', 'appearance-theme', 'data-privacy'];
+    const sections = [...container.querySelectorAll('.options-content > section')];
+    expect(sections.map((section) => section.id)).toEqual(ids);
+    const nav = screen.getByRole('navigation', { name: '设置导航' });
+    const buttons = within(nav).getAllByRole('button');
+    expect(buttons.map((button) => button.getAttribute('aria-controls'))).toEqual(ids);
+    sections.forEach((section, index) => {
+      const number = String(index + 1).padStart(2, '0');
+      expect(section.querySelector('.section-header > .section-index')?.textContent).toMatch(new RegExp(`^${number} /`));
+      expect(buttons[index].querySelector('.nav-index')).toHaveTextContent(number);
+    });
+    expect(buttons[0]).toHaveAttribute('aria-current', 'location');
+  });
+
+  it('导航点击遵守减少动画偏好，滚动与尺寸变化同步当前栏目', async () => {
+    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true })));
+    const { container, unmount } = render(<OptionsApp api={createApi()} />);
+    await waitFor(() => expect(screen.getByLabelText('目标语言')).toBeEnabled());
+    const content = container.querySelector<HTMLElement>('.options-content')!;
+    const sections = [...content.querySelectorAll<HTMLElement>(':scope > section')];
+    const buttons = within(screen.getByRole('navigation', { name: '设置导航' })).getAllByRole('button');
+    let position = 0;
+    vi.spyOn(content, 'getBoundingClientRect').mockImplementation(() => ({ top: 100 }) as DOMRect);
+    sections.forEach((section, index) => {
+      vi.spyOn(section, 'getBoundingClientRect').mockImplementation(() => ({ top: 124 + index * 400 - position }) as DOMRect);
+    });
+    Object.defineProperties(content, { clientHeight: { value: 600 }, scrollHeight: { value: 3800 } });
+    const scrollTo = vi.fn();
+    content.scrollTo = scrollTo;
+    await userEvent.click(buttons[5]);
+    expect(scrollTo).toHaveBeenCalledWith({ top: 2000, behavior: 'auto' });
+    expect(buttons[5]).toHaveAttribute('aria-current', 'location');
+    position = 1200;
+    act(() => { content.dispatchEvent(new Event('scroll')); });
+    await waitFor(() => expect(buttons[3]).toHaveAttribute('aria-current', 'location'));
+    expect(buttons[5]).not.toHaveAttribute('aria-current');
+    position = 400;
+    act(() => { window.dispatchEvent(new Event('resize')); });
+    await waitFor(() => expect(buttons[1]).toHaveAttribute('aria-current', 'location'));
+    Object.defineProperty(content, 'scrollTop', { value: 3200, configurable: true });
+    act(() => { content.dispatchEvent(new Event('scroll')); });
+    await waitFor(() => expect(buttons[8]).toHaveAttribute('aria-current', 'location'));
+    unmount();
+  });
+
   it('独立保存输入框目标语言且不改变网页目标语言', async () => {
     const api = createApi();
     render(<OptionsApp api={api} />);
@@ -170,7 +282,7 @@ describe('Options v2 多引擎设置', () => {
   it('使用左侧导航并提供快捷键与触发方式栏目', async () => {
     render(<OptionsApp api={createApi()} />);
     const nav = await screen.findByRole('navigation', { name: '设置导航' });
-    for (const name of ['翻译引擎', '自定义 AI', 'AI 专家', '阅读偏好', '划词翻译', '生词本', '快捷键与触发方式', '外观主题', '数据隐私']) {
+    for (const name of ['内置翻译引擎', '自定义 AI', 'AI 专家', '阅读偏好', '划词翻译', '生词本', '快捷键与触发方式', '外观主题', '数据隐私']) {
       expect(within(nav).getByRole('button', { name })).toBeInTheDocument();
     }
     const selectionRegion = screen.getByRole('region', { name: '划词翻译' });
