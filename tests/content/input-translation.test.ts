@@ -15,7 +15,7 @@ function setup(html = '<textarea>前你好后</textarea>') {
   if (element.setSelectionRange) element.setSelectionRange(1, 3);
   let resolve!: (text: string) => void;
   const translate = vi.fn(() => new Promise<string>((done) => { resolve = done; }));
-  const getConfig = vi.fn(async () => ({ activeEngineId: 'bing', preferences: { inputTargetLanguage: 'ja' } }));
+  const getConfig = vi.fn(async (): Promise<{ activeEngineId: string; preferences: { inputTargetLanguage: string; inputEngineId?: string } }> => ({ activeEngineId: 'bing', preferences: { inputTargetLanguage: 'ja' } }));
   const controller = registerInputTranslation({ getConfig, translate });
   cleanups.push(controller.dispose);
   const press = (extra = {}) => controller.onKeyDown({ key: 'X', code: 'KeyX', altKey: true, shiftKey: true, isTrusted: true, preventDefault: vi.fn(), ...extra } as unknown as KeyboardEvent);
@@ -23,6 +23,14 @@ function setup(html = '<textarea>前你好后</textarea>') {
 }
 
 describe('输入框选区翻译', () => {
+  it.each(['google', 'custom-input', 'custom-follow', 'follow'])('输入翻译遵循独立引擎 %s', async (inputEngineId) => {
+    const fixture = setup();
+    fixture.getConfig.mockResolvedValue({ activeEngineId: 'bing', preferences: { inputTargetLanguage: 'ja', inputEngineId } });
+    const pending = fixture.press();
+    await vi.waitFor(() => expect(fixture.translate).toHaveBeenCalledWith('你好', inputEngineId === 'follow' ? 'bing' : inputEngineId, 'ja'));
+    fixture.resolve('译文'); await pending;
+    expect(fixture.element.value).toBe('前译文后');
+  });
   it('触发后显示隔离的翻译中状态且不提前修改内容', async () => {
     const fixture = setup();
     fixture.element.getBoundingClientRect = () => ({ top: 80, right: 300, bottom: 120, left: 100, width: 200, height: 40, x: 100, y: 80, toJSON() {} });

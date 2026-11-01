@@ -1,6 +1,11 @@
 {
   "inputTargetLanguage": { "message": "Input translation language" },
-  "inputTranslationHelp": { "message": "Select text in an input and press Alt+Shift+X to translate and replace it using the current engine. Defaults to English, independently of page translation. Changes to content or selection prevent replacement." },
+  "inputTranslationHelp": { "message": "Select text in an input and press Alt+Shift+X to translate and replace it using the engine selected here. The target language defaults to English, independently of page translation. Changes to content or selection prevent replacement." },
+  "inputTranslation": { "message": "Input translation" },
+  "inputEngine": { "message": "Input translation engine" },
+  "inputEngineFollow": { "message": "Follow current engine" },
+  "inputEngineUnavailable": { "message": "The selected engine is disabled, deleted, or not configured. Choose another engine; no service will be selected automatically." },
+  "inputEngineUnavailableOption": { "message": "Unavailable selected engine" },
   "extensionName": { "message": "LexiLayer Translator" },
   "brandShort": { "message": "LexiLayer" },
   "extensionDescription": { "message": "Bilingual page and selection translation with Google, Bing, or multiple custom AI services." },

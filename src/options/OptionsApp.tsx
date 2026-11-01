@@ -522,11 +522,15 @@ export function OptionsApp({ api, t = createTranslator(), downloadFile }: { api:
       <button className="secondary options-action add-engine" onClick={createExpert}>＋ 自定义专家</button>
     </section>;
 
+  const inputEngineId = settings.readingPreferences.inputEngineId ?? 'follow';
+  const inputEngine = settings.engines.find((engine) => engine.id === inputEngineId);
+  const inputEngineUnavailable = inputEngineId !== 'follow' && (!inputEngine?.enabled || (inputEngine.kind === 'custom-ai' && !inputEngine.hasApiKey));
   const navigation = [
     ['builtin-engines', t('builtinEngines')],
     ['custom-engines', t('customAiEngines')],
     ['ai-experts', 'AI 专家'],
     ['reading-preferences', t('optionsReadingPreferences')],
+    ['input-translation', t('inputTranslation')],
     ['selection-preferences', t('selectionPreferences')],
     ['vocabulary-book', t('vocabularyBook')],
     ['shortcuts-triggers', t('shortcutsAndTriggers')],
@@ -621,7 +625,6 @@ export function OptionsApp({ api, t = createTranslator(), downloadFile }: { api:
 
     <section id="reading-preferences" className="section" aria-labelledby="reading-title"><div className="section-header"><h2 id="reading-title">{t('optionsReadingPreferences')}</h2><span className="section-index">04 / READ</span></div><div className="grid">
       <label className="field">{t('targetLanguage')}<select aria-label={t('targetLanguage')} disabled={!loaded} value={settings.readingPreferences.targetLanguage} onChange={(event) => updatePreferences('targetLanguage', event.target.value)}>{languageOptions.map((language) => <option key={language.value} value={language.value}>{language.label}</option>)}</select></label>
-      <label className="field">{t('inputTargetLanguage')}<select aria-label={t('inputTargetLanguage')} disabled={!loaded} value={settings.readingPreferences.inputTargetLanguage ?? 'en'} onChange={(event) => updatePreferences('inputTargetLanguage', event.target.value)}>{languageOptions.filter((language) => language.value !== 'auto').map((language) => <option key={language.value} value={language.value}>{language.label}</option>)}</select><small>{t('inputTranslationHelp')}</small></label>
       <label className="field">{t('defaultMode')}<select aria-label={t('defaultMode')} disabled={!loaded} value={settings.readingPreferences.displayMode} onChange={(event) => updatePreferences('displayMode', event.target.value as ReadingPreferences['displayMode'])}><option value="bilingual">{t('bilingual')}</option><option value="translation">{t('translationOnly')}</option></select></label>
       <label className="field">{t('translationPosition')}<select aria-label={t('translationPosition')} disabled={!loaded} value={settings.readingPreferences.translationPosition} onChange={(event) => updatePreferences('translationPosition', event.target.value as ReadingPreferences['translationPosition'])}><option value="after">{t('positionAfter')}</option><option value="before">{t('positionBefore')}</option></select></label>
       <label className="field">{t('defaultScope')}<select aria-label={t('defaultScope')} disabled={!loaded} value={settings.readingPreferences.scanScope} onChange={(event) => updatePreferences('scanScope', event.target.value as ReadingPreferences['scanScope'])}><option value="main-content">{t('mainContent')}</option><option value="whole-page">{t('wholePage')}</option></select></label>
@@ -631,7 +634,16 @@ export function OptionsApp({ api, t = createTranslator(), downloadFile }: { api:
       <label className="field">{t('videoSubtitleEngine')}<select aria-label={t('videoSubtitleEngine')} disabled={!loaded} value={settings.readingPreferences.videoSubtitleEngine} onChange={(event) => updatePreferences('videoSubtitleEngine', event.target.value as ReadingPreferences['videoSubtitleEngine'])}><option value="youtube-tlang">{t('videoSubtitleEngineTlang')}</option><option value="current-engine">{t('videoSubtitleEngineCurrent')}</option></select><small>{t('videoSubtitleEngineHelp')}</small></label>
     </div></section>
 
-    <section id="selection-preferences" className="section" aria-label={t('selectionPreferences')}><div className="section-header"><h2>{t('selectionPreferences')}</h2><span className="section-index">05 / SELECT</span></div><div className="grid">
+    <section id="input-translation" className="section" aria-label={t('inputTranslation')}><div className="section-header"><h2>{t('inputTranslation')}</h2><span className="section-index">05 / INPUT</span></div><div className="grid">
+      <label className="field">{t('inputEngine')}<select aria-label={t('inputEngine')} disabled={!loaded} value={inputEngineId} onChange={(event) => updatePreferences('inputEngineId', event.target.value)}>
+        <option value="follow">{t('inputEngineFollow')}</option>
+        {inputEngineId !== 'follow' && !inputEngine?.enabled && <option value={inputEngineId} disabled>{inputEngine?.name ?? t('inputEngineUnavailableOption')}</option>}
+        {settings.engines.filter((engine) => engine.enabled).sort((a, b) => a.order - b.order).map((engine) => <option key={engine.id} value={engine.id}>{engine.name}</option>)}
+      </select>{inputEngineUnavailable && <small role="alert">{t('inputEngineUnavailable')}</small>}</label>
+      <label className="field">{t('inputTargetLanguage')}<select aria-label={t('inputTargetLanguage')} disabled={!loaded} value={settings.readingPreferences.inputTargetLanguage ?? 'en'} onChange={(event) => updatePreferences('inputTargetLanguage', event.target.value)}>{languageOptions.filter((language) => language.value !== 'auto').map((language) => <option key={language.value} value={language.value}>{language.label}</option>)}</select><small>{t('inputTranslationHelp')}</small></label>
+    </div></section>
+
+    <section id="selection-preferences" className="section" aria-label={t('selectionPreferences')}><div className="section-header"><h2>{t('selectionPreferences')}</h2><span className="section-index">06 / SELECT</span></div><div className="grid">
       <label className="field check-field"><input aria-label={t('limitedContext')} type="checkbox" disabled={!loaded} checked={settings.readingPreferences.selectionContext} onChange={(event) => updatePreferences('selectionContext', event.target.checked)} /> {t('limitedContextLabel')}</label>
       <label className="field check-field"><input aria-label={t('selectionPopupEnabled')} type="checkbox" disabled={!loaded} checked={settings.readingPreferences.selectionPopupEnabled} onChange={(event) => updatePreferences('selectionPopupEnabled', event.target.checked)} /> {t('selectionPopupEnabled')}</label>
       <label className="field check-field"><input aria-label={t('autoSiteTranslation')} type="checkbox" disabled={!loaded} checked={settings.readingPreferences.autoSiteTranslation} onChange={(event) => updatePreferences('autoSiteTranslation', event.target.checked)} /> {t('autoSiteTranslation')}</label>
@@ -648,7 +660,7 @@ export function OptionsApp({ api, t = createTranslator(), downloadFile }: { api:
           <h2>{t('shortcutsAndTriggers')}</h2>
           <p className="section-copy">{t('shortcutsAndTriggersDescription')}</p>
         </div>
-        <span className="section-index">07 / KEYS</span>
+        <span className="section-index">08 / KEYS</span>
       </div>
 
       <div className="shortcut-card">
@@ -803,13 +815,13 @@ export function OptionsApp({ api, t = createTranslator(), downloadFile }: { api:
       </div>
     </section>
 
-    <section id="appearance-theme" className="section theme-section" aria-label={t('appearanceTheme')}><div className="section-header"><div><h2>{t('appearanceTheme')}</h2><p className="section-copy">{t('themeDescription')}</p></div><span className="section-index">08 / THEME</span></div>
+    <section id="appearance-theme" className="section theme-section" aria-label={t('appearanceTheme')}><div className="section-header"><div><h2>{t('appearanceTheme')}</h2><p className="section-copy">{t('themeDescription')}</p></div><span className="section-index">09 / THEME</span></div>
       <div className="theme-grid">{themeChoices.map((theme) => <button key={theme.id} className={`theme-choice ${settings.theme === theme.id ? 'selected' : ''}`} aria-pressed={settings.theme === theme.id} aria-label={`${theme.name}：${t(theme.descriptionKey)}`} onClick={() => void chooseTheme(theme.id)}>
         <span className={`theme-swatch ${theme.swatch}`} aria-hidden="true" /><span><strong>{theme.name}</strong><small>{t(theme.descriptionKey)}</small></span><i aria-hidden="true">{settings.theme === theme.id ? '✓' : ''}</i>
       </button>)}</div>
     </section>
 
-    <section id="data-privacy" className="section" aria-labelledby="data-title"><div className="section-header"><div><h2 id="data-title">{t('dataPrivacy')}</h2><p className="section-copy">{t('privacyWarning')}</p></div><span className="section-index">09 / LOCAL</span></div>
+    <section id="data-privacy" className="section" aria-labelledby="data-title"><div className="section-header"><div><h2 id="data-title">{t('dataPrivacy')}</h2><p className="section-copy">{t('privacyWarning')}</p></div><span className="section-index">10 / LOCAL</span></div>
       <input ref={importInput} hidden aria-label={t('actionImport')} type="file" accept="application/json" onChange={(event) => void importFile(event.target.files?.[0])} />
        <div className="actions"><button className="secondary options-action" onClick={() => importInput.current?.click()}>{t('actionImport')}</button>{!exportChoice ? <button className="secondary options-action" onClick={() => setExportChoice(true)}>{t('actionExport')}</button> : <span className="export-choice"><span className="help">是否包含 API Key？</span><button className="primary options-action" onClick={() => void exportFile(true)}>包含 API Key</button><button className="secondary options-action" onClick={() => void exportFile(false)}>不含 API Key</button><button className="secondary options-action" onClick={() => setExportChoice(false)}>取消导出</button></span>}
       {!confirmCache ? <button className="danger options-action" onClick={() => setConfirmCache(true)}>{t('actionClearCache')}</button> : <><span className="help">{t('confirmClear')}</span><button className="danger options-action" onClick={() => void act(async () => { await api.clearCache(); setConfirmCache(false); }, t('cacheCleared'))}>{t('actionConfirmClear')}</button></>}</div>

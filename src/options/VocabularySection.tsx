@@ -269,7 +269,7 @@ export function VocabularySection({ api, t, vocabulary, onStatus, downloadFile }
   }
 
   return <section id="vocabulary-book" className="section" aria-label={t('vocabularyBook')}>
-    <div className="section-header"><div><h2>{t('vocabularyBook')}</h2><p className="section-copy">{t('vocabularyBookDescription')}</p></div><span className="section-index">06 / VOCAB</span></div>
+    <div className="section-header"><div><h2>{t('vocabularyBook')}</h2><p className="section-copy">{t('vocabularyBookDescription')}</p></div><span className="section-index">07 / VOCAB</span></div>
     {loadFailed && <p className="note">{t('vocabularyLoadFailed')}</p>}
     {reviewing && reviewEntry ? <div role="group" aria-label={t('vocabularyReviewMode')} className="vocabulary-review">
       <p className="vocabulary-review-progress">{t('vocabularyReviewProgress', [String(Math.min(reviewIndex, entries.length - 1) + 1), String(entries.length)])}</p>

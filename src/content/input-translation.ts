@@ -1,5 +1,5 @@
 interface InputTranslationDependencies {
-  getConfig(): Promise<{ activeEngineId: string; preferences: { inputTargetLanguage?: string } }>;
+  getConfig(): Promise<{ activeEngineId: string; preferences: { inputTargetLanguage?: string; inputEngineId?: string } }>;
   translate(text: string, engineId: string, targetLanguage: string): Promise<string>;
 }
 
@@ -170,7 +170,8 @@ export function registerInputTranslation(dependencies: InputTranslationDependenc
     try {
       const config = await dependencies.getConfig();
       if (!current()) return;
-      const translated = await dependencies.translate(text, config.activeEngineId, config.preferences.inputTargetLanguage ?? 'en');
+      const inputEngineId = config.preferences.inputEngineId ?? 'follow';
+      const translated = await dependencies.translate(text, inputEngineId === 'follow' ? config.activeEngineId : inputEngineId, config.preferences.inputTargetLanguage ?? 'en');
       if (!current()) return;
       if (!translated.trim()) { showStatus(element, currentTaskId, 'error'); return; }
       const before = new InputEvent('beforeinput', { bubbles: true, composed: true, cancelable: true, inputType: 'insertReplacementText', data: translated });

@@ -250,6 +250,7 @@ describe('migration and normalization', () => {
       expertDefaultsVersion: 6,
       theme: 'pearl-reader',
       readingPreferences: {
+        inputEngineId: 'follow',
         inputTargetLanguage: 'en',
         targetLanguage: 'zh-Hans', displayMode: 'translation', userInstruction: '保留术语',
         translationPosition: 'before', scanScope: 'whole-page', selectionContext: false,

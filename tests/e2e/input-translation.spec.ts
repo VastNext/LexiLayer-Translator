@@ -16,9 +16,16 @@ test('输入框快捷键无需整页翻译，独立语言、部分替换和跨�
     const stored = await chrome.storage.local.get('translatorSettings');
     const settings = stored.translatorSettings as import('../../src/shared/config').Settings;
     settings.engines.push({ id: 'custom-input', kind: 'custom-ai', name: '输入测试', baseUrl, model: 'test', apiKey: 'input-test-key', enabled: true, order: 2 });
-    settings.activeEngineId = 'custom-input';
+    settings.activeEngineId = 'google';
     await chrome.storage.local.set({ translatorSettings: settings });
   }, server.baseUrl);
+  await options.reload();
+  await expect(options.getByLabel('输入框翻译引擎')).toHaveValue('follow');
+  await options.getByLabel('输入框翻译引擎').selectOption('custom-input');
+  await expect.poll(() => serviceWorker.evaluate(async () => {
+    const settings = (await chrome.storage.local.get('translatorSettings')).translatorSettings as import('../../src/shared/config').Settings;
+    return { input: settings.readingPreferences.inputEngineId, page: settings.activeEngineId };
+  })).toEqual({ input: 'custom-input', page: 'google' });
   const response = await context.request.get(server.fixtureUrl);
   expect(response.ok()).toBeTruthy();
   const page = await context.newPage(); await page.goto(server.fixtureUrl);
@@ -42,6 +49,24 @@ test('输入框快捷键无需整页翻译，独立语言、部分替换和跨�
   await frameInput.evaluate((element: HTMLInputElement) => element.setSelectionRange(1, 6));
   await frameInput.press('Alt+Shift+X');
   await expect(frameInput).toHaveValue('前中文译文：hello后');
+  for (const action of ['disable', 'delete']) {
+    await serviceWorker.evaluate(async (action) => {
+      const settings = (await chrome.storage.local.get('translatorSettings')).translatorSettings as import('../../src/shared/config').Settings;
+      if (action === 'delete') settings.engines = settings.engines.filter((engine) => engine.id !== 'custom-input');
+      else settings.engines.find((engine) => engine.id === 'custom-input')!.enabled = false;
+      await chrome.storage.local.set({ translatorSettings: settings });
+    }, action);
+    const requestCount = server.requests.length;
+    await input.fill(`前${action}后`);
+    await input.evaluate((element: HTMLInputElement) => element.setSelectionRange(1, element.value.length - 1));
+    await input.press('Alt+Shift+X');
+    await expect(status).toHaveAttribute('data-state', 'error');
+    await expect(input).toHaveValue(`前${action}后`);
+    expect(server.requests).toHaveLength(requestCount);
+    await options.reload();
+    await expect(options.getByLabel('输入框翻译引擎')).toHaveValue('custom-input');
+    await expect(options.getByText('指定引擎已停用、删除或尚未配置，请重新选择；不会自动切换服务。')).toBeVisible();
+  }
 });
 
 test('窄 frame 内输入翻译状态始终位于可见视口', async ({ context, serviceWorker, server, openExtensionPage }) => {

@@ -45,6 +45,44 @@ function createChrome(stored: Record<string, unknown> = { translatorSettings: { 
 const sender = { id: 'extension-id', tab: { id: 4 } as chrome.tabs.Tab, frameId: 0, documentId: 'doc-1' };
 
 describe('后台 v2 多引擎编排', () => {
+  it.each(['google', 'bing', 'custom-work'])('输入选区消息严格路由 %s，安全视图保留独立偏好', async (engineId) => {
+    const settings = structuredClone(DEFAULT_SETTINGS);
+    settings.engines.push(custom);
+    settings.readingPreferences.inputEngineId = engineId;
+    const api = createChrome({ translatorSettings: settings });
+    const providers = new Map(settings.engines.map((engine) => [engine.id, provider(engine.id)]));
+    const controller = createBackgroundController(api, { createProvider: (engine) => providers.get(engine.id)!, clearCache: vi.fn() });
+    const config = await controller.handle({ type: 'get-public-config' }, sender);
+    expect(config).toMatchObject({ ok: true, data: { activeEngineId: 'google', preferences: { inputEngineId: engineId } } });
+    expect(JSON.stringify(config)).not.toMatch(/secret-value|apiKey|api\.example|gpt-test/);
+    await expect(controller.handle({ type: 'translate-selection-inline', engineId, targetLanguage: 'ja', text: 'hello' }, sender)).resolves.toEqual({ ok: true, data: { text: `${engineId}:hello` } });
+    expect(providers.get(engineId)!.translate).toHaveBeenCalledOnce();
+    for (const [id, item] of providers) if (id !== engineId) expect(item.translate).not.toHaveBeenCalled();
+    expect((await readSettings(api)).activeEngineId).toBe('google');
+  });
+
+  it.each([
+    ['停用', { ...custom, enabled: false }, '翻译引擎已停用'],
+    ['删除', undefined, '翻译引擎不存在'],
+    ['清空密钥', { ...custom, apiKey: '' }, '翻译引擎尚未配置'],
+  ] as const)('输入指定引擎%s后明确失败且不调用其它服务', async (_name, engine, error) => {
+    const settings = structuredClone(DEFAULT_SETTINGS);
+    if (engine) settings.engines.push(engine);
+    settings.readingPreferences.inputEngineId = custom.id;
+    const api = createChrome({ translatorSettings: settings });
+    const createProvider = vi.fn((item: Engine) => provider(item.id));
+    const controller = createBackgroundController(api, { createProvider, clearCache: vi.fn() });
+    await expect(controller.handle({ type: 'translate-selection-inline', engineId: custom.id, targetLanguage: 'ja', text: 'hello' }, sender)).resolves.toEqual({ ok: false, error });
+    expect(createProvider).not.toHaveBeenCalled();
+    expect((await readSettings(api)).readingPreferences.inputEngineId).toBe(custom.id);
+  });
+
+  it('输入翻译复用消息白名单，不允许附带端点或密钥', async () => {
+    const controller = createBackgroundController(createChrome(), { createProvider: (engine) => provider(engine.id), clearCache: vi.fn() });
+    for (const extra of [{ apiKey: 'secret' }, { baseUrl: 'https://other.example' }, { inputEngineId: 'bing' }]) {
+      await expect(controller.handle({ type: 'translate-selection-inline', engineId: 'google', targetLanguage: 'ja', text: 'hello', ...extra }, sender)).resolves.toEqual({ ok: false, error: '消息格式无效' });
+    }
+  });
   it('translatorSettings 优先于旧配置，且仅旧配置时迁移并一次性写入 v2', async () => {
     const legacyConfig = {
       baseUrl: 'https://api.openai.com/v1', apiKey: '', model: 'gpt-4o-mini',

@@ -80,9 +80,9 @@ function createApi(settings: OptionsSettings = loaded): OptionsApi {
 }
 
 describe('设置页顺序与导航', () => {
-  const sectionIds = ['builtin-engines', 'custom-engines', 'ai-experts', 'reading-preferences', 'selection-preferences', 'vocabulary-book', 'shortcuts-triggers', 'appearance-theme', 'data-privacy'];
+  const sectionIds = ['builtin-engines', 'custom-engines', 'ai-experts', 'reading-preferences', 'input-translation', 'selection-preferences', 'vocabulary-book', 'shortcuts-triggers', 'appearance-theme', 'data-privacy'];
 
-  it('导航、正文 DOM 和编号均按 01 至 09 排列，不依靠 CSS order 重排', async () => {
+  it('导航、正文 DOM 和编号均按 01 至 10 排列，不依靠 CSS order 重排', async () => {
     const { container } = render(<OptionsApp api={createApi()} />);
     await screen.findByRole('group', { name: '工作 AI' });
     const sections = Array.from(container.querySelectorAll('.options-content > section'));
@@ -127,7 +127,7 @@ describe('设置页顺序与导航', () => {
     const removeResize = vi.spyOn(window, 'removeEventListener');
     vi.spyOn(content, 'getBoundingClientRect').mockReturnValue({ top: 0 } as DOMRect);
     sectionIds.forEach((id, index) => {
-      vi.spyOn(document.getElementById(id)!, 'getBoundingClientRect').mockReturnValue({ top: (index - 5) * 300 } as DOMRect);
+      vi.spyOn(document.getElementById(id)!, 'getBoundingClientRect').mockReturnValue({ top: (index - 6) * 300 } as DOMRect);
     });
     act(() => { content.dispatchEvent(new Event('scroll')); content.dispatchEvent(new Event('scroll')); });
     expect(requestAnimationFrame).toHaveBeenCalledTimes(1);
@@ -175,10 +175,30 @@ function createStatefulApi(settings: OptionsSettings = loaded): OptionsApi {
 }
 
 describe('Options v2 多引擎设置', () => {
+  it('输入框独立区块只列出已启用引擎，自动保存且不改变页面引擎', async () => {
+    const api = createApi();
+    render(<OptionsApp api={api} />);
+    await waitFor(() => expect(screen.getByLabelText('输入框翻译引擎')).toBeEnabled());
+    const section = screen.getByRole('region', { name: '输入框翻译' });
+    const engine = within(section).getByLabelText('输入框翻译引擎');
+    expect(engine).toHaveValue('follow');
+    expect(within(engine).getAllByRole('option').map((option) => (option as HTMLOptionElement).value)).toEqual(['follow', 'google', 'bing', 'custom-work']);
+    expect(within(section).getByLabelText('输入框目标语言')).toHaveValue('en');
+    expect(within(screen.getByRole('region', { name: '阅读偏好' })).queryByLabelText('输入框目标语言')).toBeNull();
+    await userEvent.selectOptions(engine, 'custom-work');
+    await waitFor(() => expect(api.savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ inputEngineId: 'custom-work' })));
+    expect(api.setActiveEngine).not.toHaveBeenCalled();
+  });
+
+  it.each(['custom-home', 'custom-deleted'])('输入引擎 %s 不可用时保留选择并明确提示', async (inputEngineId) => {
+    render(<OptionsApp api={createApi({ ...loaded, readingPreferences: { ...loaded.readingPreferences, inputEngineId } })} />);
+    await waitFor(() => expect(screen.getByLabelText('输入框翻译引擎')).toHaveValue(inputEngineId));
+    expect(screen.getByText('指定引擎已停用、删除或尚未配置，请重新选择；不会自动切换服务。')).toBeInTheDocument();
+  });
   it('设置正文、导航与编号保持一致顺序', async () => {
     const { container } = render(<OptionsApp api={createApi()} />);
     await waitFor(() => expect(screen.getByLabelText('目标语言')).toBeEnabled());
-    const ids = ['builtin-engines', 'custom-engines', 'ai-experts', 'reading-preferences', 'selection-preferences', 'vocabulary-book', 'shortcuts-triggers', 'appearance-theme', 'data-privacy'];
+    const ids = ['builtin-engines', 'custom-engines', 'ai-experts', 'reading-preferences', 'input-translation', 'selection-preferences', 'vocabulary-book', 'shortcuts-triggers', 'appearance-theme', 'data-privacy'];
     const sections = [...container.querySelectorAll('.options-content > section')];
     expect(sections.map((section) => section.id)).toEqual(ids);
     const nav = screen.getByRole('navigation', { name: '设置导航' });
@@ -219,7 +239,7 @@ describe('Options v2 多引擎设置', () => {
     await waitFor(() => expect(buttons[1]).toHaveAttribute('aria-current', 'location'));
     Object.defineProperty(content, 'scrollTop', { value: 3200, configurable: true });
     act(() => { content.dispatchEvent(new Event('scroll')); });
-    await waitFor(() => expect(buttons[8]).toHaveAttribute('aria-current', 'location'));
+    await waitFor(() => expect(buttons[9]).toHaveAttribute('aria-current', 'location'));
     unmount();
   });
 

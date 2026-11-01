@@ -2,7 +2,7 @@ import { test, expect } from './fixtures';
 
 const sectionIds = [
   'builtin-engines', 'custom-engines', 'ai-experts', 'reading-preferences',
-  'selection-preferences', 'vocabulary-book', 'shortcuts-triggers',
+  'input-translation', 'selection-preferences', 'vocabulary-book', 'shortcuts-triggers',
   'appearance-theme', 'data-privacy',
 ];
 
@@ -24,6 +24,9 @@ test('设置导航与正文在桌面和窄屏保持相同顺序', async ({ openE
     const items = navigation.locator('button, a');
     await expect(items).toHaveCount(sectionIds.length);
     for (let index = 0; index < sectionIds.length; index += 1) {
+      const number = String(index + 1).padStart(2, '0');
+      await expect(items.nth(index).locator('.nav-index')).toHaveText(number);
+      await expect(sections.nth(index).locator('.section-header > .section-index')).toContainText(`${number} /`);
       await items.nth(index).click();
       await expect(items.nth(index)).toHaveAttribute('aria-current', 'location');
       await expect.poll(async () => page.locator(`#${sectionIds[index]}`).evaluate((node) => {

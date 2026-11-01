@@ -16,6 +16,7 @@ export interface ReadingPreferences {
   sourceLanguage?: string;
   targetLanguage: string;
   inputTargetLanguage?: string;
+  inputEngineId?: string;
   displayMode: DisplayMode;
   userInstruction: string;
   translationPosition: 'before' | 'after';
@@ -95,6 +96,7 @@ export const DEFAULT_SETTINGS: Settings = {
     sourceLanguage: 'auto',
     targetLanguage: 'auto',
     inputTargetLanguage: 'en',
+    inputEngineId: 'follow',
     displayMode: 'bilingual',
     userInstruction: '',
     translationPosition: 'after',
@@ -141,6 +143,7 @@ function validatePreferences(value: unknown): string[] {
   if (value.sourceLanguage !== undefined && (typeof value.sourceLanguage !== 'string' || !value.sourceLanguage.trim())) errors.push('源语言不能为空');
   if (typeof value.targetLanguage !== 'string' || !value.targetLanguage.trim()) errors.push('目标语言不能为空');
   if (value.inputTargetLanguage !== undefined && !SUPPORTED_LANGUAGES.includes(value.inputTargetLanguage as typeof SUPPORTED_LANGUAGES[number])) errors.push('输入框目标语言无效');
+  if (value.inputEngineId !== undefined && (typeof value.inputEngineId !== 'string' || (!['follow', 'google', 'bing'].includes(value.inputEngineId) && !CUSTOM_ID.test(value.inputEngineId)))) errors.push('输入框翻译引擎无效');
   if (value.displayMode !== 'bilingual' && value.displayMode !== 'translation') errors.push('显示模式无效');
   if (typeof value.userInstruction !== 'string') errors.push('用户要求必须是字符串');
   if (value.translationPosition !== 'before' && value.translationPosition !== 'after') errors.push('译文位置无效');
@@ -319,6 +322,7 @@ export function normalizeSettings(value: unknown): Settings {
     return cloneDefaults();
   }
   migrateExpertDefaults(normalizedValue);
+  if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.inputEngineId === undefined) normalizedValue.readingPreferences.inputEngineId = 'follow';
   if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.inputTargetLanguage === undefined) normalizedValue.readingPreferences.inputTargetLanguage = 'en';
   if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.sourceLanguage === undefined) normalizedValue.readingPreferences.sourceLanguage = 'auto';
   if (isRecord(normalizedValue.readingPreferences) && normalizedValue.readingPreferences.selectionPopupEnabled === undefined) normalizedValue.readingPreferences.selectionPopupEnabled = true;
@@ -412,6 +416,7 @@ export function importSettings(value: unknown, current: Settings = DEFAULT_SETTI
   if (input.experts === undefined) input.experts = defaultExperts();
   if (input.activeExpertByEngine === undefined) input.activeExpertByEngine = {};
   migrateExpertDefaults(input);
+  if (isRecord(input.readingPreferences) && input.readingPreferences.inputEngineId === undefined) input.readingPreferences.inputEngineId = 'follow';
   if (isRecord(input.readingPreferences) && input.readingPreferences.inputTargetLanguage === undefined) input.readingPreferences.inputTargetLanguage = 'en';
   if (isRecord(input.readingPreferences) && input.readingPreferences.selectionPopupEnabled === undefined) input.readingPreferences.selectionPopupEnabled = true;
   if (isRecord(input.readingPreferences) && input.readingPreferences.autoSiteTranslation === undefined) input.readingPreferences.autoSiteTranslation = true;
@@ -469,6 +474,7 @@ export function migrateSettings(value: unknown): Settings {
   if (!isRecord(value)) return cloneDefaults();
   const migrated = cloneDefaults();
   const legacyPreferences: ReadingPreferences = {
+      inputEngineId: 'follow',
       inputTargetLanguage: 'en',
       targetLanguage: value.targetLanguage as string,
       displayMode: value.displayMode as DisplayMode,

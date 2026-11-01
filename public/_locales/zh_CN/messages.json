@@ -1,6 +1,11 @@
 {
   "inputTargetLanguage": { "message": "输入框目标语言" },
-  "inputTranslationHelp": { "message": "选中输入框文字，按 Alt+Shift+X 使用当前引擎翻译并替换选区。默认英语，独立于网页翻译；内容或选区变化时不覆盖。" },
+  "inputTranslationHelp": { "message": "选中输入框文字，按 Alt+Shift+X 使用此处指定的引擎翻译并替换选区。目标语言默认英语，独立于网页翻译；内容或选区变化时不覆盖。" },
+  "inputTranslation": { "message": "输入框翻译" },
+  "inputEngine": { "message": "输入框翻译引擎" },
+  "inputEngineFollow": { "message": "跟随当前引擎" },
+  "inputEngineUnavailable": { "message": "指定引擎已停用、删除或尚未配置，请重新选择；不会自动切换服务。" },
+  "inputEngineUnavailableOption": { "message": "不可用的指定引擎" },
   "extensionName": { "message": "语层翻译" },
   "brandShort": { "message": "语层" },
   "extensionDescription": { "message": "使用 Google、Bing 或多个自定义 AI 进行网页双语与划词翻译。" },
